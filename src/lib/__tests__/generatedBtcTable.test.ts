@@ -14,9 +14,14 @@ import {
   isGeneratedBtcFilterActive,
   EMPTY_GENERATED_BTC_FILTER,
   formatBtc,
+  todayGeneratedBtc,
   generatedBtcToCsv,
+  dedupeGeneratedBtc,
+  filterGeneratedBtcByAccount,
+  searchGeneratedBtc,
   type GeneratedBtcFilter,
 } from '@/lib/generatedBtcTable';
+import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
 
 function entry(over: Partial<GeneratedBtcEntry> = {}): GeneratedBtcEntry {
   return { entry_day: '2026-06-21', hashrate: 100e12, btc_generated: 0.0001, ...over };
@@ -104,6 +109,26 @@ test('isGeneratedBtcFilterActive is true only when a bound is set', () => {
   assert.equal(isGeneratedBtcFilterActive({ sinceMs: null, untilMs: 1 }), true);
 });
 
+test('todayGeneratedBtc picks the entry for the current UTC day', () => {
+  const now = Date.parse('2026-07-24T09:30:00Z');
+  const entries = [entry({ entry_day: '2026-07-24', btc_generated: 0.5 }), entry({ entry_day: '2026-07-23', btc_generated: 0.25 })];
+  assert.equal(todayGeneratedBtc(entries, now), 0.5);
+  // Late in the UTC day the answer must not slide onto the neighbouring day.
+  assert.equal(todayGeneratedBtc(entries, Date.parse('2026-07-24T23:59:59Z')), 0.5);
+  // No entry for today yet, and a null amount, both read as nothing generated.
+  assert.equal(todayGeneratedBtc([entry({ entry_day: '2026-07-20', btc_generated: 9 })], now), 0);
+  assert.equal(todayGeneratedBtc([entry({ entry_day: '2026-07-24', btc_generated: null })], now), 0);
+});
+
+test('formatBtc renders a missing amount as "--" rather than crashing or implying zero', () => {
+  // The API can return a null amount on a real row; a money figure that is unknown
+  // must read as unknown, never as a confident 0 (and must never throw).
+  assert.equal(formatBtc(null), '--');
+  assert.equal(formatBtc(undefined), '--');
+  // A genuine zero is still a real, known value.
+  assert.equal(formatBtc(0), '0');
+});
+
 test('formatBtc trims float noise and trailing zeros', () => {
   assert.equal(formatBtc(0.001 + 0.0004), '0.0014');
   assert.equal(formatBtc(0), '0');
@@ -119,6 +144,47 @@ test('generatedBtcToCsv emits the prod schema header, a row per entry, and guard
   // a leading '=' in a cell is neutralized
   const inj = generatedBtcToCsv([entry({ entry_day: '=SUM(A1)', hashrate: 1, btc_generated: 1 })]);
   assert.match(inj.split('\n')[1], /^'=SUM\(A1\)/);
+});
+
+test('dedupeGeneratedBtc keeps the first row per (entry_day, account); a single-owner fetch is untouched', () => {
+  const rows = [
+    entry({ entry_day: '2026-07-08', btc_generated: 0.001, account: MAIN_ACCOUNT_LABEL }),
+    entry({ entry_day: '2026-07-08', btc_generated: 0.001, account: 'Client Alpha' }),
+    // an exact duplicate (same day, same owner) — collapses to the first
+    entry({ entry_day: '2026-07-08', btc_generated: 0.999, account: 'Client Alpha' }),
+    entry({ entry_day: '2026-07-09', btc_generated: 0.002, account: 'Client Alpha' }),
+  ];
+  const out = dedupeGeneratedBtc(rows);
+  assert.equal(out.length, 3);
+  assert.equal(out.find((e) => e.entry_day === '2026-07-08' && e.account === 'Client Alpha')?.btc_generated, 0.001);
+});
+
+test('dedupeGeneratedBtc treats rows with no account as their own bucket', () => {
+  const rows = [entry({ entry_day: '2026-07-08', account: undefined }), entry({ entry_day: '2026-07-08', account: undefined })];
+  assert.equal(dedupeGeneratedBtc(rows).length, 1);
+});
+
+test('filterGeneratedBtcByAccount keeps only the chosen accounts; empty keeps all', () => {
+  const rows = [
+    entry({ entry_day: '2026-07-08', account: MAIN_ACCOUNT_LABEL }),
+    entry({ entry_day: '2026-07-09', account: 'Client Alpha' }),
+  ];
+  assert.equal(filterGeneratedBtcByAccount(rows, []).length, 2);
+  assert.deepEqual(
+    filterGeneratedBtcByAccount(rows, ['Client Alpha']).map((e) => e.entry_day),
+    ['2026-07-09'],
+  );
+});
+
+test('searchGeneratedBtc matches the account name case-insensitively; a blank query passes all', () => {
+  const rows = [
+    entry({ entry_day: '2026-07-08', account: MAIN_ACCOUNT_LABEL }),
+    entry({ entry_day: '2026-07-09', account: 'Client Alpha' }),
+  ];
+  assert.deepEqual(searchGeneratedBtc(rows, 'alpha').map((e) => e.entry_day), ['2026-07-09']);
+  assert.equal(searchGeneratedBtc(rows, '').length, 2);
+  // a row with no account (single-account mode) never matches a non-empty query
+  assert.equal(searchGeneratedBtc([entry({ account: undefined })], 'main').length, 0);
 });
 
 // The GeneratedBtcFilter type is exercised through the calls above.

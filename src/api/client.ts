@@ -14,6 +14,8 @@ import {
   type RequestOptions,
   type SignupInput,
   type Subaccount,
+  type SubaccountHashratePoint,
+  type SubaccountShareStats,
   type SubaccountSummary,
   type Worker,
   type WorkersResponse,
@@ -318,6 +320,26 @@ export function createDmndClient(options: DmndClientOptions = {}): DmndClient {
       );
       return Array.isArray(result) ? (result as HashratePoint[]) : [];
     },
+    async getShareStats(req) {
+      // The account's own counterpart to a subaccount's summary.share_stats, so a
+      // combined rejection rate can be computed over the same 24h window for every
+      // account rather than mixing windows.
+      const result = await request<unknown>({ method: 'GET', path: '/api/user/share_stats' }, opts, req);
+      return result && typeof result === 'object' ? (result as SubaccountShareStats) : null;
+    },
+    async getSubaccountHashrateHistory(id, token, from, to, req) {
+      const params = new URLSearchParams({ token, from, to }).toString();
+      const result = await request<unknown>(
+        {
+          method: 'GET',
+          path: `/api/user/sub_account/${encodeURIComponent(id)}/hashrate/historical?${params}`,
+          timeoutMs: 20_000,
+        },
+        opts,
+        req,
+      );
+      return Array.isArray(result) ? (result as SubaccountHashratePoint[]) : [];
+    },
     getWorkers(from, to, req) {
       const query = new URLSearchParams({ from, to }).toString();
       return request<WorkersResponse>({ method: 'GET', path: `/api/workers?${query}` }, opts, req);
@@ -370,6 +392,17 @@ export function createDmndClient(options: DmndClientOptions = {}): DmndClient {
         opts,
         req,
       );
+    },
+    async getSubaccountGeneratedBtc(id, token, req) {
+      // Bare array like the main /api/generated_btc; the same non-array collapse guards
+      // against an error body ever reaching the page as if it were data.
+      const q = new URLSearchParams({ token }).toString();
+      const result = await request<unknown>(
+        { method: 'GET', path: `/api/user/sub_account/${encodeURIComponent(id)}/generated_btc?${q}` },
+        opts,
+        req,
+      );
+      return Array.isArray(result) ? (result as GeneratedBtcEntry[]) : [];
     },
     getPermissions(req) {
       return request<AccountPermissions>({ method: 'GET', path: '/api/user/permissions' }, opts, req);
