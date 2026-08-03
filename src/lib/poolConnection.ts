@@ -1,9 +1,32 @@
+export type AppEnv = 'local' | 'staging' | 'production';
+
+const VITE_ENV = (import.meta as { env?: { VITE_APP_ENV?: string; DEV?: boolean } }).env;
+
 /**
- * The pool endpoint a miner points hardware at. Verified from the production
- * dashboard bundle (`proxy.dmnd.work:3456`); the design mock shows a placeholder
- * host instead. Shared by the home connect-workers card and the account setup connect step.
+ * Which deployment this bundle was built for, from the build-time VITE_APP_ENV.
+ * Unset means a dev server (local) or an untagged build, which falls back to staging
+ * for the same reason API_BASE does: dev and review must never hand out production
+ * credentials.
  */
-export const POOL_URL = 'stratum+tcp://proxy.dmnd.work:3456';
+export const APP_ENV: AppEnv = ((): AppEnv => {
+  const raw = VITE_ENV?.VITE_APP_ENV;
+  if (raw === 'local' || raw === 'staging' || raw === 'production') return raw;
+  return VITE_ENV?.DEV ? 'local' : 'staging';
+})();
+
+/**
+ * The pool endpoint a miner points hardware at, per environment. The production host
+ * is verified from the production dashboard bundle; local is the proxy a developer
+ * runs on their own machine. The design mock shows a placeholder host instead.
+ */
+const POOL_URL_BY_ENV: Record<AppEnv, string> = {
+  local: 'stratum+tcp://127.0.0.1:32767',
+  staging: 'stratum+tcp://staging-pool-one.dmnd.work:3456',
+  production: 'stratum+tcp://proxy.dmnd.work:3456',
+};
+
+/** Shared by the home connect-workers card and the account setup connect step. */
+export const POOL_URL = POOL_URL_BY_ENV[APP_ENV];
 
 /** The miner username on DMND is free-form, so this is guidance, not a value. */
 export const POOL_USERNAME_HINT = 'Any value or leave empty';
