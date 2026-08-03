@@ -65,7 +65,8 @@ export function WorkersPage() {
   const [tab, setTab] = useState<WorkersTab>('all');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<WorkerFilter>(EMPTY_WORKER_FILTER);
-  const [sort, setSort] = useState<{ key: WorkerSortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+  // Busiest workers first, then alphabetical within an equal hashrate.
+  const [sort, setSort] = useState<{ key: WorkerSortKey; dir: SortDir }>({ key: 'hashrate', dir: 'desc' });
   const [page, setPage] = useState(1);
   const [connectOpen, setConnectOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());

@@ -11,21 +11,28 @@ export type SortDir = 'asc' | 'desc';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * Last-activity timestamp (ms). The roster carries no dedicated last-seen field
- * (confirmed against the production bundle: only `connected_at` exists), so for an
- * offline worker that's the best proxy for when it was last seen; an online worker
- * is "now". Returns null when unknown. The spec says `connected_at` is a "unix
+ * `connected_at` normalised to ms, or null when absent. The spec says it is a "unix
  * timestamp" but not whether it's seconds or ms, and the production dashboard stores
  * it raw without converting (it doesn't render a relative time), so the unit isn't
  * confirmable without a live worker row. The 1e12 split handles both: a seconds
  * value only reaches 1e12 in the year ~33000, while a ms value has exceeded it since
  * 2001, so below 1e12 is treated as seconds, at or above as milliseconds.
  */
-export function lastSeenMs(worker: Worker, now: number): number | null {
-  if (worker.is_connected) return now;
+export function connectedAtMs(worker: Worker): number | null {
   const at = worker.connected_at;
   if (at == null || !Number.isFinite(at)) return null;
   return at < 1e12 ? at * 1000 : at;
+}
+
+/**
+ * Last-activity timestamp (ms) for time-bucketing an offline worker. The roster
+ * carries no dedicated last-seen field (confirmed against the production bundle:
+ * only `connected_at` exists), so for an offline worker that's the best proxy for
+ * when it was last active; an online worker is "now". Returns null when unknown.
+ */
+export function lastSeenMs(worker: Worker, now: number): number | null {
+  if (worker.is_connected) return now;
+  return connectedAtMs(worker);
 }
 
 /** Online if connected; otherwise offline, escalated to offline_24h past a day. */
@@ -36,14 +43,40 @@ export function classifyWorker(worker: Worker, now: number): WorkerStatus {
   return 'offline';
 }
 
-/** PPLNS unless the worker mines the FPPS scheme (uppercase, for the table badge). */
-export function workerMode(worker: Worker): 'PPLNS' | 'FPPS' {
-  return worker.is_fpps ? 'FPPS' : 'PPLNS';
+/**
+ * Which scheme the worker mines, read from the field the pool filled in: a rate in
+ * `fpps_hashrate` means FPPS, one in `hashrate` means PPLNS. A worker is never both. Null
+ * once a rig goes quiet, because the roster then reports figures in neither scheme and
+ * nothing is left to tell the two apart.
+ */
+export function workerKind(worker: Worker): 'pplns' | 'fpps' | null {
+  if (worker.fpps_hashrate != null) return 'fpps';
+  if (worker.hashrate != null) return 'pplns';
+  return null;
 }
 
-/** Lowercase scheme label for the CSV `kind` column (matches production's export). */
-export function workerKind(worker: Worker): 'pplns' | 'fpps' {
-  return worker.is_fpps ? 'fpps' : 'pplns';
+/** Uppercase scheme label for the table's Mode badge; null when the scheme is unknown. */
+export function workerMode(worker: Worker): 'PPLNS' | 'FPPS' | null {
+  const kind = workerKind(worker);
+  return kind === null ? null : kind === 'fpps' ? 'FPPS' : 'PPLNS';
+}
+
+/**
+ * The worker's hashrate, from whichever scheme's field carries it. `hashrate` is PPLNS
+ * only, so an FPPS worker reads as idle if that field is taken on its own. Null when the
+ * pool sent neither, which is distinct from a reported zero.
+ */
+export function workerHashrate(worker: Worker): number | null {
+  return worker.fpps_hashrate ?? worker.hashrate ?? null;
+}
+
+/**
+ * Whether the worker produced hashes in the pool's most recent 10-minute window. This is
+ * the hashing signal, narrower than `is_connected`: a rig whose telemetry still arrives
+ * but has stopped mining is connected and not hashing.
+ */
+export function isHashing(worker: Worker): boolean {
+  return (workerHashrate(worker) ?? 0) > 0;
 }
 
 /** Accepted+rejected share count across both schemes. */
@@ -66,11 +99,15 @@ function plural(n: number, unit: string): string {
   return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
-/** "Just now" / "42 mins ago" / "1 day 18 hrs ago", matching the Last seen column. */
+/**
+ * The Last seen column: how long ago the pool last heard from the worker ("Just now",
+ * "42 mins ago"). `connected_at` is that moment — it is refreshed by each telemetry
+ * update, not the start of a session — and the pool omits it once a worker drops off,
+ * which is the only thing distinguishing "--" here.
+ */
 export function formatLastSeen(worker: Worker, now: number): string {
-  if (worker.is_connected) return 'Just now';
-  const seen = lastSeenMs(worker, now);
-  if (seen == null) return 'Unknown';
+  const seen = connectedAtMs(worker);
+  if (seen == null) return '--';
   const mins = Math.floor((now - seen) / 60000);
   if (mins < 1) return 'Just now';
   if (mins < 60) return `${plural(mins, 'min')} ago`;
@@ -89,15 +126,14 @@ function pad2(n: number): string {
 
 /**
  * The worker's connection time as "18 Jun 2026, 08:24 UTC" (the details panel's
- * "Connected Since"). Uses the same seconds-vs-ms handling as lastSeenMs; null or
- * unparseable timestamps render "Unknown".
+ * "Connected Since"). The pool sends no timestamp for a worker that is not currently
+ * connected, so its absence means "not connected" and renders "--" rather than "Unknown".
  */
 export function formatConnectedSince(worker: Worker): string {
-  const at = worker.connected_at;
-  if (at == null || !Number.isFinite(at)) return 'Unknown';
-  const ms = at < 1e12 ? at * 1000 : at;
+  const ms = connectedAtMs(worker);
+  if (ms == null) return '--';
   const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return 'Unknown';
+  if (Number.isNaN(d.getTime())) return '--';
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
 }
 
@@ -194,7 +230,9 @@ function rejectionBucket(worker: Worker): WorkerRejectionFilter | null {
 export function applyWorkerFilter(workers: Worker[], filter: WorkerFilter, now: number): Worker[] {
   return workers.filter((w) => {
     if (filter.status.length > 0 && !filter.status.includes(classifyWorker(w, now))) return false;
-    if (filter.mode.length > 0 && !filter.mode.includes(workerMode(w))) return false;
+    // A worker of unknown scheme matches neither bucket, so a set Mode facet excludes it.
+    const mode = workerMode(w);
+    if (filter.mode.length > 0 && (mode === null || !filter.mode.includes(mode))) return false;
     if (filter.rejection !== null && rejectionBucket(w) !== filter.rejection) return false;
     if (filter.accounts.length > 0) {
       const sub = (w as TaggedWorker).subaccount;
@@ -214,10 +252,11 @@ export const STATUS_LABEL: Record<WorkerStatus, string> = {
 /** Lowercased text of every displayed column, so search can match any of them. */
 export function workerSearchText(worker: Worker, now: number): string {
   const rej = workerRejection(worker);
+  const hr = workerHashrate(worker);
   return [
     worker.name,
-    worker.hashrate ? formatHashrate(worker.hashrate) : '',
-    workerMode(worker),
+    hr ? formatHashrate(hr) : '',
+    workerMode(worker) ?? '',
     rej === null ? '' : `${(rej * 100).toFixed(1)}%`,
     STATUS_LABEL[classifyWorker(worker, now)],
     formatLastSeen(worker, now),
@@ -244,7 +283,11 @@ export function searchWorkers(workers: Worker[], query: string, now: number): Wo
   });
 }
 
-/** Stable sort by the chosen column; nulls (e.g. no rejection yet) sort last. */
+/**
+ * Sort by the chosen column, breaking ties on name (always ascending, so the
+ * secondary order doesn't flip with the column's direction). Nulls (e.g. no
+ * rejection yet) sort last.
+ */
 export function sortWorkers(workers: Worker[], key: WorkerSortKey, dir: SortDir): Worker[] {
   const factor = dir === 'asc' ? 1 : -1;
   const value = (w: Worker): number | string => {
@@ -252,11 +295,11 @@ export function sortWorkers(workers: Worker[], key: WorkerSortKey, dir: SortDir)
       case 'name':
         return w.name.toLowerCase();
       case 'hashrate':
-        return w.hashrate ?? 0;
+        return workerHashrate(w) ?? 0;
       case 'rejection':
         return workerRejection(w) ?? -1;
       case 'shares':
-        return (w.total_shares ?? 0) + (w.fpps_total_shares ?? 0);
+        return workerTotalShares(w);
     }
   };
   return [...workers].sort((a, b) => {
@@ -264,6 +307,10 @@ export function sortWorkers(workers: Worker[], key: WorkerSortKey, dir: SortDir)
     const bv = value(b);
     if (av < bv) return -1 * factor;
     if (av > bv) return 1 * factor;
+    const an = a.name.toLowerCase();
+    const bn = b.name.toLowerCase();
+    if (an < bn) return -1;
+    if (an > bn) return 1;
     return 0;
   });
 }
@@ -318,19 +365,24 @@ function numCell(value: number | null | undefined): string {
   return value == null ? '' : String(value);
 }
 
-/** CSV of the given (already filtered/sorted) rows, in the production export schema. */
+/**
+ * CSV of the given (already filtered/sorted) rows, in the production export schema. The
+ * figure columns carry whichever scheme's numbers the worker has, which `kind` names —
+ * taking the PPLNS fields alone would leave every FPPS row's figures blank.
+ */
 export function workersToCsv(workers: Worker[]): string {
-  const rows = workers.map((w) =>
-    [
+  const rows = workers.map((w) => {
+    const fpps = workerKind(w) === 'fpps';
+    return [
       w.name,
-      workerKind(w),
-      numCell(w.hashrate),
-      numCell(w.total_shares),
-      numCell(w.rejected_shares),
+      workerKind(w) ?? '',
+      numCell(workerHashrate(w)),
+      numCell(fpps ? w.fpps_total_shares : w.total_shares),
+      numCell(fpps ? w.fpps_rejected_shares : w.rejected_shares),
       w.is_connected ? 'true' : 'false',
       numCell(w.connected_at),
-    ].map(csvCell),
-  );
+    ].map(csvCell);
+  });
   return [CSV_HEADER.map(csvCell).join(','), ...rows.map((r) => r.join(','))].join('\n');
 }
 
