@@ -113,17 +113,13 @@ export interface SubaccountHashratePoint {
  */
 export interface Worker {
   name: string;
-  /** PPLNS hashrate over the pool's 10-minute window; null when the worker has no PPLNS shares. */
   hashrate: number | null;
   total_shares: number | null;
   rejected_shares: number | null;
-  /** FPPS counterpart of `hashrate`: an FPPS-only worker has this set and `hashrate` null. */
   fpps_hashrate?: number | null;
   fpps_total_shares?: number | null;
   fpps_rejected_shares?: number | null;
-  /** Telemetry arrived inside the pool's 10-minute freshness window. */
   is_connected: boolean;
-  /** Newest telemetry timestamp, not a session start. Omitted while disconnected. */
   connected_at?: number | null;
 }
 

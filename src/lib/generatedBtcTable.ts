@@ -95,7 +95,7 @@ export function filterGeneratedBtc(entries: GeneratedBtcEntry[], filter: Generat
 }
 
 /**
- * BTC for display: clamps to 6 dp and trims float noise + trailing zeros. A missing
+ * BTC for display: clamps to 8 dp and trims float noise + trailing zeros. A missing
  * amount reads as "--", not "0" — the API returns null for a day it has no figure for,
  * and on a money page an unknown amount must never be shown as a confident zero.
  */

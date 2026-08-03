@@ -5,19 +5,15 @@ const VITE_ENV = (import.meta as { env?: { VITE_APP_ENV?: string; DEV?: boolean 
 /**
  * Which deployment this bundle was built for, from the build-time VITE_APP_ENV.
  * Unset means a dev server (local) or an untagged build, which falls back to staging
- * for the same reason API_BASE does: dev and review must never hand out production
- * credentials.
  */
 export const APP_ENV: AppEnv = ((): AppEnv => {
-  const raw = VITE_ENV?.VITE_APP_ENV;
-  if (raw === 'local' || raw === 'staging' || raw === 'production') return raw;
+  const env = VITE_ENV?.VITE_APP_ENV;
+  if (env === 'local' || env === 'staging' || env === 'production') return env;
   return VITE_ENV?.DEV ? 'local' : 'staging';
 })();
 
 /**
- * The pool endpoint a miner points hardware at, per environment. The production host
- * is verified from the production dashboard bundle; local is the proxy a developer
- * runs on their own machine. The design mock shows a placeholder host instead.
+  * The pool URL to connect to, which varies by environment.
  */
 const POOL_URL_BY_ENV: Record<AppEnv, string> = {
   local: 'stratum+tcp://127.0.0.1:32767',

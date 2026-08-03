@@ -25,10 +25,7 @@ export function connectedAtMs(worker: Worker): number | null {
 }
 
 /**
- * Last-activity timestamp (ms) for time-bucketing an offline worker. The roster
- * carries no dedicated last-seen field (confirmed against the production bundle:
- * only `connected_at` exists), so for an offline worker that's the best proxy for
- * when it was last active; an online worker is "now". Returns null when unknown.
+ *  The last-seen time in ms: the connection time if connected. Null when the no `connected_at`.
  */
 export function lastSeenMs(worker: Worker, now: number): number | null {
   if (worker.is_connected) return now;
@@ -62,9 +59,7 @@ export function workerMode(worker: Worker): 'PPLNS' | 'FPPS' | null {
 }
 
 /**
- * The worker's hashrate, from whichever scheme's field carries it. `hashrate` is PPLNS
- * only, so an FPPS worker reads as idle if that field is taken on its own. Null when the
- * pool sent neither, which is distinct from a reported zero.
+  * The worker's FPPS or PPLNS hashrate
  */
 export function workerHashrate(worker: Worker): number | null {
   return worker.fpps_hashrate ?? worker.hashrate ?? null;
@@ -99,12 +94,7 @@ function plural(n: number, unit: string): string {
   return `${n} ${unit}${n === 1 ? '' : 's'}`;
 }
 
-/**
- * The Last seen column: how long ago the pool last heard from the worker ("Just now",
- * "42 mins ago"). `connected_at` is that moment — it is refreshed by each telemetry
- * update, not the start of a session — and the pool omits it once a worker drops off,
- * which is the only thing distinguishing "--" here.
- */
+/** "Just now" / "42 mins ago" / "1 day 18 hrs ago", matching the Last seen column. */
 export function formatLastSeen(worker: Worker, now: number): string {
   const seen = connectedAtMs(worker);
   if (seen == null) return '--';

@@ -56,9 +56,6 @@ function OfflineBanner({ worker, now, severe }: { worker: Worker; now: number; s
  * click, the close button, or Escape. `worker` is always set while open (the page mounts
  * this only for a chosen row).
  *
- * Every figure here comes from the roster snapshot, which covers the pool's most recent
- * 10-minute window and carries no history: there is no uptime to show, and "Shares (24h)"
- * is that window's count rather than a day's.
  */
 export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; now: number; onClose: () => void }) {
   useEffect(() => {

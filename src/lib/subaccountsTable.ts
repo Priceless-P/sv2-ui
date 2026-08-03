@@ -182,7 +182,7 @@ export function applySubaccountFilter(subs: EnrichedSubaccount[], filter: Subacc
   }
 }
 
-/** BTC amount for display: clamps to 6 dp and trims float noise + trailing zeros. */
+/** BTC amount for display: clamps to 8 dp and trims float noise + trailing zeros. */
 export function formatBtc(n: number): string {
   return Number(n.toFixed(BTC_DISPLAY_DP)).toString();
 }

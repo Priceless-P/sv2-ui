@@ -13,7 +13,7 @@ RUN npm ci
 # Copy source
 COPY . .
 
-# Build frontend. VITE_APP_ENV picks which pool proxy URL is baked into the bundle.
+# Build frontend.
 ARG VITE_APP_ENV=staging
 ENV VITE_APP_ENV=$VITE_APP_ENV
 RUN npm run build
