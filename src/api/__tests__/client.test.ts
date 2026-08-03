@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createDmndClient, setDmndAccountId } from '../client';
+import { createUser, setDmndAccountId } from '../client';
 import { DmndApiError } from '../types';
 
 interface Call {
@@ -29,7 +29,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 test('login posts email and password to log_user and returns the session', async () => {
   const session = { token: 'abc', id: '42', email: 'm@x.io', two_factor_secret: null, bitcoin_addresses: {} };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(session));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.login('m@x.io', 'pw');
 
@@ -46,7 +46,7 @@ test('login posts email and password to log_user and returns the session', async
 
 test('a 401 surfaces as an unauthorized error without retrying', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 401 }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0, maxAttempts: 3 });
+  const client = createUser({ fetchImpl, backoffMs: 0, maxAttempts: 3 });
 
   await assert.rejects(
     () => client.login('m@x.io', 'wrong'),
@@ -59,7 +59,7 @@ test('a network failure retries up to the limit then throws a network error', as
   const { fetchImpl, calls } = fakeFetch(() => {
     throw new Error('connection refused');
   });
-  const client = createDmndClient({ fetchImpl, backoffMs: 0, maxAttempts: 3 });
+  const client = createUser({ fetchImpl, backoffMs: 0, maxAttempts: 3 });
 
   await assert.rejects(
     () => client.login('m@x.io', 'pw'),
@@ -70,7 +70,7 @@ test('a network failure retries up to the limit then throws a network error', as
 
 test('resetPassword posts email, code, two_fa_token and new_password (snake_case)', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 200 }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await client.resetPassword('m@x.io', '123456', '654321', 'river-tunnel-9');
 
@@ -86,7 +86,7 @@ test('resetPassword posts email, code, two_fa_token and new_password (snake_case
 
 test('signup posts the full account body, defaulting company fields and referral', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 200 }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await client.signup({ email: 'm@x.io', password: 'longenough', firstName: 'Ada', lastName: 'Lovelace' });
 
@@ -108,7 +108,7 @@ test('signup posts the full account body, defaulting company fields and referral
 test('checkAuth GETs check_auth and returns the session', async () => {
   const session = { token: 'x', id: '42', email: 'm@x.io', two_factor_secret: null };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(session));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.checkAuth();
 
@@ -119,7 +119,7 @@ test('checkAuth GETs check_auth and returns the session', async () => {
 
 test('signup forwards company fields and referral when provided', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 200 }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await client.signup({
     email: 'm@x.io',
@@ -148,7 +148,7 @@ test('signup forwards company fields and referral when provided', async () => {
 test('getSubaccounts GETs user/sub_account, sends X-Account-ID, and returns the list', async () => {
   const rows = [{ sub_account_id: 1, sub_account: 'Main Farm', today_generated_btc: 0.00042 }];
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(rows));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   setDmndAccountId('42');
   try {
     const result = await client.getSubaccounts();
@@ -164,7 +164,7 @@ test('getSubaccounts GETs user/sub_account, sends X-Account-ID, and returns the 
 test('getPermissions GETs user/permissions and returns the flags', async () => {
   const perms = { view_sub_accounts: true, create_sub_account: true, edit_btc_address: false };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(perms));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.getPermissions();
 
@@ -175,7 +175,7 @@ test('getPermissions GETs user/permissions and returns the flags', async () => {
 
 test('createSubaccount POSTs sub_account and bitcoin_address', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 200 }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await client.createSubaccount({ name: 'Warehouse 01', bitcoinAddress: 'bc1qexample' });
 
@@ -190,7 +190,7 @@ test('createSubaccount POSTs sub_account and bitcoin_address', async () => {
 test('logSubaccount POSTs owner_token and subaccount_token and returns the new session', async () => {
   const session = { token: 'sub-tok', id: '7', email: 'm@x.io', two_factor_secret: null };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(session));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.logSubaccount('owner-tok', 'subacct-tok');
 
@@ -206,7 +206,7 @@ test('logSubaccount POSTs owner_token and subaccount_token and returns the new s
 test('getSubaccountSummary GETs the per-subaccount summary with a token and the X-Account-ID header', async () => {
   const body = { sub_account_id: -77, hashrate: null, share_stats: null, fees: null, today_generated_btc: null };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(body));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   setDmndAccountId('42');
   try {
     await client.getSubaccountSummary('-77', 'sub-tok', {});
@@ -221,7 +221,7 @@ test('getSubaccountSummary GETs the per-subaccount summary with a token and the 
 
 test('getSubaccountWorkers GETs the per-subaccount workers with a token', async () => {
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse({ workers: [], next_cursor: null }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await client.getSubaccountWorkers('-77', 'sub-tok');
 
@@ -233,7 +233,7 @@ test('getSubaccountWorkers GETs the per-subaccount workers with a token', async 
 test('getGeneratedBtc GETs the generated_btc list with the X-Account-ID header', async () => {
   const rows = [{ entry_day: '2026-06-21', hashrate: 100, btc_generated: 0.0001 }];
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(rows));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   setDmndAccountId('42');
   try {
     const result = await client.getGeneratedBtc();
@@ -248,7 +248,7 @@ test('getGeneratedBtc GETs the generated_btc list with the X-Account-ID header',
 
 test('getGeneratedBtc collapses a non-array response to an empty list', async () => {
   const { fetchImpl } = fakeFetch(() => jsonResponse({ error: 'nope' }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   assert.deepEqual(await client.getGeneratedBtc(), []);
 });
@@ -267,7 +267,7 @@ test('getWatcherLinks GETs the api-tokens list with the X-Account-ID header', as
     },
   ];
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(rows));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   setDmndAccountId('42');
   try {
     const result = await client.getWatcherLinks();
@@ -282,7 +282,7 @@ test('getWatcherLinks GETs the api-tokens list with the X-Account-ID header', as
 
 test('getWatcherLinks collapses a non-array response to an empty list', async () => {
   const { fetchImpl } = fakeFetch(() => jsonResponse({ error: 'nope' }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   assert.deepEqual(await client.getWatcherLinks(), []);
 });
@@ -290,7 +290,7 @@ test('getWatcherLinks collapses a non-array response to an empty list', async ()
 test('createWatcherLink POSTs the target account and scopes in snake_case', async () => {
   const created = { id: '200', user_id: '-739', token: 'NEW', scopes: ['hashrate_read'] };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(created));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.createWatcherLink({ targetUserId: '-739', scopes: ['hashrate_read'] });
 
@@ -305,7 +305,7 @@ test('createWatcherLink POSTs the target account and scopes in snake_case', asyn
 
 test('revokeWatcherLink DELETEs the link by id', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 200 }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await client.revokeWatcherLink('531');
 
@@ -316,7 +316,7 @@ test('revokeWatcherLink DELETEs the link by id', async () => {
 test('getSubaccountGeneratedBtc GETs the per-subaccount generated-BTC list with a token', async () => {
   const rows = [{ entry_day: '2026-07-08', hashrate: 98, btc_generated: 0.00001274 }];
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(rows));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.getSubaccountGeneratedBtc('-77', 'sub-tok');
 
@@ -328,7 +328,7 @@ test('getSubaccountGeneratedBtc GETs the per-subaccount generated-BTC list with 
 
 test('getSubaccountGeneratedBtc collapses a non-array response to an empty list', async () => {
   const { fetchImpl } = fakeFetch(() => jsonResponse({ error: 'nope' }));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   assert.deepEqual(await client.getSubaccountGeneratedBtc('-77', 'sub-tok'), []);
 });
@@ -341,7 +341,7 @@ test('a 4xx with a server message surfaces it as an unknown error', async () => 
         headers: { 'Content-Type': 'application/json' },
       }),
   );
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   await assert.rejects(
     () => client.login('a@b.co', 'pw'),
@@ -353,7 +353,7 @@ test('brokerLogin posts to broker/log and maps referenceCode', async () => {
   const { fetchImpl, calls } = fakeFetch(() =>
     jsonResponse({ id: 7, email: 'b@x.io', referenceCode: 'RC-1' }),
   );
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.brokerLogin('b@x.io', 'pw');
 
@@ -367,7 +367,7 @@ test('brokerSignup posts a flat body to /api/brokers and normalizes reference_co
   const { fetchImpl, calls } = fakeFetch(() =>
     jsonResponse({ id: '9', email: 'b@x.io', reference_code: 'RC-9' }),
   );
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.brokerSignup({
     email: 'b@x.io',
@@ -395,7 +395,7 @@ test('miner requests send the X-Account-ID header when an account id is set', as
   const { fetchImpl, calls } = fakeFetch(() =>
     jsonResponse({ token: 'x', id: '42', email: 'm@x.io', two_factor_secret: null }),
   );
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   setDmndAccountId('42');
   try {
     await client.checkAuth();
@@ -409,7 +409,7 @@ test('broker requests never send the miner X-Account-ID header', async () => {
   const { fetchImpl, calls } = fakeFetch(() =>
     jsonResponse({ id: 7, email: 'b@x.io', referenceCode: 'RC-1' }),
   );
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   // A miner account id can linger in the same tab; broker calls must ignore it.
   setDmndAccountId('42');
   try {
@@ -433,7 +433,7 @@ test('broker requests never send the miner X-Account-ID header', async () => {
 test('getHashrateHistory GETs the historical endpoint with from/to and returns the points', async () => {
   const points = [{ observed_at: '2026-06-30T00:00:00Z', pplns_hashrate: 1, fpps_hashrate: 2, total_hashrate: 3 }];
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(points));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.getHashrateHistory('2026-06-23T00:00:00.000Z', '2026-06-30T00:00:00.000Z');
 
@@ -446,7 +446,7 @@ test('getHashrateHistory GETs the historical endpoint with from/to and returns t
 
 test('getHashrateHistory collapses a non-array response to an empty series', async () => {
   const { fetchImpl } = fakeFetch(() => jsonResponse(0));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
   assert.deepEqual(await client.getHashrateHistory('a', 'b'), []);
 });
 
@@ -457,7 +457,7 @@ test('getAllWorkers follows next_cursor across pages and concatenates the roster
   ];
   let i = 0;
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(pages[i++]));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const workers = await client.getAllWorkers();
 
@@ -468,10 +468,35 @@ test('getAllWorkers follows next_cursor across pages and concatenates the roster
   assert.deepEqual(workers.map((w) => w.name), ['w1', 'w2']);
 });
 
+test('getAllWorkers keeps paging past 50 pages, stopping only when next_cursor is null', async () => {
+  const TOTAL = 60;
+  let i = 0;
+  const { fetchImpl, calls } = fakeFetch(() => {
+    i += 1;
+    return jsonResponse({ workers: [{ name: `w${i}` }], next_cursor: i < TOTAL ? `c${i}` : null });
+  });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+
+  const workers = await client.getAllWorkers();
+
+  assert.equal(calls.length, TOTAL);
+  assert.equal(workers.length, TOTAL);
+});
+
+test('getAllWorkers stops when the server re-serves a cursor it already gave', async () => {
+  const { fetchImpl, calls } = fakeFetch(() => jsonResponse({ workers: [{ name: 'w' }], next_cursor: 'stuck' }));
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+
+  const workers = await client.getAllWorkers();
+
+  assert.equal(calls.length, 2);
+  assert.equal(workers.length, 2);
+});
+
 test('getPayoutAddresses GETs the payout addresses', async () => {
   const addrs = { fpps_payout_address: 'bc1qfpps', pplns_payout_address: 'bc1qpplns' };
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(addrs));
-  const client = createDmndClient({ fetchImpl, backoffMs: 0 });
+  const client = createUser({ fetchImpl, backoffMs: 0 });
 
   const result = await client.getPayoutAddresses();
 

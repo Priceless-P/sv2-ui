@@ -193,7 +193,7 @@ async function request<T>(
   throw new DmndApiError('Cannot reach DMND API server', 'network');
 }
 
-export function createDmndClient(options: DmndClientOptions = {}): DmndClient {
+export function createUser(options: DmndClientOptions = {}): DmndClient {
   const opts = resolveOptions(options);
   return {
     signup(input: SignupInput, req) {
@@ -345,12 +345,13 @@ export function createDmndClient(options: DmndClientOptions = {}): DmndClient {
       return request<WorkersResponse>({ method: 'GET', path: `/api/workers?${query}` }, opts, req);
     },
     async getAllWorkers(req) {
-      // The roster is paginated (default 200, max 1000). Follow next_cursor so the
-      // home's worker total is the full list, not just the first page; capped to
-      // avoid looping on a misbehaving cursor.
+      // The roster is paginated (default 200, max 1000). Follow next_cursor to the end
+      // so the roster is the full list however large the account is; a repeated or
+      // already-seen cursor means the server is looping and ends the walk.
       const all: Worker[] = [];
+      const seen = new Set<string>();
       let cursor: string | null = null;
-      for (let page = 0; page < 50; page++) {
+      for (;;) {
         const params = new URLSearchParams({ limit: '1000' });
         if (cursor) params.set('cursor', cursor);
         const res = await request<WorkersResponse>(
@@ -359,7 +360,8 @@ export function createDmndClient(options: DmndClientOptions = {}): DmndClient {
           req,
         );
         all.push(...res.workers);
-        if (!res.next_cursor || res.next_cursor === cursor || res.workers.length === 0) break;
+        if (!res.next_cursor || res.workers.length === 0 || seen.has(res.next_cursor)) break;
+        seen.add(res.next_cursor);
         cursor = res.next_cursor;
       }
       return all;
@@ -462,12 +464,12 @@ export function createDmndClient(options: DmndClientOptions = {}): DmndClient {
   };
 }
 
-let activeClient: DmndClient = createDmndClient();
+let activeClient: DmndClient = createUser();
 
 export function setDmndClient(client: DmndClient): void {
   activeClient = client;
 }
 
-export function getDmndClient(): DmndClient {
+export function getUser(): DmndClient {
   return activeClient;
 }
