@@ -3,6 +3,7 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { useAccountAllWorkers, useTodayEarnings } from '@/hooks/useAccountData';
 import { deriveWorkerStats } from '@/lib/workerStats';
 import { classifyWorker } from '@/lib/workersTable';
+import { BTC_DISPLAY_DP } from '@/lib/utils';
 import type { AggregatedStats } from '@/lib/aggregatedStats';
 
 function StatCard({
@@ -32,7 +33,7 @@ function StatCard({
 
 function formatBtc(btc: number): string {
   if (btc === 0) return '0 BTC';
-  return `${btc.toFixed(8).replace(/\.?0+$/, '')} BTC`;
+  return `${btc.toFixed(BTC_DISPLAY_DP).replace(/\.?0+$/, '')} BTC`;
 }
 
 /**

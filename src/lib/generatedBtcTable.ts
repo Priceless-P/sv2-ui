@@ -1,4 +1,5 @@
 import type { GeneratedBtcEntry, Worker } from '@/api/types';
+import { BTC_DISPLAY_DP } from '@/lib/utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -94,13 +95,13 @@ export function filterGeneratedBtc(entries: GeneratedBtcEntry[], filter: Generat
 }
 
 /**
- * BTC for display: clamps to 8 dp and trims float noise + trailing zeros. A missing
+ * BTC for display: clamps to 6 dp and trims float noise + trailing zeros. A missing
  * amount reads as "--", not "0" — the API returns null for a day it has no figure for,
  * and on a money page an unknown amount must never be shown as a confident zero.
  */
 export function formatBtc(n: number | null | undefined): string {
   if (n == null) return '--';
-  return Number(n.toFixed(8)).toString();
+  return Number(n.toFixed(BTC_DISPLAY_DP)).toString();
 }
 
 const CSV_HEADER = 'entry_day,hashrate,btc_generated';

@@ -14,6 +14,12 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Decimal places every BTC amount is shown to. Amounts are rounded to this and then
+ * trimmed of trailing zeros, so the display is "up to" 6 dp rather than padded.
+ */
+export const BTC_DISPLAY_DP = 6;
+
+/**
  * Formats hashrate with appropriate unit (H/s, KH/s, MH/s, GH/s, TH/s, PH/s, EH/s).
  */
 export function formatHashrate(hashrate: number | null): string {
