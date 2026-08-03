@@ -116,11 +116,11 @@ export interface Worker {
   hashrate: number | null;
   total_shares: number | null;
   rejected_shares: number | null;
+  fpps_hashrate?: number | null;
   fpps_total_shares?: number | null;
   fpps_rejected_shares?: number | null;
   is_connected: boolean;
   connected_at?: number | null;
-  is_fpps?: boolean | null;
 }
 
 /** Paginated workers response (verified live: { workers, next_cursor }). */

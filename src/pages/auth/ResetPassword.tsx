@@ -22,7 +22,7 @@ import {
   type ResetPasswordValues,
 } from '@/auth/schemas';
 import { isTwoFactorRequiredError } from '@/auth/resetErrors';
-import { DmndApiError, getDmndClient } from '@/api';
+import { DmndApiError, getUser } from '@/api';
 
 /**
  * Password recovery, one continuous in-app flow: email -> reset token -> new
@@ -115,7 +115,7 @@ function EmailStep({ onBack, onNext }: { onBack: () => void; onNext: (email: str
   const onSubmit = async (values: EmailValues) => {
     setServerError(null);
     try {
-      await getDmndClient().forgotPassword(values.email);
+      await getUser().forgotPassword(values.email);
       toast({ type: 'success', message: 'Password reset link sent.' });
       onNext(values.email);
     } catch (e) {
@@ -233,7 +233,7 @@ function PasswordStep({ email, token, onBack, onDone, onNeedTwoFactor }: Passwor
     // Try-then-ask: submit with no 2FA code; if the backend says 2FA is needed,
     // move to the verify step and resubmit there with the code.
     try {
-      await getDmndClient().resetPassword(email, token, '', values.password);
+      await getUser().resetPassword(email, token, '', values.password);
       onDone();
     } catch (e) {
       if (isTwoFactorRequiredError(e)) {
@@ -298,7 +298,7 @@ function TwoFactorStep({ email, token, newPassword, onBack, onDone }: TwoFactorS
     setSubmitting(true);
     setError(false);
     try {
-      await getDmndClient().resetPassword(email, token, otp, newPassword);
+      await getUser().resetPassword(email, token, otp, newPassword);
       onDone();
     } catch (e) {
       setError(true);

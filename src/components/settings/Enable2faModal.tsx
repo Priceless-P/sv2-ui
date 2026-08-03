@@ -6,7 +6,7 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/auth';
 import { buildOtpAuthUri } from '@/auth/otpauth';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 
 type Phase = 'loading' | 'ready' | 'error';
 
@@ -29,7 +29,7 @@ export function Enable2faModal({ onClose, onEnabled }: { onClose: () => void; on
   useEffect(() => {
     if (ran.current) return; // one-shot even under StrictMode's double-invoke
     ran.current = true;
-    getDmndClient()
+    getUser()
       .checkAuth()
       .then((acc) => {
         // A null secret means 2FA is already active; nothing to enable.
@@ -53,7 +53,7 @@ export function Enable2faModal({ onClose, onEnabled }: { onClose: () => void; on
     if (code.length !== 6 || submitting) return;
     setSubmitting(true);
     try {
-      await getDmndClient().activate2fa(code);
+      await getUser().activate2fa(code);
       toast({ type: 'success', message: 'Two-factor authentication enabled' });
       onEnabled();
       onClose();

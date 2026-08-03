@@ -9,6 +9,7 @@ import {
   formatConnectedSince,
   formatLastSeen,
   formatOfflineDuration,
+  workerHashrate,
   workerMode,
   workerRejection,
   workerRejectedShares,
@@ -30,7 +31,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
  * The offline notice at the top of the panel. Under a day it's a warning (check the
  * rig); over a day it escalates to a destructive tone and warns about payouts, matching
  * the two design variants. Duration is spelled out; if the last-seen time is unknown the
- * lead sentence drops the duration rather than printing a broken string.
+ * lead sentence drops the duration rather than printing a broken string. It reads the same
+ * clock as `severe` so the wording can't contradict the badge above it.
  */
 function OfflineBanner({ worker, now, severe }: { worker: Worker; now: number; severe: boolean }) {
   const dur = formatOfflineDuration(worker, now);
@@ -54,10 +56,6 @@ function OfflineBanner({ worker, now, severe }: { worker: Worker; now: number; s
  * click, the close button, or Escape. `worker` is always set while open (the page mounts
  * this only for a chosen row).
  *
- * Note: Uptime has no backing field in the roster (the API and the production dashboard
- * carry none), so it renders as "--"; the design's percentage/quality pill needs a
- * backend metric that doesn't exist yet. "Shares (24h)" uses the cumulative share count
- * for the same reason (the API exposes no 24h window).
  */
 export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; now: number; onClose: () => void }) {
   useEffect(() => {
@@ -70,6 +68,7 @@ export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; n
 
   const status = classifyWorker(worker, now);
   const rej = workerRejection(worker);
+  const hashrate = workerHashrate(worker);
 
   // Portal out of the page's `space-y-6` wrapper (whose `> * + *` margin was
   // offsetting this fixed overlay) into the themed shell. See overlayContainer.
@@ -109,11 +108,11 @@ export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; n
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Current hashrate">{worker.hashrate ? formatHashrate(worker.hashrate) : '--'}</Field>
-          <Field label="Mode">{workerMode(worker)}</Field>
+          <Field label="Current hashrate">{hashrate ? formatHashrate(hashrate) : '--'}</Field>
+          <Field label="Mode">{workerMode(worker) ?? '--'}</Field>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Shares (24h)">{formatNumber(workerTotalShares(worker))}</Field>
+          <Field label="Shares">{formatNumber(workerTotalShares(worker))}</Field>
           <Field label="Rejected Shares">{formatNumber(workerRejectedShares(worker))}</Field>
         </div>
         <div className="grid grid-cols-2 gap-4">
@@ -121,7 +120,6 @@ export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; n
           <Field label="Last seen">{formatLastSeen(worker, now)}</Field>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Uptime">--</Field>
           <Field label="Connected Since">{formatConnectedSince(worker)}</Field>
         </div>
 

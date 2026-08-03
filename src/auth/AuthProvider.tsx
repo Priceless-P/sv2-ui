@@ -7,7 +7,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { queryClient } from '@/lib/queryClient';
 import { createAuthStore, type AuthStore, type SignOutReason } from './authStore';
 import type { Session } from './session';
@@ -98,7 +98,7 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     if (validatedRef.current) return;
     validatedRef.current = true;
     if (!store.getSnapshot().session) return;
-    getDmndClient()
+    getUser()
       .checkAuth()
       .catch(() => store.signOut('expired'));
   }, [store]);

@@ -1,4 +1,5 @@
 import type { GeneratedBtcEntry, Worker } from '@/api/types';
+import { BTC_DISPLAY_DP } from '@/lib/utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -100,7 +101,7 @@ export function filterGeneratedBtc(entries: GeneratedBtcEntry[], filter: Generat
  */
 export function formatBtc(n: number | null | undefined): string {
   if (n == null) return '--';
-  return Number(n.toFixed(8)).toString();
+  return Number(n.toFixed(BTC_DISPLAY_DP)).toString();
 }
 
 const CSV_HEADER = 'entry_day,hashrate,btc_generated';

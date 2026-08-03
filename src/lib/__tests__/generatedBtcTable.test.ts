@@ -129,10 +129,11 @@ test('formatBtc renders a missing amount as "--" rather than crashing or implyin
   assert.equal(formatBtc(0), '0');
 });
 
-test('formatBtc trims float noise and trailing zeros', () => {
+test('formatBtc trims float noise and trailing zeros, rounding to 8 dp', () => {
   assert.equal(formatBtc(0.001 + 0.0004), '0.0014');
   assert.equal(formatBtc(0), '0');
   assert.equal(formatBtc(0.00001342), '0.00001342');
+  assert.equal(formatBtc(0.000000499), '5e-7');
 });
 
 test('generatedBtcToCsv emits the prod schema header, a row per entry, and guards formula injection', () => {

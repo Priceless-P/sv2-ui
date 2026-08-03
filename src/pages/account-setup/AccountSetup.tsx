@@ -13,7 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/auth';
 import { buildOtpAuthUri } from '@/auth/otpauth';
 import { isTwoFactorRequiredError } from '@/auth/resetErrors';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import type { DmndSession } from '@/api/types';
 import { getBitcoinAddressError } from '@/lib/utils';
 import { POOL_URL, POOL_USERNAME_HINT } from '@/lib/poolConnection';
@@ -51,7 +51,7 @@ export function AccountSetup() {
   useEffect(() => {
     if (ran.current) return; // one-shot, even under StrictMode's double-invoke
     ran.current = true;
-    getDmndClient()
+    getUser()
       .checkAuth()
       .then((acc) => {
         setAccount(acc);
@@ -139,7 +139,7 @@ function Setup2faStep({ secret, email, onDone }: { secret: string; email: string
     if (code.length !== 6 || submitting) return;
     setSubmitting(true);
     try {
-      await getDmndClient().activate2fa(code);
+      await getUser().activate2fa(code);
       onDone();
     } catch (e) {
       setError(true);
@@ -256,7 +256,7 @@ function BitcoinStep({ onDone }: { onDone: () => void }) {
     if (!canSave) return;
     setSubmitting(true);
     try {
-      await getDmndClient().setBitcoinAddress(address, code);
+      await getUser().setBitcoinAddress(address, code);
       toast({ type: 'success', message: 'Bitcoin address saved' });
       onDone();
     } catch (e) {

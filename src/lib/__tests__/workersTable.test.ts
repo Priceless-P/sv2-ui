@@ -7,6 +7,8 @@ import {
   workerRejection,
   workerTotalShares,
   workerRejectedShares,
+  workerHashrate,
+  isHashing,
   formatLastSeen,
   formatConnectedSince,
   formatOfflineDuration,
@@ -29,6 +31,8 @@ const NOW = Date.parse('2026-06-22T12:00:00Z'); // ms, passed as the `now` argum
 const minsAgo = (m: number) => Math.floor((NOW - m * 60000) / 1000);
 const hrsAgo = (h: number) => Math.floor((NOW - h * 3600000) / 1000);
 
+// A PPLNS worker by default: the pool reports a scheme's figures only in that scheme's
+// fields, so `hashrate` set and `fpps_hashrate` absent is what a PPLNS rig looks like.
 function worker(over: Partial<Worker> = {}): Worker {
   return {
     name: 'rig',
@@ -36,9 +40,21 @@ function worker(over: Partial<Worker> = {}): Worker {
     total_shares: 1000,
     rejected_shares: 10,
     is_connected: true,
-    is_fpps: false,
     ...over,
   };
+}
+
+/** The FPPS counterpart: the same rig with its figures in the FPPS fields instead. */
+function fppsWorker(over: Partial<Worker> = {}): Worker {
+  return worker({
+    hashrate: null,
+    total_shares: null,
+    rejected_shares: null,
+    fpps_hashrate: 1e12,
+    fpps_total_shares: 1000,
+    fpps_rejected_shares: 10,
+    ...over,
+  });
 }
 
 test('classifyWorker: connected is online regardless of timestamps', () => {
@@ -54,9 +70,11 @@ test('classifyWorker: offline with no timestamp cannot be escalated', () => {
   assert.equal(classifyWorker(worker({ is_connected: false, connected_at: null }), NOW), 'offline');
 });
 
-test('workerMode reflects the scheme', () => {
-  assert.equal(workerMode(worker({ is_fpps: false })), 'PPLNS');
-  assert.equal(workerMode(worker({ is_fpps: true })), 'FPPS');
+test('workerMode reads the scheme off the field carrying the hashrate', () => {
+  assert.equal(workerMode(worker()), 'PPLNS');
+  assert.equal(workerMode(fppsWorker()), 'FPPS');
+  // A quiet worker has no figures in either scheme, and nothing distinguishes the two.
+  assert.equal(workerMode(worker({ hashrate: null, is_connected: false })), null);
 });
 
 test('workerRejection combines schemes and is null with no shares', () => {
@@ -68,14 +86,22 @@ test('workerRejection combines schemes and is null with no shares', () => {
   assert.equal(workerRejection(worker({ total_shares: 0, rejected_shares: 0, fpps_total_shares: 0 })), null);
 });
 
-test('formatLastSeen renders the buckets the column shows', () => {
-  assert.equal(formatLastSeen(worker({ is_connected: true }), NOW), 'Just now');
-  assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: minsAgo(42) }), NOW), '42 mins ago');
-  assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: minsAgo(1) }), NOW), '1 min ago');
+test('formatLastSeen renders connected_at as a relative time, connected or not', () => {
+  assert.equal(formatLastSeen(worker({ is_connected: true, connected_at: minsAgo(0) }), NOW), 'Just now');
+  assert.equal(formatLastSeen(worker({ is_connected: true, connected_at: minsAgo(1) }), NOW), '1 min ago');
+  assert.equal(formatLastSeen(worker({ is_connected: true, connected_at: minsAgo(42) }), NOW), '42 mins ago');
   assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: hrsAgo(3) }), NOW), '3 hrs ago');
   assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: hrsAgo(42) }), NOW), '1 day 18 hrs ago');
   assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: hrsAgo(48) }), NOW), '2 days ago');
-  assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: null }), NOW), 'Unknown');
+  // a millisecond value (>= 1e12) is handled the same
+  assert.equal(formatLastSeen(worker({ is_connected: true, connected_at: minsAgo(42) * 1000 }), NOW), '42 mins ago');
+});
+
+test('formatLastSeen has nothing to show once the pool stops sending a timestamp', () => {
+  // The pool omits connected_at for a worker that has dropped off, and reports no
+  // disconnect time anywhere, so there is no last-seen moment left to render.
+  assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: null }), NOW), '--');
+  assert.equal(formatLastSeen(worker({ is_connected: false, connected_at: undefined }), NOW), '--');
 });
 
 test('workerTotalShares / workerRejectedShares sum both schemes, treating nulls as zero', () => {
@@ -83,6 +109,23 @@ test('workerTotalShares / workerRejectedShares sum both schemes, treating nulls 
   assert.equal(workerTotalShares(worker({ total_shares: null, fpps_total_shares: null })), 0);
   assert.equal(workerRejectedShares(worker({ rejected_shares: 10, fpps_rejected_shares: 5 })), 15);
   assert.equal(workerRejectedShares(worker({ rejected_shares: null, fpps_rejected_shares: null })), 0);
+});
+
+test('workerHashrate takes the scheme\'s own field and keeps "no data" distinct from zero', () => {
+  assert.equal(workerHashrate(worker({ hashrate: 2e12 })), 2e12);
+  // An FPPS worker reports nothing in `hashrate`; reading that alone shows it idle.
+  assert.equal(workerHashrate(fppsWorker({ fpps_hashrate: 4e12 })), 4e12);
+  assert.equal(workerHashrate(worker({ hashrate: null })), null);
+  assert.equal(workerHashrate(worker({ hashrate: 0 })), 0);
+});
+
+test('isHashing separates producing hashes from merely being reachable', () => {
+  assert.equal(isHashing(worker({ hashrate: 1e12 })), true);
+  assert.equal(isHashing(fppsWorker()), true);
+  // Connected but idle: telemetry still arrives, no hashes landed in the pool's window.
+  assert.equal(isHashing(worker({ is_connected: true, hashrate: 0 })), false);
+  assert.equal(isHashing(fppsWorker({ is_connected: true, fpps_hashrate: 0 })), false);
+  assert.equal(isHashing(worker({ is_connected: false, hashrate: null })), false);
 });
 
 test('formatConnectedSince renders the panel date "18 Jun 2026, 08:24 UTC"', () => {
@@ -93,8 +136,10 @@ test('formatConnectedSince renders the panel date "18 Jun 2026, 08:24 UTC"', () 
   // pads single-digit hour/minute
   const early = Math.floor(Date.parse('2026-01-05T03:07:00Z') / 1000);
   assert.equal(formatConnectedSince(worker({ connected_at: early })), '5 Jan 2026, 03:07 UTC');
-  assert.equal(formatConnectedSince(worker({ connected_at: null })), 'Unknown');
-  assert.equal(formatConnectedSince(worker({ connected_at: undefined })), 'Unknown');
+  // No timestamp means the pool does not consider the worker connected, so the field is
+  // blanked rather than claiming the time is unknown.
+  assert.equal(formatConnectedSince(worker({ connected_at: null })), '--');
+  assert.equal(formatConnectedSince(worker({ connected_at: undefined })), '--');
 });
 
 test('formatOfflineDuration spells out the offline span for the banner (no "ago")', () => {
@@ -150,8 +195,8 @@ test('searchWorkers matches ANY comma-separated term (OR), trimming and ignoring
 
 test('searchWorkers covers all columns, not just the name (mode + status)', () => {
   const roster = [
-    worker({ name: 'S19-Pro-01', is_fpps: false, is_connected: true }),
-    worker({ name: 'Avalon-7', is_fpps: true, is_connected: false, connected_at: hrsAgo(2) }),
+    worker({ name: 'S19-Pro-01', is_connected: true }),
+    fppsWorker({ name: 'Avalon-7', is_connected: false, connected_at: hrsAgo(2) }),
   ];
   assert.equal(searchWorkers(roster, 'fpps', NOW).length, 1); // mode column
   assert.equal(searchWorkers(roster, 'online', NOW).length, 1); // status column ("offline" doesn't contain "online")
@@ -175,6 +220,18 @@ test('sortWorkers orders by key/dir with nulls last on rejection', () => {
   );
   // 'c' has no shares -> rejection null -> sorts first ascending (treated as -1)
   assert.equal(sortWorkers(roster, 'rejection', 'asc')[0]?.name, 'c');
+});
+
+test('sortWorkers breaks ties on name, ascending in either direction', () => {
+  const roster = [worker({ name: 'c', hashrate: 0 }), worker({ name: 'a', hashrate: 0 }), worker({ name: 'b', hashrate: 0 })];
+  assert.deepEqual(
+    sortWorkers(roster, 'hashrate', 'desc').map((w) => w.name),
+    ['a', 'b', 'c'],
+  );
+  assert.deepEqual(
+    sortWorkers(roster, 'hashrate', 'asc').map((w) => w.name),
+    ['a', 'b', 'c'],
+  );
 });
 
 test('paginate clamps the page and slices', () => {
@@ -213,7 +270,7 @@ test('applyWorkerFilter: status multi-select is OR, no facet passes all', () => 
 });
 
 test('applyWorkerFilter: mode multi-select', () => {
-  const roster = [worker({ name: 'p', is_fpps: false }), worker({ name: 'f', is_fpps: true })];
+  const roster = [worker({ name: 'p' }), fppsWorker({ name: 'f' })];
   assert.deepEqual(applyWorkerFilter(roster, { ...EMPTY_WORKER_FILTER, mode: ['PPLNS'] }, NOW).map((w) => w.name), ['p']);
   assert.deepEqual(applyWorkerFilter(roster, { ...EMPTY_WORKER_FILTER, mode: ['PPLNS', 'FPPS'] }, NOW).map((w) => w.name), ['p', 'f']);
 });
@@ -241,9 +298,9 @@ test('applyWorkerFilter: boundaries 1% -> 1to3, 3% -> 1to3', () => {
 
 test('applyWorkerFilter: facets combine with AND', () => {
   const roster = [
-    worker({ name: 'onp', is_connected: true, is_fpps: false }),
-    worker({ name: 'onf', is_connected: true, is_fpps: true }),
-    worker({ name: 'offp', is_connected: false, connected_at: hrsAgo(2), is_fpps: false }),
+    worker({ name: 'onp', is_connected: true }),
+    fppsWorker({ name: 'onf', is_connected: true }),
+    worker({ name: 'offp', is_connected: false, connected_at: hrsAgo(2) }),
   ];
   assert.deepEqual(
     applyWorkerFilter(roster, { ...EMPTY_WORKER_FILTER, status: ['online'], mode: ['PPLNS'] }, NOW).map((w) => w.name),
@@ -280,12 +337,16 @@ test('workersToCsv emits the production raw-schema header even when empty', () =
 
 test('workersToCsv writes raw fields: lowercase kind, true/false, raw numbers, empty for nulls', () => {
   const csv = workersToCsv([
-    worker({ name: 'S19-Pro-01', is_fpps: false, hashrate: 8.9e13, total_shares: 1000, rejected_shares: 2, is_connected: true, connected_at: 1751000000 }),
-    worker({ name: 'Avalon', is_fpps: true, hashrate: null, total_shares: null, rejected_shares: null, is_connected: false, connected_at: null }),
+    worker({ name: 'S19-Pro-01', hashrate: 8.9e13, total_shares: 1000, rejected_shares: 2, is_connected: true, connected_at: 1751000000 }),
+    fppsWorker({ name: 'Avalon', fpps_hashrate: 4.2e13, fpps_total_shares: 500, fpps_rejected_shares: 1, is_connected: true, connected_at: 1751000000 }),
+    worker({ name: 'Quiet', hashrate: null, total_shares: null, rejected_shares: null, is_connected: false, connected_at: null }),
   ]);
   const lines = csv.split('\n');
   assert.equal(lines[1], 'S19-Pro-01,pplns,89000000000000,1000,2,true,1751000000');
-  assert.equal(lines[2], 'Avalon,fpps,,,,false,'); // nulls -> empty cells, fpps kind, false
+  // An FPPS row carries its own scheme's figures rather than blank PPLNS ones.
+  assert.equal(lines[2], 'Avalon,fpps,42000000000000,500,1,true,1751000000');
+  // Nothing reported in either scheme: empty cells, and no kind to claim.
+  assert.equal(lines[3], 'Quiet,,,,,false,');
 });
 
 test('workersToCsv quotes a comma in the name and neutralizes formula injection', () => {

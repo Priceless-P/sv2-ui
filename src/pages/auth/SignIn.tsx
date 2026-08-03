@@ -11,7 +11,7 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
 import { createSession, readNextParam, useAuth } from '@/auth';
 import { signInSchema, type SignInValues } from '@/auth/schemas';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 
 export function SignIn() {
   const { session, signIn } = useAuth();
@@ -36,7 +36,7 @@ export function SignIn() {
 
   const onSubmit = async (values: SignInValues) => {
     try {
-      const account = await getDmndClient().login(values.email, values.password);
+      const account = await getUser().login(values.email, values.password);
       toast({ type: 'success', message: 'Sign in successful' });
       signIn(createSession({ accountId: String(account.id), email: account.email }));
     } catch (e) {

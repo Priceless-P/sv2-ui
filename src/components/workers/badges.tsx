@@ -18,8 +18,12 @@ export function StatusBadge({ status }: { status: WorkerStatus }) {
   );
 }
 
-/** The PPLNS / FPPS scheme pill (neutral outline). */
-export function ModeBadge({ mode }: { mode: 'PPLNS' | 'FPPS' }) {
+/**
+ * The PPLNS / FPPS scheme pill (neutral outline). A worker with no recent figures has no
+ * scheme to name, and gets a plain dash in place of the pill.
+ */
+export function ModeBadge({ mode }: { mode: 'PPLNS' | 'FPPS' | null }) {
+  if (mode === null) return <span className="text-body-alt">-</span>;
   return (
     <span className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium text-body-alt">
       {mode}

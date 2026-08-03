@@ -38,7 +38,7 @@ export function WatcherWorkersSection({
 }) {
   const [tab, setTab] = useState<WorkersTab>('all');
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<{ key: WorkerSortKey; dir: SortDir }>({ key: 'name', dir: 'asc' });
+  const [sort, setSort] = useState<{ key: WorkerSortKey; dir: SortDir }>({ key: 'hashrate', dir: 'desc' });
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState<WorkerFilter>(EMPTY_WORKER_FILTER);
   const [selected, setSelected] = useState<Set<string>>(new Set());

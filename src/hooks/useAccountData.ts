@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { DmndSession, HashrateRange } from '@/api/types';
 import { downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
@@ -25,7 +25,7 @@ export function useAccountHashrate() {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'hashrate'],
-    queryFn: ({ signal }) => getDmndClient().getHashrate({ signal }),
+    queryFn: ({ signal }) => getUser().getHashrate({ signal }),
     enabled: !!session,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -48,7 +48,7 @@ export function useAccountHashrateHistory(range: HashrateRange, custom?: { from:
     queryKey: ['account', 'hashrate-history', key],
     queryFn: async ({ signal }) => {
       const window = custom ?? rangeToWindow(range, Date.now());
-      const points = await getDmndClient().getHashrateHistory(window.from, window.to, { signal });
+      const points = await getUser().getHashrateHistory(window.from, window.to, { signal });
       return downsampleHashrate(points, MAX_CHART_POINTS);
     },
     enabled: !!session,
@@ -69,7 +69,7 @@ export function useAccountProfile() {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'profile'],
-    queryFn: ({ signal }) => getDmndClient().checkAuth({ signal }),
+    queryFn: ({ signal }) => getUser().checkAuth({ signal }),
     enabled: !!session,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -82,7 +82,7 @@ export function useAccountWorkers(from: string, to: string) {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'workers', from, to],
-    queryFn: ({ signal }) => getDmndClient().getWorkers(from, to, { signal }),
+    queryFn: ({ signal }) => getUser().getWorkers(from, to, { signal }),
     enabled: !!session && !!from && !!to,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -111,7 +111,7 @@ export function useAggregatedHashrateHistory(
   return useQuery({
     queryKey: ['account', 'hashrate-history', 'aggregated', key],
     queryFn: async ({ signal }) => {
-      const client = getDmndClient();
+      const client = getUser();
       const owners = subs ?? [];
       const window = custom ?? rangeToWindow(range, Date.now());
       const [mainPoints, subSeries] = await Promise.all([
@@ -143,7 +143,7 @@ export function useAccountShareStats(enabled = true) {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'share-stats'],
-    queryFn: ({ signal }) => getDmndClient().getShareStats({ signal }),
+    queryFn: ({ signal }) => getUser().getShareStats({ signal }),
     enabled: !!session && enabled,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -156,7 +156,7 @@ export function useAccountAllWorkers() {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'workers-all'],
-    queryFn: ({ signal }) => getDmndClient().getAllWorkers({ signal }),
+    queryFn: ({ signal }) => getUser().getAllWorkers({ signal }),
     enabled: !!session,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -195,7 +195,7 @@ export function useTodayEarnings() {
     queryFn: async ({ signal }) => {
       const userAddrs = userBitcoinAddresses(profile);
       if (userAddrs.size === 0) return 0; // no receiving address set -> nothing to receive
-      const payout = await getDmndClient().getPayoutAddresses({ signal });
+      const payout = await getUser().getPayoutAddresses({ signal });
       const wallets = [...new Set([payout.fpps_payout_address, payout.pplns_payout_address].filter(Boolean))];
       if (wallets.length === 0) return 0;
       const since = startOfUtcDaySec(Date.now());

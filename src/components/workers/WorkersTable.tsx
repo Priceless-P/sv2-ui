@@ -5,6 +5,7 @@ import type { Worker } from '@/api/types';
 import {
   classifyWorker,
   formatLastSeen,
+  workerHashrate,
   workerMode,
   workerRejection,
   workerRowId,
@@ -94,6 +95,7 @@ function SortHeader({
  */
 function WorkerCard({ worker, now }: { worker: Worker; now: number }) {
   const rej = workerRejection(worker);
+  const hr = workerHashrate(worker);
   return (
     <div className="flex flex-col border-b border-border px-3 py-2 last:border-0">
       <div className="flex items-center gap-6">
@@ -103,13 +105,11 @@ function WorkerCard({ worker, now }: { worker: Worker; now: number }) {
         </div>
         <div className="flex shrink-0 flex-col">
           <p className="text-xs text-body-alt">Current hashrate</p>
-          <p className="font-mono text-sm text-foreground">
-            {worker.hashrate ? formatHashrate(worker.hashrate) : '--'}
-          </p>
+          <p className="font-mono text-sm text-foreground">{hr ? formatHashrate(hr) : '--'}</p>
         </div>
         <div className="flex shrink-0 flex-col">
           <p className="text-xs text-body-alt">Mode</p>
-          <p className="text-sm text-foreground">{workerMode(worker)}</p>
+          <p className="text-sm text-foreground">{workerMode(worker) ?? '--'}</p>
         </div>
       </div>
       <div className="flex items-center gap-6">
@@ -195,6 +195,7 @@ export function WorkersTable({
             )}
             {workers.map((w) => {
               const rej = workerRejection(w);
+              const hr = workerHashrate(w);
               const rowId = workerRowId(w);
               return (
                 <tr key={rowId} className="border-b border-border last:border-0">
@@ -209,7 +210,7 @@ export function WorkersTable({
                   {showAccount && (
                     <td className="px-4 py-3.5 text-body-alt">{(w as TaggedWorker).subaccount ?? '--'}</td>
                   )}
-                  <td className="px-4 py-3.5 font-mono text-foreground">{w.hashrate ? formatHashrate(w.hashrate) : '--'}</td>
+                  <td className="px-4 py-3.5 font-mono text-foreground">{hr ? formatHashrate(hr) : '--'}</td>
                   <td className="px-4 py-3.5">
                     <ModeBadge mode={workerMode(w)} />
                   </td>
@@ -219,7 +220,9 @@ export function WorkersTable({
                   <td className="px-4 py-3.5">
                     <StatusBadge status={classifyWorker(w, now)} />
                   </td>
-                  <td className="px-4 py-3.5 text-body-alt">{formatLastSeen(w, now)}</td>
+                  <td className="px-4 py-3.5 text-body-alt">
+                    {formatLastSeen(w, now)}
+                  </td>
                   <td className="px-4 py-3.5">
                     <button
                       type="button"

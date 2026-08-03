@@ -11,7 +11,7 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
 import { signInSchema, type SignInValues } from '@/auth/schemas';
 import { createBrokerSession, useBrokerAuth } from '@/auth';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 
 export function BrokerSignIn() {
   const { session, signIn } = useBrokerAuth();
@@ -33,7 +33,7 @@ export function BrokerSignIn() {
 
   const onSubmit = async (values: SignInValues) => {
     try {
-      const broker = await getDmndClient().brokerLogin(values.email, values.password);
+      const broker = await getUser().brokerLogin(values.email, values.password);
       toast({ type: 'success', message: 'Sign in successful' });
       signIn(
         createBrokerSession({

@@ -1,5 +1,6 @@
 import type { Subaccount, SubaccountShareStats, SubaccountSummary, Worker } from '@/api/types';
 import { deriveWorkersPageStats } from '@/lib/workersTable';
+import { BTC_DISPLAY_DP } from '@/lib/utils';
 
 export type SubaccountSortKey = 'name' | 'hashrate' | 'rejection' | 'earnings';
 export type SortDir = 'asc' | 'desc';
@@ -183,7 +184,7 @@ export function applySubaccountFilter(subs: EnrichedSubaccount[], filter: Subacc
 
 /** BTC amount for display: clamps to 8 dp and trims float noise + trailing zeros. */
 export function formatBtc(n: number): string {
-  return Number(n.toFixed(8)).toString();
+  return Number(n.toFixed(BTC_DISPLAY_DP)).toString();
 }
 
 const CSV_HEADER = [

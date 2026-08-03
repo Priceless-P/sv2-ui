@@ -21,7 +21,7 @@ import {
   signUpPasswordSchema,
   type SignUpPasswordValues,
 } from '@/auth/schemas';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 
 /**
  * Signup is two steps on one route: account details, then password. Creating the
@@ -176,7 +176,7 @@ function PasswordStep({
     // Phase 1: create the account. Only signup failures are handled here, so a
     // later step (login/navigation) can never be misreported as a create error.
     try {
-      await getDmndClient().signup({
+      await getUser().signup({
         email: details.email,
         password: values.password,
         firstName: details.firstName,
