@@ -6,7 +6,7 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/auth';
 import { buildOtpAuthUri } from '@/auth/otpauth';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 
 type Phase = 'menu' | 'loading' | 'setup' | 'error';
 
@@ -30,7 +30,7 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
   const startReset = async () => {
     setPhase('loading');
     try {
-      const account = await getDmndClient().newTwoFactor();
+      const account = await getUser().newTwoFactor();
       if (account.two_factor_secret == null) {
         // The reset endpoint should always return a secret; if it doesn't, fail
         // visibly rather than showing an empty QR.
@@ -53,7 +53,7 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
     if (code.length !== 6 || submitting) return;
     setSubmitting(true);
     try {
-      await getDmndClient().activate2fa(code);
+      await getUser().activate2fa(code);
       toast({ type: 'success', message: 'Two-factor authentication updated' });
       onChanged();
       onClose();

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { authErrorMessage } from '@/components/auth/authError';
 import { isTwoFactorRequiredError } from '@/auth/resetErrors';
 import { useToast } from '@/components/ui/toast';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { getBitcoinAddressError } from '@/lib/utils';
 
 type Step = 'address' | 'code';
@@ -42,7 +42,7 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
     if (code.length !== 6 || submitting || !addressValid) return;
     setSubmitting(true);
     try {
-      await getDmndClient().setBitcoinAddress(address, code);
+      await getUser().setBitcoinAddress(address, code);
       toast({ type: 'success', message: 'Bitcoin address saved' });
       onSaved();
       onClose();

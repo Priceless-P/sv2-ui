@@ -21,7 +21,7 @@ import {
   brokerPasswordSchema,
   type BrokerPasswordValues,
 } from '@/auth/schemas';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 
 /**
  * Broker signup is two steps on one route: details, then password. Creating the
@@ -176,7 +176,7 @@ function PasswordStep({
 
   const onSubmit = async (values: BrokerPasswordValues) => {
     try {
-      await getDmndClient().brokerSignup({
+      await getUser().brokerSignup({
         email: details.email,
         password: values.password,
         firstName: details.firstName,

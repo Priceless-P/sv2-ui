@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import { fetchConfirmedTxsSince } from '@/lib/blockstream';
 import {
@@ -28,7 +28,7 @@ const MAX_PAGES = 25;
  */
 async function fetchPayouts(matchAddrs: Set<string>, signal: AbortSignal | undefined): Promise<Payout[]> {
   if (matchAddrs.size === 0) return []; // no receiving address set -> no payouts to show
-  const payout = await getDmndClient().getPayoutAddresses({ signal });
+  const payout = await getUser().getPayoutAddresses({ signal });
   const wallets: { addr: string; mode: 'fpps' | 'pplns' }[] = [];
   if (payout.fpps_payout_address) wallets.push({ addr: payout.fpps_payout_address, mode: 'fpps' });
   if (payout.pplns_payout_address && payout.pplns_payout_address !== payout.fpps_payout_address) {

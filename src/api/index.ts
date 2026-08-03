@@ -8,5 +8,5 @@ export type {
   RequestOptions,
   SignupInput,
 } from './types';
-export { createDmndClient, getDmndClient, setDmndClient, setDmndAccountId } from './client';
+export { createUser, getUser, setDmndClient, setDmndAccountId } from './client';
 export type { DmndClientOptions } from './client';

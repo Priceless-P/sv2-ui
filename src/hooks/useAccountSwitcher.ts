@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { useQueryClient, type QueryKey } from '@tanstack/react-query';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import { isSubaccountRestrictedRoute } from '@/components/dashboard/nav';
 import { useAccountProfile } from './useAccountData';
@@ -67,7 +67,7 @@ export function useAccountSwitcher() {
       setSwitching(true);
       setError(null);
       try {
-        await getDmndClient().logSubaccount(ownerToken, subaccount.token);
+        await getUser().logSubaccount(ownerToken, subaccount.token);
         setViewingAccount(subaccount.id);
         queryClient.removeQueries({ predicate: (q) => !isSubaccountListKey(q.queryKey) });
         // Only ever narrows access, so this is the direction that can strand the miner

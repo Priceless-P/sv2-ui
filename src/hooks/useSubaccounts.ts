@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { CreateSubaccountInput } from '@/api/types';
 import { enrichSubaccount, type EnrichedSubaccount } from '@/lib/subaccountsTable';
@@ -20,7 +20,7 @@ export function useSubaccounts(enabled = true) {
   return useQuery({
     queryKey: ['account', 'subaccounts'],
     queryFn: async ({ signal }): Promise<EnrichedSubaccount[]> => {
-      const client = getDmndClient();
+      const client = getUser();
       const list = await client.getSubaccounts({ signal });
       const now = Date.now();
       return Promise.all(
@@ -52,7 +52,7 @@ export function useSubaccountList() {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'subaccounts', 'list'],
-    queryFn: ({ signal }) => getDmndClient().getSubaccounts({ signal }),
+    queryFn: ({ signal }) => getUser().getSubaccounts({ signal }),
     enabled: !!session,
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
@@ -79,7 +79,7 @@ export function usePermissions() {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'permissions'],
-    queryFn: ({ signal }) => getDmndClient().getPermissions({ signal }),
+    queryFn: ({ signal }) => getUser().getPermissions({ signal }),
     enabled: !!session,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -91,7 +91,7 @@ export function usePermissions() {
 export function useCreateSubaccount() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateSubaccountInput) => getDmndClient().createSubaccount(input),
+    mutationFn: (input: CreateSubaccountInput) => getUser().createSubaccount(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'subaccounts'] }),
   });
 }

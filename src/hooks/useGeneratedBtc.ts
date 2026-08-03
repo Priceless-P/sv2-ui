@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { GeneratedBtcEntry } from '@/api/types';
 import { dedupeGeneratedBtc, sortGeneratedByDateDesc } from '@/lib/generatedBtcTable';
@@ -21,7 +21,7 @@ export function useGeneratedBtc(enabled = true) {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'generated-btc'],
-    queryFn: ({ signal }): Promise<GeneratedBtcEntry[]> => getDmndClient().getGeneratedBtc({ signal }),
+    queryFn: ({ signal }): Promise<GeneratedBtcEntry[]> => getUser().getGeneratedBtc({ signal }),
     enabled: !!session && enabled,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -52,7 +52,7 @@ export function useAggregatedGeneratedBtc(enabled = true) {
   return useQuery({
     queryKey: ['account', 'generated-btc', 'aggregated'],
     queryFn: async ({ signal }): Promise<GeneratedBtcEntry[]> => {
-      const client = getDmndClient();
+      const client = getUser();
       const owners = subs ?? [];
       const [mainRows, subResults] = await Promise.all([
         client.getGeneratedBtc({ signal }),

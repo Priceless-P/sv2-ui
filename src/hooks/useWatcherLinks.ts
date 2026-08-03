@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getDmndClient } from '@/api';
+import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { CreateWatcherLinkInput } from '@/api/types';
 
@@ -12,7 +12,7 @@ export function useWatcherLinks() {
   const { session } = useAuth();
   return useQuery({
     queryKey: ['account', 'watcher-links'],
-    queryFn: ({ signal }) => getDmndClient().getWatcherLinks({ signal }),
+    queryFn: ({ signal }) => getUser().getWatcherLinks({ signal }),
     enabled: !!session,
     staleTime: WATCHER_STALE_MS,
     refetchOnWindowFocus: false,
@@ -28,7 +28,7 @@ export function useWatcherLinks() {
 export function useCreateWatcherLink() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateWatcherLinkInput) => getDmndClient().createWatcherLink(input),
+    mutationFn: (input: CreateWatcherLinkInput) => getUser().createWatcherLink(input),
     retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'watcher-links'] }),
   });
@@ -38,7 +38,7 @@ export function useCreateWatcherLink() {
 export function useRevokeWatcherLink() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => getDmndClient().revokeWatcherLink(id),
+    mutationFn: (id: string) => getUser().revokeWatcherLink(id),
     retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'watcher-links'] }),
   });
