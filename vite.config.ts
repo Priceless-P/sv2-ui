@@ -12,35 +12,8 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  // In development, proxy API requests to backend and monitoring servers
-  server: {
-    proxy: {
-      // Proxy control API requests to sv2-ui backend (port 3001)
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-      },
-      // Proxy requests to JDC monitoring (port 9091)
-      '/jdc-api': {
-        target: 'http://localhost:9091',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/jdc-api/, '/api'),
-      },
-      // Proxy requests to Translator monitoring (port 9092)
-      '/translator-api': {
-        target: 'http://localhost:9092',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/translator-api/, '/api'),
-      },
-      // Keep metrics proxy for direct access
-      '/metrics': {
-        target: 'http://localhost:9092',
-        changeOrigin: true,
-      },
-    },
-  },
   build: {
-    // Output to dist/ which will be embedded in the Rust binary
+    // Output the static frontend bundle served by nginx in production.
     outDir: 'dist',
     // Generate source maps for debugging
     sourcemap: true,

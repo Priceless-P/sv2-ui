@@ -1,194 +1,87 @@
 # SV2 UI
 
-A unified setup wizard and monitoring dashboard for Stratum V2 mining.
+A React dashboard for monitoring DMND mining accounts, workers, payouts, generated BTC, subaccounts, and read-only Watcher links.
 
-## Quick Start (Docker)
-
-```bash
-docker run --rm \
-  --name sv2-ui \
-  -p 8080:8080 \
-  -e HOST_HOME=$HOME \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v sv2-config:/app/data/config \
-  stratumv2/sv2-ui:main
-```
-
-Then open **http://localhost:8080**. On first run, you'll be guided through the setup wizard.
-
-**Flags explained:**
-- `--rm` removes the container on exit so you can re-run without conflicts
-- `-e HOST_HOME=$HOME` is required for JD mode to locate your Bitcoin Core socket
-- `-v /var/run/docker.sock:...` lets sv2-ui manage Translator and JDC containers
-- `-v sv2-config:/app/data/config` persists your configuration across restarts
-
-Stopping with **Ctrl+C** will also stop the Translator and JDC containers automatically.
-
-### macOS (Docker Desktop)
-
-```bash
-docker run --rm --name sv2-ui -p 8080:8080 \
-  -e HOST_HOME=$HOME \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v sv2-config:/app/data/config \
-  stratumv2/sv2-ui:main
-```
-
-### macOS (Colima / OrbStack)
-
-Mount the appropriate Docker socket for your setup:
-
-```bash
-# Colima
-docker run --rm --name sv2-ui -p 8080:8080 \
-  -e HOST_HOME=$HOME \
-  -v $HOME/.colima/default/docker.sock:/var/run/docker.sock \
-  -v sv2-config:/app/data/config \
-  stratumv2/sv2-ui:main
-
-# OrbStack
-docker run --rm --name sv2-ui -p 8080:8080 \
-  -e HOST_HOME=$HOME \
-  -v $HOME/.orbstack/run/docker.sock:/var/run/docker.sock \
-  -v sv2-config:/app/data/config \
-  stratumv2/sv2-ui:main
-```
+The repository contains the frontend only. It calls the DMND API directly; there is no bundled application server.
 
 ## Development
 
+Requirements:
+
+- Node.js 20
+- npm
+
+Install dependencies and start Vite:
+
 ```bash
-# Install dependencies (includes server workspace)
-npm install
-
-# Make sure Docker Desktop / Docker Engine is running
-
-# Start frontend + backend
+npm ci
 npm run dev
 ```
 
-Then open **http://localhost:5173**. On first run, you'll be guided through the setup wizard.
+The application is available at `http://localhost:5173`.
 
-The backend auto-detects common local Docker sockets, including `/var/run/docker.sock` and `~/.docker/run/docker.sock`. To override detection, set `DOCKER_SOCKET_PATH` or `DOCKER_HOST` before starting the server.
+## API configuration
 
-## What It Does
-
-1. **Setup Wizard** - Guides you through configuration
-   - Choose Solo or Pool mining
-   - Choose whether templates come from your own node or from a pool
-   - Select a pool when using pool-provided templates
-   - Set the expected hashrate for initial difficulty tuning
-   - Configure your username/Bitcoin address
-   - For JD mode: select OS, Bitcoin network, and auto-compute the IPC socket path
-   - Bitcoin Core IPC is currently supported on Linux and macOS only; Windows is not supported yet
-
-2. **Docker Orchestration** - Starts and manages containers
-   - Translator Proxy (SV1 to SV2 translation)
-   - JD Client (for custom block templates, optional)
-   - Graceful shutdown: Ctrl+C stops all containers
-
-3. **Monitoring Dashboard** - Real-time stats
-   - Pool connection status (e.g. "Connected to Braiins")
-   - Total hashrate from connected miners
-   - Active workers
-   - Shares to pool
-   - Hashrate history chart
-
-## Deployment Modes
-
-**Pool Mining (No-JD)**
-```
-Pool ← Translator ← SV1 Miners
-```
-
-**Pool Mining with Job Declaration**
-```
-Pool ← JDC ← Translator ← SV1 Miners
-        ↑
-   Bitcoin Core (your node creates block templates)
-```
-
-**Solo Mining**
-```
-Solo Pool ← Translator ← SV1 Miners
-```
-
-**Sovereign Solo Mining**
-```
-Bitcoin Core ← JDC ← Translator ← SV1 Miners
-```
-
-## Supported Pools
-
-| Pool | Mode | Status |
-|------|------|--------|
-| Braiins Pool | Pool (No-JD) | Available |
-| SRI Solo Pool | Pool (JD) / Solo | Testing |
-| Blitzpool | Solo | Available |
-| Sovereign Solo Mining | Solo (JD) | Available |
-
-## Building the Docker Image
+Set `VITE_DMND_API_BASE` to the remote dashboard API origin:
 
 ```bash
-docker build -t sv2-ui:test .
-
-docker run --rm --name sv2-ui -p 8080:8080 \
-  -e HOST_HOME=$HOME \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v sv2-config:/app/data/config \
-  sv2-ui:test
+VITE_DMND_API_BASE=https://dashboard-api.example.com npm run dev
 ```
 
-## Project Structure
+When the variable is not defined, development and review builds default to:
 
+```text
+https://staging-user-dashboard-server.dmnd.work
 ```
+
+The API must allow the frontend origin and credentialed browser requests because authentication uses an HttpOnly session cookie.
+
+## Quality checks
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+## Container build
+
+`Dockerfile.staging` builds the Vite application and serves the static output with nginx. The API URL is a build argument because Vite embeds it in the browser bundle:
+
+```bash
+docker build \
+  -f Dockerfile.staging \
+  --build-arg VITE_DMND_API_BASE=https://dashboard-api.example.com \
+  -t sv2-ui:staging .
+
+docker run --rm -p 8080:80 sv2-ui:staging
+```
+
+Open `http://localhost:8080`.
+
+## Project structure
+
+```text
 sv2-ui/
-├── src/                    # React frontend
-│   ├── components/
-│   │   ├── setup/          # Setup wizard steps
-│   │   ├── settings/       # Settings page components
-│   │   ├── data/           # Dashboard components
-│   │   └── ui/             # Base UI primitives
-│   ├── hooks/              # React hooks
-│   └── pages/              # Page components
-├── server/                 # Node.js backend
-│   └── src/
-│       ├── index.ts        # Express API + graceful shutdown
-│       ├── docker.ts       # Docker orchestration
-│       └── config-generator.ts  # TOML config generation
-├── Dockerfile              # Multi-stage build (with tini for signal handling)
-└── public/                 # Static assets
+├── src/
+│   ├── api/          # Remote DMND API clients and response types
+│   ├── auth/         # Session handling and authentication validation
+│   ├── components/   # Shared interface components
+│   ├── hooks/        # React Query data hooks
+│   ├── lib/          # Data transformation and formatting helpers
+│   └── pages/        # Dashboard and authentication pages
+├── public/           # Static assets
+└── deployment/       # Pulumi deployment projects
 ```
 
-## Docker Images Used
+## Technology
 
-- `stratumv2/translator_sv2:main` - Translator Proxy
-- `stratumv2/jd_client_sv2:main` - JD Client
-
-## Ports
-
-| Port | Service | Description |
-|------|---------|-------------|
-| 8080 | sv2-ui (Docker) | Web UI |
-| 5173 | sv2-ui (dev) | Vite dev server |
-| 3001 | sv2-ui (dev) | Backend API |
-| 34255 | Translator | SV1 miners connect here |
-| 9092 | Translator | Monitoring API |
-| 34265 | JDC | Translator connects here (JD mode) |
-| 9091 | JDC | Monitoring API (JD mode) |
-
-## Tech Stack
-
-- **React 18** + **TypeScript** - Frontend
-- **Vite** - Build tool
-- **Tailwind CSS** - Styling
-- **React Query** - Data fetching
-- **Express** - Backend API
-- **Dockerode** - Docker orchestration
-
-## Related Projects
-
-- [stratum-mining/sv2-apps](https://github.com/stratum-mining/sv2-apps) - Translator, JDC, Pool, JDS
-- [stratum-mining/stratum](https://github.com/stratum-mining/stratum) - SV2 protocol implementation
+- React 18
+- TypeScript
+- Vite
+- TanStack Query
+- Tailwind CSS
 
 ## License
 
