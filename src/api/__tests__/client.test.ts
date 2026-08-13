@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createUser, setDmndAccountId } from '../client';
+import { API_ERROR_MESSAGES } from '../errorMessages';
 import { DmndApiError } from '../types';
 
 interface Call {
@@ -63,9 +64,53 @@ test('a network failure retries up to the limit then throws a network error', as
 
   await assert.rejects(
     () => client.login('m@x.io', 'pw'),
-    (e: unknown) => e instanceof DmndApiError && e.code === 'network',
+    (e: unknown) =>
+      e instanceof DmndApiError &&
+      e.code === 'network' &&
+      e.message === "We couldn't connect. Check your internet connection and try again.",
   );
   assert.equal(calls.length, 3);
+});
+
+test('a dead session cookie reported as a 400 still surfaces as an expired session', async () => {
+  const body = JSON.stringify({ code: 'bad-request', message: 'Unauthorized. User ID cookie not found or invalid.' });
+  const { fetchImpl, calls } = fakeFetch(() => new Response(body, { status: 400 }));
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+
+  await assert.rejects(
+    () => client.checkAuth(),
+    (e: unknown) =>
+      e instanceof DmndApiError && e.code === 'unauthorized' && e.message === API_ERROR_MESSAGES.unauthorized,
+  );
+  assert.equal(calls.length, 1, 'a dead cookie is final, not retried');
+});
+
+test('a rejected referral code reported as a 500 keeps its own message and does not retry', async () => {
+  const body = JSON.stringify({ code: 'internal-error', message: 'Invalid referral code' });
+  const { fetchImpl, calls } = fakeFetch(() => new Response(body, { status: 500 }));
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+
+  await assert.rejects(
+    () => client.signup({ email: 'm@x.io', password: 'pw', firstName: 'Ada', lastName: 'Lovelace', referralCode: 'NOPE' }),
+    (e: unknown) =>
+      e instanceof DmndApiError && e.code === 'other' && e.message === 'Invalid referral code',
+  );
+  assert.equal(calls.length, 1, 'the code cannot become valid on a retry');
+});
+
+test('a 5xx retries and surfaces a user-friendly message without implementation details', async () => {
+  const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 500 }));
+  const client = createUser({ fetchImpl, backoffMs: 0, maxAttempts: 2 });
+
+  await assert.rejects(
+    () => client.login('m@x.io', 'pw'),
+    (e: unknown) =>
+      e instanceof DmndApiError &&
+      e.code === 'server' &&
+      e.message === "We couldn't complete your request right now. Please try again in a moment." &&
+      !/DMND|500|server error/i.test(e.message),
+  );
+  assert.equal(calls.length, 2);
 });
 
 test('resetPassword posts email, code, two_fa_token and new_password (snake_case)', async () => {
@@ -219,7 +264,7 @@ test('getSubaccountSummary GETs the per-subaccount summary with a token and the 
   }
 });
 
-test('getSubaccountWorkers GETs the per-subaccount workers with a token', async () => {
+test('getSubaccountWorkers GETs the per-subaccount live workers endpoint', async () => {
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse({ workers: [], next_cursor: null }));
   const client = createUser({ fetchImpl, backoffMs: 0 });
 
@@ -228,6 +273,27 @@ test('getSubaccountWorkers GETs the per-subaccount workers with a token', async 
   assert.equal(calls[0].init.method, 'GET');
   assert.ok(calls[0].url.includes('/api/user/sub_account/-77/workers'));
   assert.ok(calls[0].url.includes('token=sub-tok'));
+  assert.equal(calls[0].init.credentials, 'include');
+});
+
+test('getSubaccountWorkers follows pagination on the live per-subaccount endpoint', async () => {
+  const first = { name: 'first', hashrate: 1, total_shares: 0, rejected_shares: 0, is_connected: true };
+  const second = { name: 'second', hashrate: 2, total_shares: 0, rejected_shares: 0, is_connected: true };
+  const { fetchImpl, calls } = fakeFetch(({ url }) =>
+    jsonResponse(
+      url.includes('cursor=page-2')
+        ? { workers: [second], next_cursor: null }
+        : { workers: [first], next_cursor: 'page-2' },
+    ),
+  );
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+
+  const result = await client.getSubaccountWorkers('-77', 'sub-tok');
+
+  assert.deepEqual(result, { workers: [first, second], next_cursor: null });
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((call) => call.url.includes('/api/user/sub_account/-77/workers')));
+  assert.ok(calls[1].url.includes('cursor=page-2'));
 });
 
 test('getGeneratedBtc GETs the generated_btc list with the X-Account-ID header', async () => {
@@ -345,7 +411,7 @@ test('a 4xx with a server message surfaces it as an unknown error', async () => 
 
   await assert.rejects(
     () => client.login('a@b.co', 'pw'),
-    (e: unknown) => e instanceof DmndApiError && e.code === 'unknown' && e.message === 'Add another word or two',
+    (e: unknown) => e instanceof DmndApiError && e.code === 'other' && e.message === 'Add another word or two',
   );
 });
 

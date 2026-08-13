@@ -37,6 +37,26 @@ test('getWorkers passes the token in the query and sends NO cookie or account he
   assert.equal(headers['X-Account-ID'], undefined);
 });
 
+test('getWorkers follows pagination until the complete watcher roster is loaded', async () => {
+  const first = { name: 'first', hashrate: 1, total_shares: 0, rejected_shares: 0, is_connected: true };
+  const second = { name: 'second', hashrate: 2, total_shares: 0, rejected_shares: 0, is_connected: true };
+  const { fetchImpl, calls } = fakeFetch(({ url }) =>
+    jsonResponse(
+      url.includes('cursor=page-2')
+        ? { workers: [second], next_cursor: null }
+        : { workers: [first], next_cursor: 'page-2' },
+    ),
+  );
+  const client = createWatcherClient('TOK', { fetchImpl });
+
+  const result = await client.getWorkers();
+
+  assert.deepEqual(result, { workers: [first, second], next_cursor: null });
+  assert.equal(calls.length, 2);
+  assert.ok(calls[1].url.includes('cursor=page-2'));
+  assert.ok(calls[1].url.includes('token=TOK'));
+});
+
 test('getHashrate passes the token and sends no credentials', async () => {
   const { fetchImpl, calls } = fakeFetch(() =>
     jsonResponse({ pplns_hashrate: 1, fpps_hashrate: 2, total_hashrate: 3 }),
@@ -98,6 +118,19 @@ test('a 401 (revoked or wrong token) surfaces as an unauthorized error', async (
   const client = createWatcherClient('BAD', { fetchImpl });
 
   await assert.rejects(() => client.getWorkers(), (e: unknown) => e instanceof Error);
+});
+
+test('a watcher server failure does not expose an HTTP status or implementation detail', async () => {
+  const { fetchImpl } = fakeFetch(() => new Response('', { status: 500 }));
+  const client = createWatcherClient('TOK', { fetchImpl });
+
+  await assert.rejects(
+    () => client.getWorkers(),
+    (e: unknown) =>
+      e instanceof Error &&
+      e.message === "We couldn't load this Watcher view. Please try again in a moment." &&
+      !/500|request failed/i.test(e.message),
+  );
 });
 
 test('a non-array historical response collapses to an empty series', async () => {
