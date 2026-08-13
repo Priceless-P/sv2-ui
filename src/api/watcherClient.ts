@@ -1,4 +1,5 @@
 import { API_BASE } from './client';
+import { API_ERROR_MESSAGES } from './errorMessages';
 import type { GeneratedBtcEntry, HashratePoint, HashrateSnapshot, SubaccountFees, WorkersResponse } from './types';
 
 /**
@@ -31,15 +32,29 @@ export function createWatcherClient(token: string, options: WatcherClientOptions
       throw new Error('This Watcher link is no longer valid.');
     }
     if (!response.ok) {
-      throw new Error(`Watcher request failed (${response.status})`);
+      throw new Error(API_ERROR_MESSAGES.watcher);
     }
     const text = await response.text();
     return (text ? JSON.parse(text) : undefined) as T;
   }
 
   return {
-    getWorkers(signal) {
-      return get<WorkersResponse>('/api/workers/all', { limit: '1000' }, signal);
+    async getWorkers(signal) {
+      const workers: WorkersResponse['workers'] = [];
+      const seen = new Set<string>();
+      let cursor: string | null = null;
+
+      for (;;) {
+        const params: Record<string, string> = { limit: '1000' };
+        if (cursor) params.cursor = cursor;
+        const page = await get<WorkersResponse>('/api/workers/all', params, signal);
+        workers.push(...page.workers);
+        if (!page.next_cursor || page.workers.length === 0 || seen.has(page.next_cursor)) break;
+        seen.add(page.next_cursor);
+        cursor = page.next_cursor;
+      }
+
+      return { workers, next_cursor: null };
     },
     getHashrate(signal) {
       return get<HashrateSnapshot>('/api/user/hashrate', {}, signal);

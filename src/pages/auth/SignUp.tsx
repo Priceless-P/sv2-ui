@@ -11,6 +11,7 @@ import { PasswordField } from '@/components/auth/PasswordField';
 import { PasswordStrengthMeter } from '@/components/auth/PasswordStrengthMeter';
 import { SignupStepper } from '@/components/auth/SignupStepper';
 import { AuthSubmit } from '@/components/auth/AuthSubmit';
+import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
 import { Input } from '@/components/ui/input';
 import { DmndApiError } from '@/api';
@@ -195,8 +196,8 @@ function PasswordStep({
       }
       // Server validation (e.g. a weak password) is surfaced through the meter;
       // anything unrecognised falls back to a generic toast.
-      if (message) setServerPwError(message);
-      else toast({ type: 'error', message: 'Unable to create account. Please try again.' });
+      if (e instanceof DmndApiError && e.code === 'other' && message) setServerPwError(message);
+      else toast({ type: 'error', message: authErrorMessage(e, 'Unable to create account. Please try again.') });
       return;
     }
     // Phase 2: account created. Show the success screen; the user signs in from

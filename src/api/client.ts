@@ -20,6 +20,7 @@ import {
   type Worker,
   type WorkersResponse,
 } from './types';
+import { API_ERROR_MESSAGES } from './errorMessages';
 
 // The DMND dashboard API is called directly: it sets CORS for our origin and
 // allows credentials, so the browser sends the HttpOnly session cookie on every
@@ -145,7 +146,7 @@ async function request<T>(
   let lastError: unknown = null;
 
   for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
-    if (req.signal?.aborted) throw new DmndApiError('Request cancelled', 'network');
+    if (req.signal?.aborted) throw new DmndApiError(API_ERROR_MESSAGES.cancelled, 'network');
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (accountId && !spec.omitAccountId) headers['X-Account-ID'] = accountId;
@@ -154,31 +155,35 @@ async function request<T>(
       const response = await opts.fetchImpl(`${API_BASE}${spec.path}`, {
         method: spec.method,
         headers,
-        // DMND auth is cookie-based; send the session cookie on every call. The
-        // proxy relays the login Set-Cookie back (de-Secured in dev).
+        // Authentication is cookie-based, so direct calls to the configured API
+        // origin must include the HttpOnly session cookie.
         credentials: 'include',
         body: spec.body === undefined ? undefined : JSON.stringify(spec.body),
         signal: combineSignals(spec.timeoutMs ?? opts.requestTimeoutMs, req.signal),
       });
 
       if (response.status === 401 || response.status === 403) {
-        throw new DmndApiError((await readErrorMessage(response)) ?? 'Not authorized', 'unauthorized');
+        throw new DmndApiError((await readErrorMessage(response)) ?? API_ERROR_MESSAGES.unauthorized, 'unauthorized');
+      }
+      const serverMessage = response.ok ? undefined : await readErrorMessage(response);
+      if (response.status === 400 && serverMessage === 'Unauthorized. User ID cookie not found or invalid.') {
+        throw new DmndApiError(API_ERROR_MESSAGES.unauthorized, 'unauthorized');
       }
       if (response.status >= 500) {
-        lastError = new DmndApiError(`DMND server error (${response.status})`, 'server');
+        if (serverMessage === 'Invalid referral code') {
+          throw new DmndApiError("Invalid referral code", 'other');
+        }
+        lastError = new DmndApiError(API_ERROR_MESSAGES.server, 'server');
       } else if (!response.ok) {
         // 4xx with a server message (e.g. weak password) surfaces that message.
-        throw new DmndApiError(
-          (await readErrorMessage(response)) ?? 'Something went wrong. Please try again.',
-          'unknown',
-        );
+        throw new DmndApiError(serverMessage || 'Something went wrong. Please try again.', 'other');
       } else {
         const text = await response.text();
         return (text ? JSON.parse(text) : undefined) as T;
       }
     } catch (err) {
       // Auth and client errors are final; only transient failures retry.
-      if (err instanceof DmndApiError && (err.code === 'unauthorized' || err.code === 'unknown')) {
+      if (err instanceof DmndApiError && (err.code === 'unauthorized' || err.code === 'other')) {
         throw err;
       }
       lastError = err;
@@ -190,7 +195,7 @@ async function request<T>(
   }
 
   if (lastError instanceof DmndApiError) throw lastError;
-  throw new DmndApiError('Cannot reach DMND API server', 'network');
+  throw new DmndApiError(API_ERROR_MESSAGES.network, 'network');
 }
 
 export function createUser(options: DmndClientOptions = {}): DmndClient {
@@ -387,13 +392,27 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
         req,
       );
     },
-    getSubaccountWorkers(id, token, req) {
-      const q = new URLSearchParams({ token }).toString();
-      return request<WorkersResponse>(
-        { method: 'GET', path: `/api/user/sub_account/${encodeURIComponent(id)}/workers?${q}` },
-        opts,
-        req,
-      );
+    async getSubaccountWorkers(id, token, req) {
+      const workers: Worker[] = [];
+      const seen = new Set<string>();
+      let cursor: string | null = null;
+      for (;;) {
+        const params = new URLSearchParams({ token, limit: '1000' });
+        if (cursor) params.set('cursor', cursor);
+        const page = await request<WorkersResponse>(
+          {
+            method: 'GET',
+            path: `/api/user/sub_account/${encodeURIComponent(id)}/workers?${params.toString()}`,
+          },
+          opts,
+          req,
+        );
+        workers.push(...page.workers);
+        if (!page.next_cursor || page.workers.length === 0 || seen.has(page.next_cursor)) break;
+        seen.add(page.next_cursor);
+        cursor = page.next_cursor;
+      }
+      return { workers, next_cursor: null };
     },
     async getSubaccountGeneratedBtc(id, token, req) {
       // Bare array like the main /api/generated_btc; the same non-array collapse guards

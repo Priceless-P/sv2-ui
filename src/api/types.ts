@@ -1,4 +1,4 @@
-export type DmndApiErrorCode = 'unauthorized' | 'network' | 'server' | 'unknown';
+export type DmndApiErrorCode = 'unauthorized' | 'network' | 'server' | 'other';
 
 export class DmndApiError extends Error {
   constructor(
@@ -305,7 +305,7 @@ export interface DmndClient {
   getSubaccounts(req?: RequestOptions): Promise<Subaccount[]>;
   /** Per-subaccount hashrate, share stats, fees, and today's BTC in one response. */
   getSubaccountSummary(id: string, token: string, req?: RequestOptions): Promise<SubaccountSummary>;
-  /** Per-subaccount worker roster; active/offline counts derive from this. */
+  /** Per-subaccount live worker roster. */
   getSubaccountWorkers(id: string, token: string, req?: RequestOptions): Promise<WorkersResponse>;
   /** The subaccount's daily generated-BTC entries; a bare array, empty when none. */
   getSubaccountGeneratedBtc(id: string, token: string, req?: RequestOptions): Promise<GeneratedBtcEntry[]>;

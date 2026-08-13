@@ -119,9 +119,9 @@ function EmailStep({ onBack, onNext }: { onBack: () => void; onNext: (email: str
       toast({ type: 'success', message: 'Password reset link sent.' });
       onNext(values.email);
     } catch (e) {
-      // An unknown email is a 4xx ('unknown'); show the designer's copy. Only
+      // An unknown email is a 4xx ('other'); show the designer's copy. Only
       // connectivity/server faults fall back to the generic message.
-      if (e instanceof DmndApiError && e.code === 'unknown') {
+      if (e instanceof DmndApiError && e.code === 'other') {
         setServerError("This email doesn't have an account");
         toast({ type: 'error', message: "This email doesn't have an account" });
       } else {
