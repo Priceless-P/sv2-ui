@@ -13,6 +13,7 @@ import {
 import { useAccountProfile, userBitcoinAddresses } from '@/hooks/useAccountData';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { subaccountName } from '@/lib/subaccountsTable';
+import { useActiveAccountId } from './useActiveAccountId';
 
 const PAYOUTS_POLL_MS = 15 * 60 * 1000;
 // Cap how far back and how many pages we scan per wallet so a high-volume wallet
@@ -26,9 +27,13 @@ const MAX_PAGES = 25;
  * one row per tx, newest first. Shared by the single-account and aggregated hooks so
  * both scan the pool wallets the same way; only which addresses count differs.
  */
-async function fetchPayouts(matchAddrs: Set<string>, signal: AbortSignal | undefined): Promise<Payout[]> {
+async function fetchPayouts(
+  matchAddrs: Set<string>,
+  signal: AbortSignal | undefined,
+  accountId?: string,
+): Promise<Payout[]> {
   if (matchAddrs.size === 0) return []; // no receiving address set -> no payouts to show
-  const payout = await getUser().getPayoutAddresses({ signal });
+  const payout = await getUser().getPayoutAddresses({ signal, accountId });
   const wallets: { addr: string; mode: 'fpps' | 'pplns' }[] = [];
   if (payout.fpps_payout_address) wallets.push({ addr: payout.fpps_payout_address, mode: 'fpps' });
   if (payout.pplns_payout_address && payout.pplns_payout_address !== payout.fpps_payout_address) {
@@ -53,10 +58,12 @@ async function fetchPayouts(matchAddrs: Set<string>, signal: AbortSignal | undef
  */
 export function usePayouts() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   const { data: profile } = useAccountProfile();
   return useQuery({
-    queryKey: ['account', 'payouts'],
-    queryFn: ({ signal }): Promise<Payout[]> => fetchPayouts(userBitcoinAddresses(profile), signal),
+    queryKey: ['account', 'payouts', accountId],
+    queryFn: ({ signal }): Promise<Payout[]> =>
+      fetchPayouts(userBitcoinAddresses(profile), signal, accountId ?? undefined),
     enabled: !!session && !!profile,
     refetchInterval: PAYOUTS_POLL_MS,
     staleTime: PAYOUTS_POLL_MS,
@@ -75,10 +82,11 @@ export function usePayouts() {
  */
 export function useAggregatedPayouts(enabled = true) {
   const { session } = useAuth();
+  const ownerAccountId = session?.accountId ?? null;
   const { data: profile } = useAccountProfile();
   const { data: subs } = useSubaccountList();
   return useQuery({
-    queryKey: ['account', 'payouts', 'aggregated'],
+    queryKey: ['account', 'payouts', 'aggregated', ownerAccountId],
     queryFn: async ({ signal }): Promise<Payout[]> => {
       const owners: PayoutAccount[] = [
         { name: MAIN_ACCOUNT_LABEL, addresses: userBitcoinAddresses(profile) },
@@ -89,7 +97,7 @@ export function useAggregatedPayouts(enabled = true) {
       ];
       const union = new Set<string>();
       for (const owner of owners) for (const addr of owner.addresses) union.add(addr);
-      const rows = await fetchPayouts(union, signal);
+      const rows = await fetchPayouts(union, signal, ownerAccountId ?? undefined);
       return rows.map((row) => ({ ...row, account: accountForAddress(row.toAddress, owners) ?? undefined }));
     },
     enabled: enabled && !!session && !!profile && subs !== undefined,

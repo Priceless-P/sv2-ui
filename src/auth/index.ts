@@ -14,8 +14,9 @@ export {
   FIXED_TTL_MS,
   IDLE_TTL_MS,
   STORAGE_KEY,
+  viewingAccountFromAuth,
 } from './session';
-export type { Session, CreateSessionInput } from './session';
+export type { Session, CreateSessionInput, KybStatus, ViewingAccountSession } from './session';
 export { readNextParam } from './nextParam';
 export { BrokerAuthProvider, useBrokerAuth } from './BrokerAuthProvider';
 export type { BrokerAuthContextValue } from './BrokerAuthProvider';

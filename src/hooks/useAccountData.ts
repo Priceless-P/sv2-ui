@@ -6,10 +6,9 @@ import { downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
 import { subaccountSeriesToPoints, sumHashrateSeries } from '@/lib/aggregatedHashrate';
 import { useSubaccountList } from './useSubaccounts';
 import { fetchConfirmedTxsSince, startOfUtcDaySec, sumOutputsTo } from '@/lib/blockstream';
+import { useActiveAccountId } from './useActiveAccountId';
 
-// The DMND API server data refreshes every 5 minutes (spec cadence), unlike the
-// 3s local telemetry. The client already retries transient failures, so the
-// queries don't retry on top of it.
+// The UI checks account data every five minutes.
 const CLOUD_POLL_MS = 5 * 60 * 1000;
 
 // The historical series is dense (~one sample every two minutes); cap the points
@@ -23,9 +22,10 @@ const EARNINGS_POLL_MS = 15 * 60 * 1000;
 /** Live hashrate snapshot for the signed-in account (home live-hashrate card). */
 export function useAccountHashrate() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'hashrate'],
-    queryFn: ({ signal }) => getUser().getHashrate({ signal }),
+    queryKey: ['account', 'hashrate', accountId],
+    queryFn: ({ signal }) => getUser().getHashrate({ signal, accountId: accountId ?? undefined }),
     enabled: !!session,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -41,14 +41,18 @@ export function useAccountHashrate() {
  */
 export function useAccountHashrateHistory(range: HashrateRange, custom?: { from: string; to: string } | null) {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   // A custom window is a fixed span, so it does not slide with "now" and its key is
   // the explicit from/to; a preset recomputes its window on each fetch.
   const key = custom ? `custom:${custom.from}:${custom.to}` : range;
   return useQuery({
-    queryKey: ['account', 'hashrate-history', key],
+    queryKey: ['account', 'hashrate-history', key, accountId],
     queryFn: async ({ signal }) => {
       const window = custom ?? rangeToWindow(range, Date.now());
-      const points = await getUser().getHashrateHistory(window.from, window.to, { signal });
+      const points = await getUser().getHashrateHistory(window.from, window.to, {
+        signal,
+        accountId: accountId ?? undefined,
+      });
       return downsampleHashrate(points, MAX_CHART_POINTS);
     },
     enabled: !!session,
@@ -63,15 +67,18 @@ export function useAccountHashrateHistory(range: HashrateRange, custom?: { from:
 /**
  * Full account profile (checkAuth): the pool tokens for the connect-workers card
  * and the 2FA / payout state for the getting-started checklist. These values are
- * stable, so it's fetched once and not polled.
+ * mostly stable. While KYB is under review, refresh it with the rest of the account
+ * data so the status can update without requiring a reload.
  */
 export function useAccountProfile() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'profile'],
-    queryFn: ({ signal }) => getUser().checkAuth({ signal }),
+    queryKey: ['account', 'profile', accountId],
+    queryFn: ({ signal }) => getUser().checkAuth({ signal, accountId: accountId ?? undefined }),
     enabled: !!session,
-    staleTime: Infinity,
+    refetchInterval: (query) => (query.state.data?.kyb_status === 'InReview' ? CLOUD_POLL_MS : false),
+    staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
   });
@@ -80,9 +87,10 @@ export function useAccountProfile() {
 /** Per-worker roster for a date range; used by the workers page. */
 export function useAccountWorkers(from: string, to: string) {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'workers', from, to],
-    queryFn: ({ signal }) => getUser().getWorkers(from, to, { signal }),
+    queryKey: ['account', 'workers', from, to, accountId],
+    queryFn: ({ signal }) => getUser().getWorkers(from, to, { signal, accountId: accountId ?? undefined }),
     enabled: !!session && !!from && !!to,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -91,7 +99,6 @@ export function useAccountWorkers(from: string, to: string) {
   });
 }
 
-/** The full worker roster (every page) for the home's Active / Offline counts. */
 /**
  * The combined hashrate series across the main account and every subaccount, for the
  * chart in aggregated mode. Each account is fetched over the same window and the
@@ -106,20 +113,24 @@ export function useAggregatedHashrateHistory(
   enabled = true,
 ) {
   const { session } = useAuth();
+  const ownerAccountId = session?.accountId ?? null;
   const { data: subs } = useSubaccountList();
   const key = custom ? `custom:${custom.from}:${custom.to}` : range;
   return useQuery({
-    queryKey: ['account', 'hashrate-history', 'aggregated', key],
+    queryKey: ['account', 'hashrate-history', 'aggregated', key, ownerAccountId],
     queryFn: async ({ signal }) => {
       const client = getUser();
       const owners = subs ?? [];
       const window = custom ?? rangeToWindow(range, Date.now());
       const [mainPoints, subSeries] = await Promise.all([
-        client.getHashrateHistory(window.from, window.to, { signal }),
+        client.getHashrateHistory(window.from, window.to, { signal, accountId: ownerAccountId ?? undefined }),
         Promise.all(
           owners.map((s) =>
             client
-              .getSubaccountHashrateHistory(s.id, s.token, window.from, window.to, { signal })
+              .getSubaccountHashrateHistory(s.id, s.token, window.from, window.to, {
+                signal,
+                accountId: ownerAccountId ?? undefined,
+              })
               .then(subaccountSeriesToPoints),
           ),
         ),
@@ -135,15 +146,15 @@ export function useAggregatedHashrateHistory(
 }
 
 /**
- * The account's own 24h share counts. Only fetched for the aggregated roll-up, which
- * needs the main account's accepted/rejected on the same basis as each subaccount's
- * `summary.share_stats` so the combined rejection rate covers one consistent window.
+ * The account's own 24h share counts. The single-account home and aggregated roll-up
+ * both use this endpoint so rejection rate always has the same explicit time window.
  */
 export function useAccountShareStats(enabled = true) {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'share-stats'],
-    queryFn: ({ signal }) => getUser().getShareStats({ signal }),
+    queryKey: ['account', 'share-stats', accountId],
+    queryFn: ({ signal }) => getUser().getShareStats({ signal, accountId: accountId ?? undefined }),
     enabled: !!session && enabled,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -152,11 +163,13 @@ export function useAccountShareStats(enabled = true) {
   });
 }
 
+/** The full worker roster (every page) for the home's Active / Offline counts. */
 export function useAccountAllWorkers() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'workers-all'],
-    queryFn: ({ signal }) => getUser().getAllWorkers({ signal }),
+    queryKey: ['account', 'workers-all', accountId],
+    queryFn: ({ signal }) => getUser().getAllWorkers({ signal, accountId: accountId ?? undefined }),
     enabled: !!session,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -165,16 +178,16 @@ export function useAccountAllWorkers() {
   });
 }
 
-/** The user's own bitcoin (receiving) addresses from the profile (check_auth). */
+/**
+ * All the user's bitcoin addresses
+ */
 export function userBitcoinAddresses(profile: DmndSession | undefined): Set<string> {
-  const out = new Set<string>();
-  const addrs = profile?.bitcoin_addresses;
-  if (Array.isArray(addrs)) {
-    for (const a of addrs) if (typeof a === 'string' && a) out.add(a);
-  } else if (addrs && typeof addrs === 'object') {
-    for (const key of Object.keys(addrs)) if (key) out.add(key);
-  }
-  return out;
+  return new Set(Object.keys(profile?.bitcoin_addresses ?? {}).filter(Boolean));
+}
+
+export function activeBitcoinAddress(profile: DmndSession | undefined): string | null {
+  const active = Object.entries(profile?.bitcoin_addresses ?? {}).find(([address, isActive]) => isActive && address);
+  return active?.[0] ?? null;
 }
 
 /**
@@ -189,13 +202,14 @@ export function userBitcoinAddresses(profile: DmndSession | undefined): Set<stri
  */
 export function useTodayEarnings() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   const { data: profile } = useAccountProfile();
   return useQuery({
-    queryKey: ['account', 'today-earnings'],
+    queryKey: ['account', 'today-earnings', accountId],
     queryFn: async ({ signal }) => {
       const userAddrs = userBitcoinAddresses(profile);
       if (userAddrs.size === 0) return 0; // no receiving address set -> nothing to receive
-      const payout = await getUser().getPayoutAddresses({ signal });
+      const payout = await getUser().getPayoutAddresses({ signal, accountId: accountId ?? undefined });
       const wallets = [...new Set([payout.fpps_payout_address, payout.pplns_payout_address].filter(Boolean))];
       if (wallets.length === 0) return 0;
       const since = startOfUtcDaySec(Date.now());

@@ -149,7 +149,10 @@ async function request<T>(
     if (req.signal?.aborted) throw new DmndApiError(API_ERROR_MESSAGES.cancelled, 'network');
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (accountId && !spec.omitAccountId) headers['X-Account-ID'] = accountId;
+    const requestAccountId = req.accountId ?? accountId;
+    if (requestAccountId && !spec.omitAccountId) {
+      headers['X-Account-ID'] = requestAccountId;
+    }
 
     try {
       const response = await opts.fetchImpl(`${API_BASE}${spec.path}`, {

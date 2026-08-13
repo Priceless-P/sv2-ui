@@ -18,13 +18,10 @@ import type { DmndSession } from '@/api/types';
 import { getBitcoinAddressError } from '@/lib/utils';
 import { POOL_URL, POOL_USERNAME_HINT } from '@/lib/poolConnection';
 import { CredentialRow } from '@/components/home/CredentialRow';
+import { activeBitcoinAddress } from '@/hooks/useAccountData';
 
-/** A payout address counts as set whether the API returns an array or a map. */
 function hasBitcoinAddress(account: DmndSession): boolean {
-  const addrs = account.bitcoin_addresses;
-  if (Array.isArray(addrs)) return addrs.length > 0;
-  if (addrs && typeof addrs === 'object') return Object.keys(addrs).length > 0;
-  return false;
+  return activeBitcoinAddress(account) !== null;
 }
 
 /** A non-null `two_factor_secret` means 2FA is provisioned but not yet activated. */

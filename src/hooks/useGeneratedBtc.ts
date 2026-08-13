@@ -6,9 +6,9 @@ import { dedupeGeneratedBtc, sortGeneratedByDateDesc } from '@/lib/generatedBtcT
 import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { subaccountName } from '@/lib/subaccountsTable';
+import { useActiveAccountId } from './useActiveAccountId';
 
-// Cloud data refreshes every 5 minutes (spec cadence); the client already retries
-// transient failures, so the query doesn't retry on top of it.
+// Daily data is checked every five minutes
 const CLOUD_POLL_MS = 5 * 60 * 1000;
 
 /**
@@ -19,9 +19,11 @@ const CLOUD_POLL_MS = 5 * 60 * 1000;
  */
 export function useGeneratedBtc(enabled = true) {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'generated-btc'],
-    queryFn: ({ signal }): Promise<GeneratedBtcEntry[]> => getUser().getGeneratedBtc({ signal }),
+    queryKey: ['account', 'generated-btc', accountId],
+    queryFn: ({ signal }): Promise<GeneratedBtcEntry[]> =>
+      getUser().getGeneratedBtc({ signal, accountId: accountId ?? undefined }),
     enabled: !!session && enabled,
     refetchInterval: CLOUD_POLL_MS,
     staleTime: CLOUD_POLL_MS,
@@ -48,15 +50,23 @@ export function useGeneratedBtc(enabled = true) {
  */
 export function useAggregatedGeneratedBtc(enabled = true) {
   const { session } = useAuth();
+  const ownerAccountId = session?.accountId ?? null;
   const { data: subs } = useSubaccountList();
   return useQuery({
-    queryKey: ['account', 'generated-btc', 'aggregated'],
+    queryKey: ['account', 'generated-btc', 'aggregated', ownerAccountId],
     queryFn: async ({ signal }): Promise<GeneratedBtcEntry[]> => {
       const client = getUser();
       const owners = subs ?? [];
       const [mainRows, subResults] = await Promise.all([
-        client.getGeneratedBtc({ signal }),
-        Promise.all(owners.map((s) => client.getSubaccountGeneratedBtc(s.id, s.token, { signal }))),
+        client.getGeneratedBtc({ signal, accountId: ownerAccountId ?? undefined }),
+        Promise.all(
+          owners.map((s) =>
+            client.getSubaccountGeneratedBtc(s.id, s.token, {
+              signal,
+              accountId: ownerAccountId ?? undefined,
+            }),
+          ),
+        ),
       ]);
       const tagged: GeneratedBtcEntry[] = [
         ...mainRows.map((r) => ({ ...r, account: MAIN_ACCOUNT_LABEL })),

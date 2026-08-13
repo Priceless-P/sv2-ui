@@ -5,6 +5,8 @@ import {
   clearSession,
   refreshIdle,
   isExpired,
+  isKybStatus,
+  type ViewingAccountSession,
 } from './session';
 import { setDmndAccountId } from '@/api';
 
@@ -14,9 +16,9 @@ export interface AuthState {
   session: Session | null;
   signOutReason: SignOutReason | null;
   // The subaccount currently being viewed via the account switcher, or null for the
-  // master account. Kept in memory only (never written to storage) so a reload always
-  // returns to the master account rather than silently staying scoped to a subaccount.
+  // master account. Stored per tab so refreshing keeps the account the user selected.
   viewingAccountId: string | null;
+  viewingAccount: ViewingAccountSession | null;
 }
 
 export interface AuthStore {
@@ -26,8 +28,10 @@ export interface AuthStore {
   connect: () => void;
   signIn: (session: Session) => void;
   signOut: (reason?: SignOutReason) => void;
-  /** Scope the dashboard to a subaccount (id) or back to the master account (null). */
-  setViewingAccount: (accountId: string | null) => void;
+  /** Refresh display fields from check_auth without resetting account scope or deadlines. */
+  updateSessionProfile: (profile: Pick<Session, 'email' | 'company_name' | 'company_primary_location' | 'kyb_status'>) => void;
+  /** Scope the dashboard to an authenticated subaccount or back to the master. */
+  setViewingAccount: (account: ViewingAccountSession | null) => void;
   bumpActivity: (now?: number) => void;
   checkExpiry: (now?: number) => void;
   tabId: string;
@@ -43,6 +47,7 @@ export interface AuthStoreOptions {
 
 const CHANNEL_NAME = 'dmnd_auth';
 const CLAIM_MSG = 'CLAIM_SESSION';
+const VIEWING_ACCOUNT_KEY = 'dmnd_viewing_account';
 
 interface ClaimMessage {
   type: typeof CLAIM_MSG;
@@ -80,18 +85,56 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
     throw new Error('createAuthStore: no Storage available');
   }
 
+  // A stored selection either matches what log_subaccount returns today or it is
+  // dropped, which simply puts the tab back on the master account.
+  const readViewingAccount = (): ViewingAccountSession | null => {
+    const raw = storage.getItem(VIEWING_ACCOUNT_KEY);
+    if (!raw) return null;
+    try {
+      const value: unknown = JSON.parse(raw);
+      if (typeof value !== 'object' || value === null) return null;
+      const account = value as Record<string, unknown>;
+      if (
+        typeof account.accountId !== 'string' ||
+        !account.accountId ||
+        typeof account.email !== 'string' ||
+        !isKybStatus(account.kyb_status)
+      ) {
+        return null;
+      }
+      return {
+        accountId: account.accountId,
+        email: account.email,
+        company_name: typeof account.company_name === 'string' ? account.company_name : null,
+        company_primary_location:
+          typeof account.company_primary_location === 'string' ? account.company_primary_location : null,
+        kyb_status: account.kyb_status,
+      };
+    } catch {
+      return null;
+    }
+  };
+  const writeViewingAccount = (value: ViewingAccountSession | null) => {
+    if (value) storage.setItem(VIEWING_ACCOUNT_KEY, JSON.stringify(value));
+    else storage.removeItem(VIEWING_ACCOUNT_KEY);
+  };
+
   const listeners = new Set<() => void>();
+  const restoredSession = readSession(storage);
+  if (!restoredSession) writeViewingAccount(null);
+  const restoredViewingAccount = restoredSession ? readViewingAccount() : null;
+  if (restoredViewingAccount) writeViewingAccount(restoredViewingAccount);
+  else writeViewingAccount(null);
   let state: AuthState = {
-    session: readSession(storage),
+    session: restoredSession,
     signOutReason: null,
-    // A restored session always starts on the master account: the view scope is never
-    // persisted, so a reload cannot land the miner inside a subaccount.
-    viewingAccountId: null,
+    viewingAccountId: restoredViewingAccount?.accountId ?? null,
+    viewingAccount: restoredViewingAccount,
   };
   // Keep the cloud client's X-Account-ID in lockstep with the session, set
   // synchronously here (not in a React effect) so a restored session has it
   // before the first authed call fires.
-  setDmndAccountId(state.session?.accountId ?? null);
+  setDmndAccountId(state.viewingAccountId ?? state.session?.accountId ?? null);
 
   const emit = () => {
     for (const l of listeners) l();
@@ -118,7 +161,8 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
     if (!state.session) return;
     if (m.accountId !== state.session.accountId) return;
     clearSession(storage);
-    setState({ session: null, signOutReason: 'duplicate_tab', viewingAccountId: null });
+    writeViewingAccount(null);
+    setState({ session: null, signOutReason: 'duplicate_tab', viewingAccountId: null, viewingAccount: null });
   };
 
   // Best-effort cross-tab claim. The channel can be closed (e.g. a StrictMode
@@ -134,8 +178,10 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
   return {
     tabId,
     connect() {
-      // Subscribe to the cross-tab channel and claim the current session. Run
-      // from a React effect (not the constructor) so a store that is built but
+      // Subscribe to the cross-tab channel. A restored session does not broadcast a
+      // claim: doing so makes a reload race the document being replaced and can clear
+      // its own session. Only an explicit sign-in claims the account in another tab.
+      // Subscribe from a React effect (not the constructor) so a store that is built but
       // never mounted -- e.g. StrictMode double-invoking the useState
       // initializer in dev -- never listens, and so can't clear another
       // instance's session on a refresh.
@@ -143,7 +189,6 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       channel = resolveChannel();
       if (channel) {
         channel.onmessage = (ev: MessageEvent) => handleMessage(ev.data);
-        if (state.session) postClaim(state.session.accountId);
       }
     },
     subscribe(cb) {
@@ -159,18 +204,27 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       // A fresh sign-in always starts on the master account, clearing any stale view
       // scope from a previous session.
       writeSession(session, storage);
-      setState({ session, signOutReason: null, viewingAccountId: null });
+      writeViewingAccount(null);
+      setState({ session, signOutReason: null, viewingAccountId: null, viewingAccount: null });
       postClaim(session.accountId);
     },
     signOut(reason: SignOutReason = 'user') {
       clearSession(storage);
-      setState({ session: null, signOutReason: reason, viewingAccountId: null });
+      writeViewingAccount(null);
+      setState({ session: null, signOutReason: reason, viewingAccountId: null, viewingAccount: null });
     },
-    setViewingAccount(accountId: string | null) {
+    updateSessionProfile(profile) {
+      if (!state.session) return;
+      const session = { ...state.session, ...profile };
+      writeSession(session, storage);
+      setState({ ...state, session });
+    },
+    setViewingAccount(account: ViewingAccountSession | null) {
       if (!state.session) return;
       // Only re-scope the view; the master session is untouched, so switching back is
       // just clearing this to null.
-      setState({ ...state, viewingAccountId: accountId });
+      writeViewingAccount(account);
+      setState({ ...state, viewingAccountId: account?.accountId ?? null, viewingAccount: account });
     },
     bumpActivity(now?: number) {
       if (!state.session) return;
@@ -184,7 +238,8 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       if (!state.session) return;
       if (isExpired(state.session, now)) {
         clearSession(storage);
-        setState({ session: null, signOutReason: 'expired', viewingAccountId: null });
+        writeViewingAccount(null);
+        setState({ session: null, signOutReason: 'expired', viewingAccountId: null, viewingAccount: null });
       }
     },
     teardown() {

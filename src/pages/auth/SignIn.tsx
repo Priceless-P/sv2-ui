@@ -38,7 +38,15 @@ export function SignIn() {
     try {
       const account = await getUser().login(values.email, values.password);
       toast({ type: 'success', message: 'Sign in successful' });
-      signIn(createSession({ accountId: String(account.id), email: account.email }));
+      signIn(
+        createSession({
+          accountId: String(account.id),
+          email: account.email,
+          company_name: account.company_name,
+          company_primary_location: account.company_primary_location,
+          kyb_status: account.kyb_status,
+        }),
+      );
     } catch (e) {
       toast({ type: 'error', message: authErrorMessage(e, 'Incorrect email or password.') });
     }

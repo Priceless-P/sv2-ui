@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { CreateWatcherLinkInput } from '@/api/types';
+import { useActiveAccountId } from './useActiveAccountId';
 
 // Watcher links change only when the user creates or revokes one, so they are not
 // polled; the mutations invalidate the list instead.
@@ -10,9 +11,10 @@ const WATCHER_STALE_MS = 60 * 1000;
 /** The account's watcher links (GET /api/api-tokens), newest-first ordering left to the page. */
 export function useWatcherLinks() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'watcher-links'],
-    queryFn: ({ signal }) => getUser().getWatcherLinks({ signal }),
+    queryKey: ['account', 'watcher-links', accountId],
+    queryFn: ({ signal }) => getUser().getWatcherLinks({ signal, accountId: accountId ?? undefined }),
     enabled: !!session,
     staleTime: WATCHER_STALE_MS,
     refetchOnWindowFocus: false,
