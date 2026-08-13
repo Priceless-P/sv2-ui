@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { GripVertical } from 'lucide-react';
 import { LiTuning4, LiRouting2 } from 'solar-icon-react/li';
 import { LiveHashrateCard } from '@/components/home/LiveHashrateCard';
+import { KybNotice } from '@/components/home/KybNotice';
 import { ConnectWorkersCard } from '@/components/home/ConnectWorkersCard';
 import { WorkerStatCards } from '@/components/home/WorkerStatCards';
 import { MiningPerformanceChart } from '@/components/home/MiningPerformanceChart';
@@ -260,6 +261,8 @@ export function DashboardHome() {
           {panelOpen && <CustomizeDashboardPanel layout={layout} onToggle={toggle} onReset={reset} />}
         </div>
       </header>
+
+      <KybNotice />
 
       {/* The design separates the header from the body by 16px and the body rows by 8px. */}
       <div className="space-y-2">{rendered}</div>

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
 import { LiCheckCircle, LiAltArrowDown, LiAltArrowUp, LiCloseCircle } from 'solar-icon-react/li';
-import { useAccountAllWorkers, useAccountProfile } from '@/hooks/useAccountData';
+import { activeBitcoinAddress, useAccountAllWorkers, useAccountProfile } from '@/hooks/useAccountData';
 import { cn } from '@/lib/utils';
 import type { DmndSession } from '@/api/types';
 
@@ -10,10 +10,7 @@ import type { DmndSession } from '@/api/types';
 const DISMISS_KEY = 'dmnd.gettingStarted.dismissed';
 
 function hasBitcoinAddress(account: DmndSession | undefined): boolean {
-  const addrs = account?.bitcoin_addresses;
-  if (Array.isArray(addrs)) return addrs.length > 0;
-  if (addrs && typeof addrs === 'object') return Object.keys(addrs).length > 0;
-  return false;
+  return activeBitcoinAddress(account) !== null;
 }
 
 /**

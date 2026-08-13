@@ -12,25 +12,28 @@ export class DmndApiError extends Error {
 
 export interface RequestOptions {
   signal?: AbortSignal;
+  accountId?: string;
 }
 
 /**
  * The user/session object returned by /api/log_user (verified live). `token` is
  * the SV2 pool credential and the auth carrier; `api_token` is for the public
- * API. The remaining fields model the full login response; only `token`, `id`,
- * and `email` are used today.
+ * API. The remaining fields model the full login response.
  */
 export interface DmndSession {
   token: string;
   /** Account id; sent back as X-Account-ID on authed calls. Always present in real responses. */
   id: string;
   email: string;
+  company_name: string | null;
+  company_primary_location: string | null;
+  kyb_status: 'NotStarted' | 'InReview' | 'Approved' | 'Rejected';
   two_factor_secret: string | null;
-  bitcoin_addresses?: Record<string, unknown> | string[];
+  bitcoin_addresses: Record<string, boolean>;
   language?: string;
   active?: boolean;
-  api_token?: string;
-  fpps_token?: string;
+  api_token?: string | null;
+  fpps_token?: string | null;
   selling_hash_rate?: boolean;
 }
 

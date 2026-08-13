@@ -1,38 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useLocation } from 'wouter';
-import { useQueryClient, type QueryKey } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { getUser } from '@/api';
-import { useAuth } from '@/auth';
+import { useAuth, viewingAccountFromAuth } from '@/auth';
 import { isSubaccountRestrictedRoute } from '@/components/dashboard/nav';
-import { useAccountProfile } from './useAccountData';
 
-// The subaccount list belongs to the master account, not to whichever account is
-// currently being viewed -- `getSubaccounts()` returns an empty list once
-// authenticated as a subaccount (verified live), so this entry must survive a switch
-// or the account switcher and the aggregated-mode gating (useHasSubaccounts) would
-// both read "no subaccounts" the moment a miner drills into one, with no way back
-// except a reload.
-const SUBACCOUNT_LIST_KEY = ['account', 'subaccounts', 'list'];
+// The subaccount list belongs to the master and is required to keep the switcher
+// usable while a subaccount is selected.
+function isMasterSubaccountListKey(key: QueryKey): boolean {
+  return key[0] === 'account' && key[1] === 'subaccounts' && key[2] === 'list';
+}
 
-function isSubaccountListKey(key: QueryKey): boolean {
-  return key.length === SUBACCOUNT_LIST_KEY.length && key.every((part, i) => part === SUBACCOUNT_LIST_KEY[i]);
+function shouldClearOnAccountSwitch(key: QueryKey, masterAccountId: string): boolean {
+  const isMasterProfile = key[0] === 'account' && key[1] === 'profile' && key[2] === masterAccountId;
+  return key[0] === 'account' && !isMasterSubaccountListKey(key) && !isMasterProfile;
 }
 
 /**
  * Switching which account the dashboard reads. Selecting a subaccount issues a
  * subaccount session first (the pool scopes reads by that cookie plus the account
  * header), then points the client at it; returning to the main account just drops the
- * override, since the master session was never replaced. Every OTHER cached query is
- * cleared on each switch so one account's figures can never render under another's
- * name; the subaccount list is the one exception (see SUBACCOUNT_LIST_KEY).
+ * override, since the master session was never replaced. Account-specific queries are cleared after each switch so
+ * prior-account results cannot remain on screen.
  */
 export function useAccountSwitcher() {
   const { session, viewingAccountId, setViewingAccount } = useAuth();
-  // The master account's own token, which the pool requires to issue a subaccount
-  // session. It comes from the account profile, not the browser session (which only
-  // tracks the account id and expiry).
-  const { data: profile } = useAccountProfile();
   const queryClient = useQueryClient();
+  // Always read the owner's profile using the owner's cookie, even after a refresh
+  // inside a subaccount. This keeps direct subaccount-to-subaccount switching working.
+  const { data: ownerProfile } = useQuery({
+    queryKey: ['account', 'profile', session?.accountId ?? null],
+    queryFn: ({ signal }) => getUser().checkAuth({ signal, accountId: session?.accountId }),
+    enabled: !!session,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
   const [location, navigate] = useLocation();
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,22 +47,12 @@ export function useAccountSwitcher() {
     if (isSubaccountRestrictedRoute(location)) navigate('/home');
   }, [location, navigate]);
 
-  // Remember the master account's token while it is the one on screen. Switching
-  // re-reads the profile as the subaccount, so without this the next switch would
-  // send a subaccount's token where the pool expects the owner's.
-  const ownerTokenRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (viewingAccountId === null && profile?.token) {
-      ownerTokenRef.current = profile.token;
-    }
-  }, [viewingAccountId, profile?.token]);
-
   const switchToSubaccount = useCallback(
     async (subaccount: { id: string; token: string }) => {
       // Ignore a second pick while one is in flight, so two rapid clicks cannot leave
       // the client pointed at one account while the cache holds another's data.
       if (!session || switching) return;
-      const ownerToken = ownerTokenRef.current;
+      const ownerToken = ownerProfile?.token;
       if (!ownerToken) {
         setError("Couldn't open that subaccount");
         return;
@@ -67,9 +60,18 @@ export function useAccountSwitcher() {
       setSwitching(true);
       setError(null);
       try {
-        await getUser().logSubaccount(ownerToken, subaccount.token);
-        setViewingAccount(subaccount.id);
-        queryClient.removeQueries({ predicate: (q) => !isSubaccountListKey(q.queryKey) });
+        const account = await getUser().logSubaccount(ownerToken, subaccount.token, {
+          accountId: session.accountId,
+        });
+        const viewingAccount = viewingAccountFromAuth(account);
+        // log_subaccount is the authentication source of truth. Its AuthResponse.id
+        // names the cookie that normal account routes must select; the list row id is
+        // only the requested target and is deliberately not used for request scope.
+        queryClient.removeQueries({
+          predicate: (query) => shouldClearOnAccountSwitch(query.queryKey, session.accountId),
+        });
+        queryClient.setQueryData(['account', 'profile', viewingAccount.accountId], account);
+        setViewingAccount(viewingAccount);
         // Only ever narrows access, so this is the direction that can strand the miner
         // on a page the subaccount is not allowed to open.
         leaveRestrictedRoute();
@@ -81,13 +83,16 @@ export function useAccountSwitcher() {
         setSwitching(false);
       }
     },
-    [session, switching, setViewingAccount, queryClient, leaveRestrictedRoute],
+    [session, switching, ownerProfile?.token, setViewingAccount, queryClient, leaveRestrictedRoute],
   );
 
   const switchToMain = useCallback(() => {
+    if (!session) return;
+    queryClient.removeQueries({
+      predicate: (query) => shouldClearOnAccountSwitch(query.queryKey, session.accountId),
+    });
     setViewingAccount(null);
-    queryClient.removeQueries({ predicate: (q) => !isSubaccountListKey(q.queryKey) });
-  }, [setViewingAccount, queryClient]);
+  }, [session, setViewingAccount, queryClient]);
 
   return { viewingAccountId, switching, error, switchToSubaccount, switchToMain };
 }

@@ -10,7 +10,8 @@ import {
 import { getUser } from '@/api';
 import { queryClient } from '@/lib/queryClient';
 import { createAuthStore, type AuthStore, type SignOutReason } from './authStore';
-import type { Session } from './session';
+import { viewingAccountFromAuth, type Session, type ViewingAccountSession } from './session';
+import { shouldEndSessionAfterValidation } from './sessionValidation';
 
 export type AuthStatus = 'authenticated' | 'anonymous';
 
@@ -20,9 +21,11 @@ export interface AuthContextValue {
   status: AuthStatus;
   /** The subaccount being viewed via the switcher, or null for the master account. */
   viewingAccountId: string | null;
+  /** AuthResponse-derived identity for the selected subaccount. */
+  viewingAccount: ViewingAccountSession | null;
   signIn: (session: Session) => void;
   signOut: (reason?: SignOutReason) => void;
-  setViewingAccount: (accountId: string | null) => void;
+  setViewingAccount: (account: ViewingAccountSession | null) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -76,11 +79,10 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     };
   }, [store]);
 
-  // Drop all cached account data when the account signs out (user logout, idle
-  // expiry, or a duplicate-tab claim) or switches. Otherwise the previous account's
-  // figures -- payouts, hashrate, subaccount earnings -- linger in the query cache
-  // and could be shown to the next account on a shared browser. Keyed on the account
-  // id so it fires on the transition, not on every idle-activity session bump.
+  // Drop all cached account data when the master session changes or signs out. Queries
+  // within a session are keyed by the active account id, so master/subaccount switches
+  // remain isolated without discarding useful cached data. Keyed on the master id so
+  // this does not run on every idle-activity session bump.
   const accountId = state.session?.accountId ?? null;
   const prevAccountIdRef = useRef(accountId);
   useEffect(() => {
@@ -97,10 +99,61 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
   useEffect(() => {
     if (validatedRef.current) return;
     validatedRef.current = true;
-    if (!store.getSnapshot().session) return;
+    const restored = store.getSnapshot().session;
+    if (!restored) return;
+    const restoredViewing = store.getSnapshot().viewingAccount;
+    const stillValidatingRestoredSession = () => {
+      const current = store.getSnapshot().session;
+      return current?.accountId === restored.accountId && current.expiresAt === restored.expiresAt;
+    };
     getUser()
-      .checkAuth()
-      .catch(() => store.signOut('expired'));
+      .checkAuth({ accountId: restored.accountId })
+      .then((account) => {
+        if (!stillValidatingRestoredSession()) return;
+        store.updateSessionProfile({
+          email: account.email,
+          company_name: account.company_name,
+          company_primary_location: account.company_primary_location,
+          kyb_status: account.kyb_status,
+        });
+      })
+      .catch((error: unknown) => {
+        // A temporary network or service failure should leave the local session intact;
+        // only an explicit authentication rejection proves that it has expired.
+        if (stillValidatingRestoredSession() && shouldEndSessionAfterValidation(error)) {
+          store.signOut('expired');
+        }
+      });
+
+    if (restoredViewing) {
+      getUser()
+        .checkAuth({ accountId: restoredViewing.accountId })
+        .then((account) => {
+          const current = store.getSnapshot();
+          if (
+            current.session?.accountId !== restored.accountId ||
+            current.session.expiresAt !== restored.expiresAt ||
+            current.viewingAccountId !== restoredViewing.accountId
+          ) {
+            return;
+          }
+          queryClient.setQueryData(['account', 'profile', String(account.id)], account);
+          store.setViewingAccount(viewingAccountFromAuth(account));
+        })
+        .catch((error: unknown) => {
+          const current = store.getSnapshot();
+          if (
+            current.session?.accountId === restored.accountId &&
+            current.session.expiresAt === restored.expiresAt &&
+            current.viewingAccountId === restoredViewing.accountId &&
+            shouldEndSessionAfterValidation(error)
+          ) {
+            // The master login is still valid; only the selected subaccount cookie is
+            // gone, so return to main instead of logging the user out entirely.
+            store.setViewingAccount(null);
+          }
+        });
+    }
   }, [store]);
 
   const value = useMemo<AuthContextValue>(
@@ -109,6 +162,7 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
       signOutReason: state.signOutReason,
       status: state.session ? 'authenticated' : 'anonymous',
       viewingAccountId: state.viewingAccountId,
+      viewingAccount: state.viewingAccount,
       signIn: store.signIn,
       signOut: store.signOut,
       setViewingAccount: store.setViewingAccount,

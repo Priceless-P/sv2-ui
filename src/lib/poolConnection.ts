@@ -16,9 +16,9 @@ export const APP_ENV: AppEnv = ((): AppEnv => {
   * The pool URL to connect to, which varies by environment.
  */
 const POOL_URL_BY_ENV: Record<AppEnv, string> = {
-  local: 'stratum+tcp://127.0.0.1:32767',
-  staging: 'stratum+tcp://staging-pool-one.dmnd.work:3456',
-  production: 'stratum+tcp://proxy.dmnd.work:3456',
+  local: 'stratum+tcp://127.0.0.1:32768',
+  staging: 'stratum+tcp://staging-pool-one.dmnd.work:32768',
+  production: 'stratum+tcp://proxy-mining.dmnd.work:32768',
 };
 
 /** Shared by the home connect-workers card and the account setup connect step. */

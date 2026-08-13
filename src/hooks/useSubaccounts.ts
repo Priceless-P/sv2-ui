@@ -3,9 +3,9 @@ import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { CreateSubaccountInput } from '@/api/types';
 import { enrichSubaccount, type EnrichedSubaccount } from '@/lib/subaccountsTable';
+import { useActiveAccountId } from './useActiveAccountId';
 
-// Cloud data refreshes every 5 minutes (spec cadence); the client already retries
-// transient failures, so the queries don't retry on top of it.
+// The UI checks every five minutes
 const CLOUD_POLL_MS = 5 * 60 * 1000;
 
 /**
@@ -17,18 +17,20 @@ const CLOUD_POLL_MS = 5 * 60 * 1000;
  */
 export function useSubaccounts(enabled = true) {
   const { session } = useAuth();
+  const ownerAccountId = session?.accountId ?? null;
   return useQuery({
-    queryKey: ['account', 'subaccounts'],
+    queryKey: ['account', 'subaccounts', ownerAccountId],
     queryFn: async ({ signal }): Promise<EnrichedSubaccount[]> => {
       const client = getUser();
-      const list = await client.getSubaccounts({ signal });
+      const requestOptions = { signal, accountId: ownerAccountId ?? undefined };
+      const list = await client.getSubaccounts(requestOptions);
       const now = Date.now();
       return Promise.all(
         list.map(async (row) => {
           const token = row.token ?? '';
           const [summary, workersRes] = await Promise.all([
-            client.getSubaccountSummary(row.id, token, { signal }),
-            client.getSubaccountWorkers(row.id, token, { signal }),
+            client.getSubaccountSummary(row.id, token, requestOptions),
+            client.getSubaccountWorkers(row.id, token, requestOptions),
           ]);
           return enrichSubaccount(row, summary, workersRes.workers, now);
         }),
@@ -50,9 +52,11 @@ export function useSubaccounts(enabled = true) {
  */
 export function useSubaccountList() {
   const { session } = useAuth();
+  const ownerAccountId = session?.accountId ?? null;
   return useQuery({
-    queryKey: ['account', 'subaccounts', 'list'],
-    queryFn: ({ signal }) => getUser().getSubaccounts({ signal }),
+    queryKey: ['account', 'subaccounts', 'list', ownerAccountId],
+    queryFn: ({ signal }) =>
+      getUser().getSubaccounts({ signal, accountId: ownerAccountId ?? undefined }),
     enabled: !!session,
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
@@ -77,9 +81,10 @@ export function useHasSubaccounts() {
  */
 export function usePermissions() {
   const { session } = useAuth();
+  const accountId = useActiveAccountId();
   return useQuery({
-    queryKey: ['account', 'permissions'],
-    queryFn: ({ signal }) => getUser().getPermissions({ signal }),
+    queryKey: ['account', 'permissions', accountId],
+    queryFn: ({ signal }) => getUser().getPermissions({ signal, accountId: accountId ?? undefined }),
     enabled: !!session,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
