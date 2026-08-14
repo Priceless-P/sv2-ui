@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Subaccount, WatcherLink, WatcherScope } from '@/api/types';
+import type { Subaccount, SubaccountFees, WatcherLink, WatcherScope } from '@/api/types';
 import {
   ALL_WATCHER_SCOPES,
   scopeLabel,
@@ -18,6 +18,7 @@ import {
   formatWatcherDateTime,
   formatLastUpdated,
   formatFeePercent,
+  totalPoolFee,
   watcherSearchText,
   searchWatcherLinks,
   sortWatcherLinksByCreatedDesc,
@@ -225,6 +226,13 @@ test('formatFeePercent renders the rate verbatim to two decimals (the API sends 
   assert.equal(formatFeePercent(0), '0.00');
   assert.equal(formatFeePercent(1.2), '1.20'); // always two decimals
   assert.equal(formatFeePercent(Number.NaN), '0.00'); // a malformed response can't show "NaN%"
+});
+
+test('totalPoolFee sums the pool and broker parts into the one rate the viewer pays', () => {
+  assert.equal(totalPoolFee({ pool_fee: 2, broker_fee: 0.5 } as SubaccountFees), 2.5);
+  assert.equal(totalPoolFee({ pool_fee: 2, broker_fee: 0 } as SubaccountFees), 2);
+  // a malformed rate counts as zero rather than poisoning the total with NaN
+  assert.equal(totalPoolFee({ pool_fee: Number.NaN, broker_fee: 1.5 } as SubaccountFees), 1.5);
 });
 
 // exercises the exported scope type through a value

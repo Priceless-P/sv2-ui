@@ -5,6 +5,8 @@ import type { HashratePoint, HashrateRange } from '@/api/types';
 import { downsampleHashrate } from '@/lib/hashrateHistory';
 import { Calendar } from '@/components/payouts/Calendar';
 import type { CustomWindow } from '@/hooks/useWatcherView';
+import { InfoHint } from '@/components/ui/InfoHint';
+import { HASHRATE_HISTORY_HINT } from '@/lib/metricWindows';
 
 const RANGES: HashrateRange[] = ['1H', '6H', '24H', '7D'];
 
@@ -49,7 +51,10 @@ export function WatcherPerformanceChart({
   return (
     <div className="border-[0.5px] border-border bg-card p-4 lg:p-8">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-heading">Mining Performance</h3>
+        <span className="inline-flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-heading">Mining Performance</h3>
+          <InfoHint text={HASHRATE_HISTORY_HINT} />
+        </span>
         <div className="flex gap-1 rounded-lg border border-border p-0.5">
           {RANGES.map((r) => (
             <button

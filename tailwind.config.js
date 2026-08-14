@@ -116,17 +116,12 @@ export default {
       },
       fontFamily: {
         // The DMND surfaces set Geist for body and Radio Canada Big for headings.
-        // Utilities are needed because the raw CSS rule only covers h1-h3.
+        // Utilities are needed for semantic headings rendered in the body face and
+        // numeric readouts rendered in the heading face.
         body: ['Geist Variable', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
         heading: ['Radio Canada Big Variable', 'Geist Variable', 'sans-serif'],
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
         mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
-        /* The design sets several card titles in the body face even though they are
-           semantic headings, which the .dmnd-app heading rule would otherwise override. */
-        body: ['Geist Variable', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
-        /* Big numeric readouts are set in the heading face even though they are not
-           heading elements, so they need an explicit utility. */
-        heading: ['Radio Canada Big Variable', 'Geist Variable', 'sans-serif'],
       },
       letterSpacing: {
         heading: '-0.025em',
