@@ -64,6 +64,7 @@ function WatcherViewInner({ token }: { token: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [chosen, setChosen] = useState<WatcherSection | null>(null);
+  const [noticeOpen, setNoticeOpen] = useState(true);
 
   const hashrate = useWatcherHashrate(token);
   const history = useWatcherHashrateHistory(token, range, custom);
@@ -109,28 +110,28 @@ function WatcherViewInner({ token }: { token: string }) {
       {/* The Info Prompt banner (warning variant), matching the design's top strip.
           Mobile is a separate drawn variant: the copy drops a size and the Close
           control moves below the text, indented to line up with it. */}
-      <div className="flex shrink-0 flex-col bg-toast-warning px-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6">
-        <div className="flex min-w-0 flex-1 items-start gap-1">
-          {/* The icon sits 2px low so it lines up with the title's cap height. */}
-          <BdEye className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-          <div className="flex min-w-0 flex-col">
-            <p className="text-sm font-bold leading-5 text-foreground">Watcher View</p>
-            <p className="text-xs leading-4 text-foreground sm:text-sm sm:leading-5">
-              {sections.length > 0 ? `Read-only access to ${joinNouns(sections)} data` : 'Read-only access'}
-            </p>
+      {noticeOpen && (
+        <div className="flex shrink-0 flex-col bg-toast-warning px-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6">
+          <div className="flex min-w-0 flex-1 items-start gap-1">
+            {/* The icon sits 2px low so it lines up with the title's cap height. */}
+            <BdEye className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+            <div className="flex min-w-0 flex-col">
+              <p className="text-sm font-bold leading-5 text-foreground">Watcher View</p>
+              <p className="text-xs leading-4 text-foreground sm:text-sm sm:leading-5">
+                {sections.length > 0 ? `Read-only access to ${joinNouns(sections)} data` : 'Read-only access'}
+              </p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setNoticeOpen(false)}
+            aria-label="Dismiss watcher notice"
+            className="ml-6 mt-1 self-start text-xs font-semibold leading-5 text-foreground transition-opacity hover:opacity-70 sm:ml-0 sm:mt-0 sm:self-auto"
+          >
+            Close
+          </button>
         </div>
-        {/* A watcher has no account here, so this closes the view rather than sending
-            them to sign in. Browsers only honour close() for script-opened tabs, so a
-            directly-opened link stays put instead of navigating somewhere useless. */}
-        <button
-          type="button"
-          onClick={() => window.close()}
-          className="ml-6 mt-1 self-start text-xs font-semibold leading-5 text-foreground transition-opacity hover:opacity-70 sm:ml-0 sm:mt-0 sm:self-auto"
-        >
-          Close
-        </button>
-      </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <aside className="hidden lg:block">
@@ -234,7 +235,7 @@ function WatcherViewInner({ token }: { token: string }) {
                 <section className="space-y-6">
                   <div>
                     <h1 className="text-xl font-semibold text-heading">Fees</h1>
-                    <p className="mt-1 text-sm text-body-alt">View the current pool and broker fees for this account.</p>
+                    <p className="mt-1 text-sm text-body-alt">View the current pool fee for this account.</p>
                   </div>
                   <WatcherFeesSection
                     fees={fees.data ?? null}

@@ -98,6 +98,18 @@ function NavRow({
   // The active nav icon is the filled (bold-duotone) glyph; custom icons
   // without a duotone variant fall back to their single form.
   const Icon = active && item.iconActive ? item.iconActive : item.icon;
+  if (item.image && !collapsed) {
+    return (
+      <a
+        href={item.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="-mx-2 block rounded-sm px-0 py-2 hover:bg-muted"
+      >
+        <img src={item.image} alt={item.label} className="h-auto w-full dark:invert dark:hue-rotate-180" />
+      </a>
+    );
+  }
   const row = (
     <span
       className={cn(
@@ -112,6 +124,20 @@ function NavRow({
       {!collapsed && <span className="flex-1">{item.label}</span>}
     </span>
   );
+  if (item.external) {
+    const link = (
+      <a href={item.href} target="_blank" rel="noopener noreferrer" className="block">
+        {row}
+      </a>
+    );
+    return collapsed ? (
+      <TooltipPill label={item.label} side="right" emphasis>
+        {link}
+      </TooltipPill>
+    ) : (
+      link
+    );
+  }
   return (
     <Link href={item.href} onClick={onNavigate}>
       {/* Collapsed hides the label, so the design reveals it in the tooltip pill

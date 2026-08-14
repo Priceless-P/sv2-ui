@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'wouter';
 import { LiDangerTriangle } from 'solar-icon-react/li';
 import { parseMultiwatcherPath, modeLabel } from '@/lib/multiwatcher';
@@ -14,6 +15,7 @@ export function MultiwatcherView({ rest }: { rest: string }) {
   // Public page: apply the viewer's saved theme (default light) rather than staying on
   // the dark class index.html ships with.
   useAppliedTheme();
+  const [noticeOpen, setNoticeOpen] = useState(true);
   const segments = rest.split('/').filter(Boolean).map(decodeURIComponent);
   const parsed = parseMultiwatcherPath(segments);
   if (!parsed) return <MultiwatcherInvalid />;
@@ -24,25 +26,25 @@ export function MultiwatcherView({ rest }: { rest: string }) {
 
   return (
     <div className="dmnd-app min-h-screen bg-background">
-      <div className="flex items-center justify-between gap-4 bg-warning/10 px-4 py-3 sm:px-8">
-        <div className="flex items-center gap-2">
-          <LiDangerTriangle className="h-5 w-5 shrink-0 text-warning" />
-          <div>
-            <p className="text-sm font-semibold text-foreground">Multiwatcher View</p>
-            <p className="text-xs text-body-alt">Read-only access to {modeLabel(mode)} across {entries.length} account{entries.length === 1 ? '' : 's'}.</p>
+      {noticeOpen && (
+        <div className="flex items-center justify-between gap-4 bg-warning/10 px-4 py-3 sm:px-8">
+          <div className="flex items-center gap-2">
+            <LiDangerTriangle className="h-5 w-5 shrink-0 text-warning" />
+            <div>
+              <p className="text-sm font-semibold text-foreground">Multiwatcher View</p>
+              <p className="text-xs text-body-alt">Read-only access to {modeLabel(mode)} across {entries.length} account{entries.length === 1 ? '' : 's'}.</p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setNoticeOpen(false)}
+            aria-label="Dismiss multiwatcher notice"
+            className="text-sm font-medium text-body-alt transition-colors hover:text-foreground"
+          >
+            Close
+          </button>
         </div>
-        {/* A watcher has no account here, so this closes the view rather than sending
-            them to sign in. Browsers only honour close() for script-opened tabs, so a
-            directly-opened link stays put instead of navigating somewhere useless. */}
-        <button
-          type="button"
-          onClick={() => window.close()}
-          className="text-sm font-medium text-body-alt transition-colors hover:text-foreground"
-        >
-          Close
-        </button>
-      </div>
+      )}
 
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-8">
         {entries.map((e) => (

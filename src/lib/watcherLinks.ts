@@ -1,4 +1,4 @@
-import type { Subaccount, WatcherLink, WatcherScope } from '@/api/types';
+import type { Subaccount, SubaccountFees, WatcherLink, WatcherScope } from '@/api/types';
 import { truncateMiddle } from '@/lib/payoutsTable';
 
 /** Every scope the API accepts, in the order the permission picker lists them. */
@@ -24,7 +24,7 @@ export const SCOPE_DESCRIPTIONS: Record<WatcherScope, string> = {
   workers_read: 'Live worker roster, miner count and share counts per worker.',
   earnings_read: 'Daily generated BTC for FPPS earnings.',
   rejects_read: 'Aggregate accepted and rejected share counts.',
-  fees_read: 'Pool fee and broker fee percentages.',
+  fees_read: 'The pool fee percentage charged on this account.',
 };
 
 /** Display label for one scope. */
@@ -143,6 +143,14 @@ export function formatLastUpdated(observed: string | undefined, now: number): st
  */
 export function formatFeePercent(rate: number): string {
   return (Number.isFinite(rate) ? rate : 0).toFixed(2);
+}
+
+/**
+ * Pool fee plus broker fee, to show the total charged on each account.
+ */
+export function totalPoolFee(fees: SubaccountFees): number {
+  const part = (rate: number) => (Number.isFinite(rate) ? rate : 0);
+  return part(fees.pool_fee) + part(fees.broker_fee);
 }
 
 /** Everything shown for a link, lowercased, so search covers every displayed column. */

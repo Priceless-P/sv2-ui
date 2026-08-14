@@ -1,7 +1,8 @@
-import { LiQuestionCircle } from 'solar-icon-react/li';
 import type { HashrateSnapshot } from '@/api/types';
 import { formatHashrate } from '@/lib/utils';
 import { formatLastUpdated } from '@/lib/watcherLinks';
+import { InfoHint } from '@/components/ui/InfoHint';
+import { LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
 
 const PPLNS_COLOR = '#2b7fff';
 const FPPS_COLOR = '#e67c2a';
@@ -13,7 +14,7 @@ function SchemeStat({ color, label, hint, value }: { color: string; label: strin
       <span className="flex items-center gap-2">
         <span className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: color }} />
         <span className="text-sm text-body-alt">{label}</span>
-        <LiQuestionCircle className="h-4 w-4 text-placeholder" aria-label={hint} />
+        <InfoHint text={hint} />
       </span>
       <p className="font-mono text-2xl text-foreground">
         {formatHashrate(value)}
@@ -63,9 +64,9 @@ export function WatcherHashratePanel({
       <p className="mt-4 font-mono text-3xl font-semibold text-heading">{formatHashrate(total)}</p>
 
       <div className="mt-5 flex items-center justify-between border-t border-border pt-5">
-        <SchemeStat color={PPLNS_COLOR} label="PPLNS" hint="Hashrate mining under the PPLNS scheme." value={pplns} />
+        <SchemeStat color={PPLNS_COLOR} label="PPLNS" hint={LIVE_HASHRATE_HINT} value={pplns} />
         <div className="h-14 w-px bg-border" />
-        <SchemeStat color={FPPS_COLOR} label="FPPS" hint="Hashrate mining under the FPPS scheme." value={fpps} />
+        <SchemeStat color={FPPS_COLOR} label="FPPS" hint={LIVE_HASHRATE_HINT} value={fpps} />
       </div>
     </div>
   );

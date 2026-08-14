@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'wouter';
-import { LiHamburgerMenu, LiQuestionCircle, LiBell, LiAltArrowDown, LiSettingsMinimalistic, LiLogout3 } from 'solar-icon-react/li';
+import { LiHamburgerMenu, LiQuestionCircle, LiAltArrowDown, LiSettingsMinimalistic, LiLogout3 } from 'solar-icon-react/li';
 import { ThemeToggle } from '@/components/auth/ThemeToggle';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/auth';
@@ -64,13 +64,13 @@ export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
         >
           <LiQuestionCircle className="h-4 w-4" />
         </Link>
-        <button
+        {/* <button
           type="button"
           aria-label="Notifications"
           className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-body-alt transition-colors hover:text-foreground"
         >
           <LiBell className="h-4 w-4" />
-        </button>
+        </button> */}
         <ThemeToggle />
 
         <div className="relative">

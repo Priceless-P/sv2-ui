@@ -1,11 +1,27 @@
 import type { ComponentType } from 'react';
-import { LiHomeAngle, LiLayersMinimalistic, LiWallet, LiKeyMinimalistic, LiSettingsMinimalistic } from 'solar-icon-react/li';
-import { BdHomeAngle, BdLayersMinimalistic, BdWallet, BdKeyMinimalistic, BdSettingsMinimalistic } from 'solar-icon-react/bd';
+import {
+  LiHomeAngle,
+  LiLayersMinimalistic,
+  LiWallet,
+  LiKeyMinimalistic,
+  LiSettingsMinimalistic,
+  LiShieldCheck,
+} from 'solar-icon-react/li';
+import {
+  BdHomeAngle,
+  BdLayersMinimalistic,
+  BdWallet,
+  BdKeyMinimalistic,
+  BdSettingsMinimalistic,
+  BdShieldCheck,
+} from 'solar-icon-react/bd';
 import { MiningIcon } from './icons/MiningIcon';
 import { NodeHardwareIcon } from './icons/NodeHardwareIcon';
 import { BitcoinCircleIcon } from './icons/BitcoinCircleIcon';
 
 type IconComp = ComponentType<{ className?: string }>;
+
+const TRUST_CENTER_URL = 'https://app.eu.vanta.com/dmnd.work/trust/4u48n4nf8yiwi9swpqjsf';
 
 export interface NavItem {
   /** Resting glyph: a solar outline icon, or a custom DMND glyph. */
@@ -19,6 +35,11 @@ export interface NavItem {
    * parent has no page of its own, so `href` is only used as a stable key.
    */
   children?: NavItem[];
+   /* Renders the row as this image instead of icon + label.
+   */
+  image?: string;
+  /** Opens in a new tab; wouter's Link routes in-app and cannot leave it. */
+  external?: boolean;
 }
 
 export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
@@ -51,6 +72,19 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: 'Developer',
     items: [
       { icon: LiKeyMinimalistic, iconActive: BdKeyMinimalistic, label: 'Watcher links', href: '/watcher-links' },
+    ],
+  },
+  {
+    label: 'Compliance',
+    items: [
+      {
+        icon: LiShieldCheck,
+        iconActive: BdShieldCheck,
+        label: "We're a SOC 2 Type II compliant organization. Learn more at our Trust Center.",
+        image: '/soc2-badge.png',
+        href: TRUST_CENTER_URL,
+        external: true,
+      },
     ],
   },
 ];
