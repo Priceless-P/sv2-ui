@@ -12,10 +12,10 @@ import { useToast } from '@/components/ui/toast';
 import { CombinedHashrateCard } from '@/components/home/CombinedHashrateCard';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useAggregatedData } from '@/hooks/useAggregatedData';
-import type { AggregatedStats } from '@/lib/aggregatedStats';
+import type { AggregatedStats, DonutSlice } from '@/lib/aggregatedStats';
 import { ProductTour } from '@/components/home/ProductTour';
 import { useDashboardLayout } from '@/hooks/useDashboardLayout';
-import { visibleInOrder, type WidgetId } from '@/lib/dashboardLayout';
+import { visibleInOrder, type DashboardMode, type WidgetId } from '@/lib/dashboardLayout';
 import { cn } from '@/lib/utils';
 
 interface DragState {
@@ -87,20 +87,6 @@ function WidgetShell({
   );
 }
 
-/** Live hashrate + connect-workers side by side (3:2), used when they're adjacent. */
-function HashrateConnectRow({ customizing, drag }: { customizing: boolean; drag: DragState }) {
-  return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-      <WidgetShell id="hashrate" customizing={customizing} drag={drag} tour="hashrate" className="lg:col-span-3">
-        <LiveHashrateCard />
-      </WidgetShell>
-      <WidgetShell id="connect" customizing={customizing} drag={drag} className="lg:col-span-2">
-        <ConnectWorkersCard />
-      </WidgetShell>
-    </div>
-  );
-}
-
 /**
  * The header's secondary buttons: hairline-bordered pill on the secondary fill, at
  * regular weight. Shared so the two never drift apart.
@@ -114,10 +100,13 @@ function widgetBlock(
   customizing: boolean,
   drag: DragState,
   aggregatedStats?: AggregatedStats,
+  slices: DonutSlice[] = [],
 ): ReactNode {
   const inner =
     id === 'hashrate' ? (
       <LiveHashrateCard />
+    ) : id === 'combined' ? (
+      <CombinedHashrateCard slices={slices} total={aggregatedStats?.combinedHashrate ?? 0} />
     ) : id === 'connect' ? (
       <ConnectWorkersCard />
     ) : id === 'stats' ? (
@@ -140,8 +129,9 @@ function widgetBlock(
  * walks a new user through the page.
  */
 export function DashboardHome() {
-  const { layout, toggle, reorder, reset } = useDashboardLayout();
   const { aggregated } = useAggregatedModeContext();
+  const mode: DashboardMode = aggregated ? 'aggregated' : 'single';
+  const { layout, toggle, reorder, reset } = useDashboardLayout(mode);
   // Only fetches the per-subaccount roll-up while aggregated mode is on.
   const { stats: aggStats, slices } = useAggregatedData(aggregated);
   const [customizing, setCustomizing] = useState(false);
@@ -155,6 +145,13 @@ export function DashboardHome() {
   // state (which would still be null).
   const dragRef = useRef<WidgetId | null>(null);
   const overRef = useRef<WidgetId | null>(null);
+
+  const clearDrag = () => {
+    dragRef.current = null;
+    overRef.current = null;
+    setDragId(null);
+    setOverId(null);
+  };
 
   const drag: DragState = {
     dragId,
@@ -172,6 +169,7 @@ export function DashboardHome() {
     onDrop: () => {
       const from = dragRef.current;
       const to = overRef.current;
+      clearDrag();
       // Only confirm when the drop actually moved something; dropping a widget back
       // where it started is not a saved layout.
       if (from && to && from !== to) {
@@ -179,12 +177,7 @@ export function DashboardHome() {
         toast({ type: 'info', message: 'Layout saved' });
       }
     },
-    onDragEnd: () => {
-      dragRef.current = null;
-      overRef.current = null;
-      setDragId(null);
-      setOverId(null);
-    },
+    onDragEnd: clearDrag,
   };
 
   // The widgets to render, in the saved order, hidden ones removed.
@@ -197,23 +190,37 @@ export function DashboardHome() {
   for (let i = 0; i < visibleIds.length; i += 1) {
     const id = visibleIds[i];
     const next = visibleIds[i + 1];
+    const isWide = (w: WidgetId) => w === 'hashrate' || w === 'combined';
     const isPair = (a: WidgetId, b: WidgetId) =>
-      (a === 'hashrate' && b === 'connect') || (a === 'connect' && b === 'hashrate');
-    // While dragging, don't glue the pair into a shared row, so each is an independent
-    // drop target.
-    if (next && !customizing && isPair(id, next)) {
-      rendered.push(<HashrateConnectRow key="hashrate-connect-row" customizing={customizing} drag={drag} />);
+      (isWide(a) && b === 'connect') || (a === 'connect' && isWide(b));
+    if (next && isPair(id, next)) {
+      const wide = isWide(id) ? id : next;
+      rendered.push(
+        <div key={`${id}-${next}-row`} className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          {[id, next].map((slot) => (
+            <WidgetShell
+              key={slot}
+              id={slot}
+              customizing={customizing}
+              drag={drag}
+              tour={slot === 'hashrate' ? 'hashrate' : undefined}
+              className={slot === wide ? 'lg:col-span-3' : 'lg:col-span-2'}
+            >
+              {slot === 'hashrate' ? (
+                <LiveHashrateCard />
+              ) : slot === 'combined' ? (
+                <CombinedHashrateCard slices={slices} total={aggStats.combinedHashrate} />
+              ) : (
+                <ConnectWorkersCard />
+              )}
+            </WidgetShell>
+          ))}
+        </div>,
+      );
       i += 1; // consume the paired widget
       continue;
     }
-    rendered.push(widgetBlock(id, customizing, drag, aggregated ? aggStats : undefined));
-  }
-
-  // The combined-hashrate breakdown belongs to aggregated mode rather than the
-  // customizable widget set, and the design places it under the first row, above the
-  // stat cards.
-  if (aggregated && slices.length > 0) {
-    rendered.splice(1, 0, <CombinedHashrateCard key="combined-hashrate" slices={slices} total={aggStats.combinedHashrate} />);
+    rendered.push(widgetBlock(id, customizing, drag, aggregated ? aggStats : undefined, slices));
   }
 
   return (
@@ -258,7 +265,7 @@ export function DashboardHome() {
             <LiTuning4 className="h-3.5 w-3.5" />
             Customize dashboard
           </button>
-          {panelOpen && <CustomizeDashboardPanel layout={layout} onToggle={toggle} onReset={reset} />}
+          {panelOpen && <CustomizeDashboardPanel mode={mode} layout={layout} onToggle={toggle} onReset={reset} />}
         </div>
       </header>
 

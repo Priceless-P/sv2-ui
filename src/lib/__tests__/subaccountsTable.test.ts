@@ -226,8 +226,8 @@ test('applySubaccountFilter: rejection and sorting combine', () => {
   assert.deepEqual(out.map((s) => s.id), ['first', 'keep']);
 });
 
-function gen(account: string, btc: number | null): GeneratedBtcEntry {
-  return { entry_day: '2026-08-01', hashrate: null, btc_generated: btc, account };
+function gen(account: string, btc: number): GeneratedBtcEntry {
+  return { entry_day: '2026-08-01', hashrate: 0, btc_generated: btc, account };
 }
 
 test('withGeneratedBtc sums each subaccount lifetime BTC from the account-tagged entries', () => {
@@ -239,17 +239,17 @@ test('withGeneratedBtc sums each subaccount lifetime BTC from the account-tagged
 
 test('withGeneratedBtc replaces the misleading newest-row amount with the selected UTC day', () => {
   const entries = [
-    { entry_day: '2026-08-12', hashrate: null, btc_generated: 0.25, account: 'Alpha' },
-    { entry_day: '2026-08-11', hashrate: null, btc_generated: 9, account: 'Alpha' },
+    { entry_day: '2026-08-12', hashrate: 0, btc_generated: 0.25, account: 'Alpha' },
+    { entry_day: '2026-08-11', hashrate: 0, btc_generated: 9, account: 'Alpha' },
   ];
   const [out] = withGeneratedBtc([enriched({ name: 'Alpha', todayEarnings: 9 })], entries, Date.parse('2026-08-12T18:00:00Z'));
   assert.equal(out.todayEarnings, 0.25);
 });
 
-test('withGeneratedBtc reports null (not 0) when an account has no entries or only null readings', () => {
+test('withGeneratedBtc reports null (not 0) when an account has no entries', () => {
   const subs = [enriched({ id: '1', name: 'Alpha' }), enriched({ id: '2', name: 'Beta' })];
-  const out = withGeneratedBtc(subs, [gen('Alpha', null)]);
-  assert.equal(out[0].generatedBtc, null, 'all-null readings are unknown, not zero');
+  const out = withGeneratedBtc(subs, [gen('Alpha', 0.5)]);
+  assert.equal(out[0].generatedBtc, 0.5);
   assert.equal(out[1].generatedBtc, null, 'an account with no entries is unknown');
 });
 
@@ -273,9 +273,8 @@ test('subaccountsToCsv writes an unknown generated-BTC total as --, formula-guar
   assert.equal(csv.split('\n')[1].split(',')[4], "'--");
 });
 
-test('sumGeneratedBtc totals untagged entries and reports null when no reading is usable', () => {
-  const untagged = (btc: number | null): GeneratedBtcEntry => ({ entry_day: '2026-08-01', hashrate: null, btc_generated: btc });
-  assert.equal(sumGeneratedBtc([untagged(0.5), untagged(null), untagged(0.25)]), 0.75);
-  assert.equal(sumGeneratedBtc([untagged(null)]), null);
+test('sumGeneratedBtc totals untagged entries and reports null when there are none', () => {
+  const untagged = (btc: number): GeneratedBtcEntry => ({ entry_day: '2026-08-01', hashrate: 0, btc_generated: btc });
+  assert.equal(sumGeneratedBtc([untagged(0.5), untagged(0.25)]), 0.75);
   assert.equal(sumGeneratedBtc([]), null);
 });

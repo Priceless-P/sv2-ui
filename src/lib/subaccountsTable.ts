@@ -51,9 +51,9 @@ export interface EnrichedSubaccount {
   accepted: number;
   rejected: number;
   todayEarnings: number;
-  // Lifetime generated BTC, summed from the account's daily entries. Null means
-  // unknown (no entries, or every reading null) and must not be shown as 0, since a
-  // zero would read as "earned nothing" on money data. Filled by withGeneratedBtc.
+  // Lifetime generated BTC, summed from the account's daily entries. Null means the
+  // account has no entries and must not be shown as 0, which would read as "earned
+  // nothing" on money data. Filled by withGeneratedBtc.
   generatedBtc: number | null;
   // The roster itself, kept so the aggregated workers table can list every account's
   // workers rather than only their counts.
@@ -91,9 +91,8 @@ export function enrichSubaccount(
  * that already back the Generated BTC page, so the column costs no extra request per
  * row. Matching is by the same display name the tagger writes.
  *
- * A day the API has no reading for reports null, so nulls are skipped rather than
- * counted as zero; an account with no usable reading at all stays null (unknown), and
- * only an account with at least one real reading gets a number.
+ * An account with no entries at all stays null (unknown) rather than 0, since a zero
+ * would read as "earned nothing" on money data.
  */
 export function withGeneratedBtc(
   subs: EnrichedSubaccount[],
@@ -118,20 +117,10 @@ export function withGeneratedBtc(
   });
 }
 
-/**
- * Total BTC across daily entries, or null when not one day carries a reading. Days the
- * API reports null are skipped rather than counted as zero, so a partially-reported
- * history still totals the days it does have.
- */
+/** Total BTC across the daily entries, or null when the account has none. */
 export function sumGeneratedBtc(entries: GeneratedBtcEntry[]): number | null {
-  let total = 0;
-  let seen = false;
-  for (const e of entries) {
-    if (e.btc_generated === null) continue;
-    total += e.btc_generated;
-    seen = true;
-  }
-  return seen ? total : null;
+  if (entries.length === 0) return null;
+  return entries.reduce((total, e) => total + e.btc_generated, 0);
 }
 
 export interface SubaccountsPageStats {

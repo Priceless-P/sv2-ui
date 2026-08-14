@@ -27,10 +27,13 @@ export function pickHashrateScale(values: (number | null | undefined)[]): Hashra
   return { unit: UNITS[index], divisor: Math.pow(1000, index) };
 }
 
-/** A tick as a bare number in the axis unit; the unit is shown separately. */
-export function formatAxisValue(value: number, divisor: number): string {
+/**
+ * A hashrate as a bare number in the given unit; the unit is shown separately
+ */
+export function formatAxisValue(value: number, divisor: number, digits = 2): string {
   if (!Number.isFinite(value)) return '';
-  return (value / divisor).toFixed(1).replace(/\.0$/, '');
+  const text = (value / divisor).toFixed(digits);
+  return digits === 1 ? text.replace(/\.0$/, '') : text;
 }
 
 /**

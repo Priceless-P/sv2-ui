@@ -1,4 +1,4 @@
-import type { GeneratedBtcEntry, Worker } from '@/api/types';
+import type { GeneratedBtcEntry } from '@/api/types';
 import { BTC_DISPLAY_DP } from '@/lib/utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,7 +26,7 @@ export function formatGeneratedDate(entryDay: string): string {
 
 /** Sum of gross BTC generated across the entries; 0 when empty. */
 export function sumGenerated(entries: GeneratedBtcEntry[]): number {
-  return entries.reduce((total, e) => total + (e.btc_generated || 0), 0);
+  return entries.reduce((total, e) => total + e.btc_generated, 0);
 }
 
 /**
@@ -41,16 +41,22 @@ export function todayGeneratedBtc(entries: GeneratedBtcEntry[], nowMs: number): 
   return entry?.btc_generated ?? 0;
 }
 
-/** Mean hashrate over connected workers that report a reading; 0 when none qualify. */
-export function averageWorkerHashrate(workers: Worker[]): number {
-  const readings = workers.filter((w) => w.is_connected && w.hashrate != null).map((w) => w.hashrate as number);
-  if (readings.length === 0) return 0;
-  return readings.reduce((s, h) => s + h, 0) / readings.length;
+/**
+ * Mean of the daily hashrate readings in the rows shown, so the figure describes the
+ * same period the table does.
+ */
+export function averageEntryHashrate(entries: GeneratedBtcEntry[]): number {
+  if (entries.length === 0) return 0;
+  return entries.reduce((sum, entry) => sum + entry.hashrate, 0) / entries.length;
 }
 
-/** Count of workers that have submitted at least one share (PPLNS or FPPS). */
-export function workersWithSharesCount(workers: Worker[]): number {
-  return workers.filter((w) => (w.total_shares ?? 0) + (w.fpps_total_shares ?? 0) > 0).length;
+/** The row that generated the most BTC; null when no day carries a reading. */
+export function highestEarningDay(entries: GeneratedBtcEntry[]): GeneratedBtcEntry | null {
+  let best: GeneratedBtcEntry | null = null;
+  for (const entry of entries) {
+    if (best === null || entry.btc_generated > best.btc_generated) best = entry;
+  }
+  return best;
 }
 
 /** Newest day first; entries with an unparseable date sort last. */
@@ -99,9 +105,8 @@ export function filterGeneratedBtc(entries: GeneratedBtcEntry[], filter: Generat
  * amount reads as "--", not "0" — the API returns null for a day it has no figure for,
  * and on a money page an unknown amount must never be shown as a confident zero.
  */
-export function formatBtc(n: number | null | undefined): string {
-  if (n == null) return '--';
-  return Number(n.toFixed(BTC_DISPLAY_DP)).toString();
+export function formatBtc(n: number): string {
+  return n.toFixed(BTC_DISPLAY_DP).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 const CSV_HEADER = 'entry_day,hashrate,btc_generated';

@@ -5,17 +5,21 @@ import {
   reorderWidget,
   toggleWidget,
   type DashboardLayout,
+  type DashboardMode,
   type WidgetId,
 } from '@/lib/dashboardLayout';
 
-const STORAGE_KEY = 'dmnd.dashboard.layout';
+const STORAGE_KEYS: Record<DashboardMode, string> = {
+  single: 'dmnd.dashboard.layout',
+  aggregated: 'dmnd.dashboard.layout.aggregated',
+};
 
-function read(): DashboardLayout {
+function read(mode: DashboardMode): DashboardLayout {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return normalizeLayout(raw ? JSON.parse(raw) : null);
+    const raw = localStorage.getItem(STORAGE_KEYS[mode]);
+    return normalizeLayout(mode, raw ? JSON.parse(raw) : null);
   } catch {
-    return normalizeLayout(null);
+    return normalizeLayout(mode, null);
   }
 }
 
@@ -24,34 +28,42 @@ function read(): DashboardLayout {
  * always normalized so a stale stored value can never render a broken dashboard.
  * Mirrors the useTheme localStorage pattern.
  */
-export function useDashboardLayout() {
+export function useDashboardLayout(mode: DashboardMode) {
   const [layout, setLayout] = useState<DashboardLayout>(() =>
-    typeof window === 'undefined' ? normalizeLayout(null) : read(),
+    typeof window === 'undefined' ? normalizeLayout(mode, null) : read(mode),
   );
 
-  const persist = useCallback((next: DashboardLayout) => {
-    setLayout(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      /* ignore storage failures; the layout still applies for this session */
-    }
-  }, []);
+  // Switching mode swaps in that mode's own stored layout.
+  useEffect(() => {
+    if (typeof window !== 'undefined') setLayout(read(mode));
+  }, [mode]);
+
+  const persist = useCallback(
+    (next: DashboardLayout) => {
+      setLayout(next);
+      try {
+        localStorage.setItem(STORAGE_KEYS[mode], JSON.stringify(next));
+      } catch {
+        /* ignore storage failures; the layout still applies for this session */
+      }
+    },
+    [mode],
+  );
 
   // Keep other tabs in sync when the layout changes elsewhere.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setLayout(read());
+      if (e.key === STORAGE_KEYS[mode]) setLayout(read(mode));
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [mode]);
 
   return {
     layout,
-    toggle: (id: WidgetId) => persist(toggleWidget(layout, id)),
+    toggle: (id: WidgetId) => persist(toggleWidget(mode, layout, id)),
     move: (id: WidgetId, dir: 'up' | 'down') => persist(moveWidget(layout, id, dir)),
     reorder: (id: WidgetId, toIndex: number) => persist(reorderWidget(layout, id, toIndex)),
-    reset: () => persist(normalizeLayout(null)),
+    reset: () => persist(normalizeLayout(mode, null)),
   };
 }

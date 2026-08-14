@@ -2,7 +2,13 @@ import { Fragment, useState } from 'react';
 import { LiAltArrowDown, LiCloseCircle, LiInfoCircle, LiRestart } from 'solar-icon-react/li';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { isLockedWidget, widgetsForPanel, type DashboardLayout, type WidgetId } from '@/lib/dashboardLayout';
+import {
+  isLockedWidget,
+  widgetsForPanel,
+  type DashboardLayout,
+  type DashboardMode,
+  type WidgetId,
+} from '@/lib/dashboardLayout';
 
 /**
  * The Customize dashboard panel shown in customization mode. Each widget row has a
@@ -12,10 +18,12 @@ import { isLockedWidget, widgetsForPanel, type DashboardLayout, type WidgetId } 
  * customization mode is done from the dashboard, not from here.
  */
 export function CustomizeDashboardPanel({
+  mode,
   layout,
   onToggle,
   onReset,
 }: {
+  mode: DashboardMode;
   layout: DashboardLayout;
   onToggle: (id: WidgetId) => void;
   onReset: () => void;
@@ -59,15 +67,15 @@ export function CustomizeDashboardPanel({
                       role="checkbox"
                       aria-checked={w.visible}
                       aria-label={
-                        isLockedWidget(w.id) ? `${w.label} can't be hidden` : `${w.visible ? 'Hide' : 'Show'} ${w.label}`
+                        isLockedWidget(mode, w.id) ? `${w.label} can't be hidden` : `${w.visible ? 'Hide' : 'Show'} ${w.label}`
                       }
                       onClick={() =>
-                        isLockedWidget(w.id) ? setLockedNotice(`${w.label} can't be hidden`) : onToggle(w.id)
+                        isLockedWidget(mode, w.id) ? setLockedNotice(`${w.label} can't be hidden`) : onToggle(w.id)
                       }
                       className={cn(
                         'flex h-6 w-6 shrink-0 items-center justify-center rounded-md border transition-colors',
                         w.visible ? 'border-[hsl(var(--btn))] bg-[hsl(var(--btn))]' : 'border-placeholder',
-                        isLockedWidget(w.id) && 'opacity-40',
+                        isLockedWidget(mode, w.id) && 'opacity-40',
                       )}
                     >
                       {w.visible && <Check className="h-3.5 w-3.5 text-[hsl(var(--btn-foreground))]" strokeWidth={3} />}

@@ -4,15 +4,13 @@ import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { Reading } from '@/components/ui/Reading';
 import { MiningIcon } from '@/components/dashboard/icons/MiningIcon';
+import { LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
 
 const PPLNS_COLOR = '#2b7fff';
 const FPPS_COLOR = '#e67c2a';
 
-const PPLNS_HINT =
-  'Payouts are based on your contribution to recently submitted shares. Earnings can vary, but may be higher over time.';
-
 /** "Last updated" from the snapshot's observed_at, rounded to whole minutes. */
-function lastUpdatedLabel(observedAt: string | undefined, now: number): string | null {
+function lastUpdatedLabel(observedAt: string | null | undefined, now: number): string | null {
   if (!observedAt) return null;
   const ms = Date.parse(observedAt);
   if (Number.isNaN(ms)) return null;
@@ -62,23 +60,29 @@ export function LiveHashrateCard() {
           {/* One scheme reporting reads as that scheme's figure; both read as a total. */}
           {!split && (
             <SchemeLabel color={pplns > 0 ? PPLNS_COLOR : FPPS_COLOR} name={pplns > 0 ? 'PPLNS' : 'FPPS'}>
-              <InfoHint text={PPLNS_HINT} />
+              <InfoHint text={LIVE_HASHRATE_HINT} />
             </SchemeLabel>
           )}
-          <Reading value={formatAxisValue(total, pickHashrateScale([total]).divisor)} unit={pickHashrateScale([total]).unit} size="lg" />
+          <Reading
+            value={formatAxisValue(total, pickHashrateScale([total]).divisor)}
+            unit={pickHashrateScale([total]).unit}
+            size="lg"
+          />
           {split && (
             <>
               <div className="mt-4 h-px w-full bg-border" />
               <div className="mt-4 flex items-center justify-between">
                 <div className="flex flex-col gap-1">
                   <SchemeLabel color={PPLNS_COLOR} name="PPLNS">
-                    <InfoHint text={PPLNS_HINT} />
+                    <InfoHint text={LIVE_HASHRATE_HINT} />
                   </SchemeLabel>
                   <Reading value={formatAxisValue(pplns, pickHashrateScale([pplns]).divisor)} unit={pickHashrateScale([pplns]).unit} size="sm" />
                 </div>
                 <div className="h-16 w-px bg-border" />
                 <div className="flex flex-col gap-1">
-                  <SchemeLabel color={FPPS_COLOR} name="FPPS" />
+                  <SchemeLabel color={FPPS_COLOR} name="FPPS">
+                    <InfoHint text={LIVE_HASHRATE_HINT} />
+                  </SchemeLabel>
                   <Reading value={formatAxisValue(fpps, pickHashrateScale([fpps]).divisor)} unit={pickHashrateScale([fpps]).unit} size="sm" />
                 </div>
               </div>

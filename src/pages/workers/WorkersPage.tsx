@@ -144,19 +144,19 @@ function downloadCsv(content: string, filename: string): void {
 
 /** The Workers page: roster table with status tabs, search, sort, pagination, and CSV export. */
 export function WorkersPage() {
-  // Full roster from /api/workers/all (no date range); tabs/search/sort/paginate
-  // run client-side over it.
-  const { data, isLoading, isError, refetch } = useAccountAllWorkers();
   const { aggregated } = useAggregatedModeContext();
+  // Full roster from /api/workers/all (no date range); tabs/search/sort/paginate
+  // run client-side over the account-scoped response.
+  const singleAccount = useAccountAllWorkers(!aggregated);
   // In aggregated mode the table spans every subaccount, so the rows come from each
   // account's roster tagged with its owner rather than this account's own workers.
   const agg = useAggregatedData(aggregated);
   const workers = useMemo(() => {
-    if (!aggregated) return data ?? [];
+    if (!aggregated) return singleAccount.data ?? [];
     // Every account, main included: its own workers are part of the combined roster,
     // not a separate thing shown elsewhere.
     return tagWorkersBySubaccount(agg.accounts.map((a) => ({ sub: a.name, subaccountId: a.id, workers: a.workers })));
-  }, [aggregated, data, agg.accounts]);
+  }, [aggregated, singleAccount.data, agg.accounts]);
 
   const [tab, setTab] = useState<WorkersTab>('all');
   const [query, setQuery] = useState('');
@@ -252,9 +252,9 @@ export function WorkersPage() {
 
   // In aggregated mode the roll-up query owns the page's loading and error states, so a
   // failed subaccount fetch is reported rather than rendering a partial roster.
-  const loading = aggregated ? agg.isLoading : isLoading;
-  const failed = aggregated ? agg.isError : isError;
-  const retry = aggregated ? agg.refetch : refetch;
+  const loading = aggregated ? agg.isLoading : singleAccount.isLoading;
+  const failed = aggregated ? agg.isError : singleAccount.isError;
+  const retry = aggregated ? agg.refetch : singleAccount.refetch;
 
   // A failed fetch must not masquerade as "no workers" (the empty state invites
   // miners to connect hardware they may already have running).

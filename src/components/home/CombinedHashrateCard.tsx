@@ -3,10 +3,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import { LiAltArrowRight } from 'solar-icon-react/li';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { formatHashrate } from '@/lib/utils';
-import type { DonutSlice } from '@/lib/aggregatedStats';
-
-// Slice colors in the order the design assigns them, cycling for further subaccounts.
-const SLICE_COLORS = ['#d946ef', '#22c55e', '#3b82f6', '#f97316'];
+import { sliceColor, type DonutSlice } from '@/lib/aggregatedStats';
 
 /** Split "89.00 TH/s" so the value and its unit can be sized separately. */
 function splitHashrate(value: number): { amount: string; unit: string } {
@@ -21,18 +18,14 @@ function splitHashrate(value: number): { amount: string; unit: string } {
  */
 export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; total: number }) {
   const totalParts = splitHashrate(total);
-  // Recharts renders nothing for an all-zero dataset, so a roster that has not mined
-  // yet still gets a ring: every account contributes an equal, visibly empty share.
-  const hasHashrate = slices.some((s) => s.hashrate > 0);
-  const chartData = hasHashrate ? slices : slices.map((s) => ({ ...s, hashrate: 1 }));
 
   return (
-    <div className="flex flex-col items-start gap-6 border-[0.5px] border-border bg-card p-4 lg:p-8 sm:flex-row sm:gap-12">
+    <div className="flex h-full flex-col items-start gap-6 border-[0.5px] border-border bg-card p-4 lg:p-8 sm:flex-row sm:gap-12">
       <div className="relative h-40 w-40 shrink-0 self-center sm:self-start">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
-              data={chartData}
+              data={slices}
               dataKey="hashrate"
               nameKey="name"
               innerRadius="72%"
@@ -41,8 +34,8 @@ export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; 
               stroke="none"
               isAnimationActive={false}
             >
-              {chartData.map((s, i) => (
-                <Cell key={s.id} fill={hasHashrate ? SLICE_COLORS[i % SLICE_COLORS.length] : 'hsl(var(--border))'} />
+              {slices.map((s, i) => (
+                <Cell key={s.id} fill={sliceColor(i)} />
               ))}
             </Pie>
           </PieChart>
@@ -56,7 +49,7 @@ export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; 
       <div className="flex min-w-0 flex-1 flex-col gap-4 self-stretch">
         <div className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-2">
-            <h3 className="!font-body text-lg font-semibold leading-7 text-heading-alt">Combined Hashrate</h3>
+            <h3 className="!font-body text-lg font-semibold leading-7 text-heading-alt">Combined Live Hashrate</h3>
             <InfoHint text="The total hashrate from all connected workers and subaccounts." />
           </span>
           <Link
@@ -68,7 +61,7 @@ export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; 
           </Link>
         </div>
 
-        <ul className="flex flex-col gap-2">
+        <ul className="flex max-h-40 flex-col gap-2 overflow-y-auto pr-1">
           {slices.map((s, i) => {
             const parts = splitHashrate(s.hashrate);
             return (
@@ -79,7 +72,7 @@ export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; 
                     <span
                       aria-hidden
                       className="h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: SLICE_COLORS[i % SLICE_COLORS.length] }}
+                      style={{ backgroundColor: sliceColor(i) }}
                     />
                     <span className="truncate text-sm leading-5 text-body-alt">{s.name}</span>
                   </span>

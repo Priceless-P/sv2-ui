@@ -1,39 +1,4 @@
-import type { HashrateMeasure, HashratePoint, SubaccountHashratePoint } from '@/api/types';
-
-// The account-level series reports bare numbers in H/s while the per-subaccount series
-// tags each figure with a unit (observed live as "TH/s"). Everything is normalised to
-// H/s before being combined so a subaccount can never be added at the wrong magnitude.
-const UNIT_MULTIPLIERS: Record<string, number> = {
-  'H/S': 1,
-  'KH/S': 1e3,
-  'MH/S': 1e6,
-  'GH/S': 1e9,
-  'TH/S': 1e12,
-  'PH/S': 1e15,
-  'EH/S': 1e18,
-};
-
-/**
- * A reported measure in H/s. A missing measure is no reading (0). An unrecognised unit
- * is also treated as no reading rather than assumed to be H/s: guessing would silently
- * understate that account by orders of magnitude in the combined series, and a visible
- * gap is safer than a wrong total.
- */
-export function measureToHashPerSecond(measure: HashrateMeasure | null | undefined): number {
-  if (!measure || typeof measure.value !== 'number') return 0;
-  const multiplier = UNIT_MULTIPLIERS[String(measure.unit).toUpperCase()];
-  return multiplier === undefined ? 0 : measure.value * multiplier;
-}
-
-/** Convert a subaccount's nested series into the same plain H/s shape as the account series. */
-export function subaccountSeriesToPoints(points: SubaccountHashratePoint[]): HashratePoint[] {
-  return points.map((p) => ({
-    observed_at: p.observed_at,
-    pplns_hashrate: measureToHashPerSecond(p.pplns_hashrate),
-    fpps_hashrate: measureToHashPerSecond(p.fpps_hashrate),
-    total_hashrate: measureToHashPerSecond(p.total_hashrate),
-  }));
-}
+import type { HashratePoint } from '@/api/types';
 
 /**
  * Combine several accounts' series into one by adding the readings that share a

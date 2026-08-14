@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { GeneratedBtcEntry, Worker } from '@/api/types';
+import type { GeneratedBtcEntry } from '@/api/types';
 import {
   sumGenerated,
-  averageWorkerHashrate,
-  workersWithSharesCount,
   sortGeneratedByDateDesc,
   formatGeneratedDate,
   entryDayMs,
@@ -27,36 +25,10 @@ import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
 function entry(over: Partial<GeneratedBtcEntry> = {}): GeneratedBtcEntry {
   return { entry_day: '2026-06-21', hashrate: 100e12, btc_generated: 0.0001, ...over };
 }
-function worker(over: Partial<Worker> = {}): Worker {
-  return { name: 'w', hashrate: 100, total_shares: 1, rejected_shares: 0, is_connected: true, ...over };
-}
 
 test('sumGenerated adds btc_generated across entries; 0 when empty', () => {
   assert.ok(Math.abs(sumGenerated([entry({ btc_generated: 0.001 }), entry({ btc_generated: 0.0004 })]) - 0.0014) < 1e-12);
   assert.equal(sumGenerated([]), 0);
-});
-
-test('averageWorkerHashrate is the mean over connected workers with a hashrate; 0 when none', () => {
-  const workers = [
-    worker({ hashrate: 100, is_connected: true }),
-    worker({ hashrate: 200, is_connected: true }),
-    worker({ hashrate: 999, is_connected: false }), // offline -> ignored
-    worker({ hashrate: null, is_connected: true }), // no reading -> ignored
-  ];
-  assert.equal(averageWorkerHashrate(workers), 150);
-  assert.equal(averageWorkerHashrate([]), 0);
-  assert.equal(averageWorkerHashrate([worker({ hashrate: null, is_connected: true })]), 0);
-});
-
-test('workersWithSharesCount counts workers that submitted any (pplns or fpps) shares', () => {
-  const workers = [
-    worker({ total_shares: 10, fpps_total_shares: 0 }),
-    worker({ total_shares: 0, fpps_total_shares: 5 }),
-    worker({ total_shares: 0, fpps_total_shares: 0 }),
-    worker({ total_shares: null, fpps_total_shares: null }),
-  ];
-  assert.equal(workersWithSharesCount(workers), 2);
-  assert.equal(workersWithSharesCount([]), 0);
 });
 
 test('sortGeneratedByDateDesc orders newest entry_day first', () => {
@@ -116,25 +88,17 @@ test('todayGeneratedBtc picks the entry for the current UTC day', () => {
   assert.equal(todayGeneratedBtc(entries, now), 0.5);
   // Late in the UTC day the answer must not slide onto the neighbouring day.
   assert.equal(todayGeneratedBtc(entries, Date.parse('2026-07-24T23:59:59Z')), 0.5);
-  // No entry for today yet, and a null amount, both read as nothing generated.
+  // No entry for today yet reads as nothing generated.
   assert.equal(todayGeneratedBtc([entry({ entry_day: '2026-07-20', btc_generated: 9 })], now), 0);
-  assert.equal(todayGeneratedBtc([entry({ entry_day: '2026-07-24', btc_generated: null })], now), 0);
 });
 
-test('formatBtc renders a missing amount as "--" rather than crashing or implying zero', () => {
-  // The API can return a null amount on a real row; a money figure that is unknown
-  // must read as unknown, never as a confident 0 (and must never throw).
-  assert.equal(formatBtc(null), '--');
-  assert.equal(formatBtc(undefined), '--');
-  // A genuine zero is still a real, known value.
-  assert.equal(formatBtc(0), '0');
-});
-
-test('formatBtc trims float noise and trailing zeros, rounding to 8 dp', () => {
-  assert.equal(formatBtc(0.001 + 0.0004), '0.0014');
-  assert.equal(formatBtc(0), '0');
+test('formatBtc shows the amount as the API sent it, never in exponent form', () => {
+  assert.equal(formatBtc(0.0014), '0.0014');
   assert.equal(formatBtc(0.00001342), '0.00001342');
-  assert.equal(formatBtc(0.000000499), '5e-7');
+  assert.equal(formatBtc(0), '0');
+  assert.equal(formatBtc(1), '1');
+  assert.equal(formatBtc(0.0000005), '0.0000005');
+  assert.equal(formatBtc(0.001 + 0.0004), '0.0014');
 });
 
 test('generatedBtcToCsv emits the prod schema header, a row per entry, and guards formula injection', () => {

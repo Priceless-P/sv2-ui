@@ -3,24 +3,24 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { cn } from '@/lib/utils';
 import { Reading } from '@/components/ui/Reading';
 import { WorkerBars } from '@/components/ui/WorkerBars';
-import { useAccountAllWorkers, useAccountShareStats, useTodayEarnings } from '@/hooks/useAccountData';
+import { useAccountAllWorkers, useAccountHashrate, useAccountShareStats, useTodayEarnings } from '@/hooks/useAccountData';
 import { deriveWorkerStats } from '@/lib/workerStats';
 import { BTC_DISPLAY_DP } from '@/lib/utils';
+import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import type { AggregatedStats } from '@/lib/aggregatedStats';
-import { ACCOUNT_REJECTION_HINT, ACTIVE_WORKERS_HINT, OFFLINE_WORKER_HINT } from '@/lib/metricWindows';
+import { ACCOUNT_REJECTION_HINT, ACTIVE_WORKERS_HINT, WORKER_METRICS_HINT } from '@/lib/metricWindows';
 
 /**
  * A stat card. The reading is one big numeral in the heading face with the unit
  * trailing it at body size, which is why value and unit are separate props rather
- * than one formatted string. `emphasis` colours the numeral for a rated figure, and
- * `captionTone` follows the design's split between an empty hint and a live caption.
+ * than one formatted string. `captionTone` follows the design's split between an empty
+ * hint and a live caption.
  */
 function StatCard({
   title,
   value,
   unit,
   unitSize = 'lg',
-  emphasis,
   caption,
   captionTone = 'muted',
   meter,
@@ -31,7 +31,6 @@ function StatCard({
   value: string | number;
   unit?: string;
   unitSize?: 'base' | 'lg';
-  emphasis?: boolean;
   caption: string;
   captionTone?: 'muted' | 'strong';
   meter?: ReactNode;
@@ -44,7 +43,7 @@ function StatCard({
         <span className="text-sm leading-5 text-body-alt">{title}</span>
         {hint && <InfoHint text={hint} />}
       </div>
-      <Reading value={value} unit={unit} size="md" tone={emphasis ? 'success' : 'default'} unitSize={unitSize} />
+      <Reading value={value} unit={unit} size="md" unitSize={unitSize} />
       <div className="flex flex-col gap-2">
         {meter}
         <p className={cn('text-sm leading-5', captionTone === 'strong' ? 'text-foreground' : 'text-body-alt')}>
@@ -70,6 +69,7 @@ function formatBtc(btc: number): string {
 export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }) {
   const { data: workers } = useAccountAllWorkers();
   const { data: shareStats } = useAccountShareStats(aggregated === undefined);
+  const { data: hashrate } = useAccountHashrate(aggregated === undefined);
   const { data: earnings } = useTodayEarnings();
   const roster = workers ?? [];
   const single = deriveWorkerStats(roster);
@@ -86,6 +86,10 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
       }
     : { ...single, rejectionRate: singleRejection };
   const todayEarnings = aggregated ? aggregated.todayEarnings : earnings;
+  const totalHashrate = aggregated ? aggregated.combinedHashrate : (hashrate?.total_hashrate ?? 0);
+  // No active worker means no rate to divide, which is unknown rather than zero.
+  const perWorker = stats.activeCount > 0 ? totalHashrate / stats.activeCount : null;
+  const perWorkerScale = pickHashrateScale([perWorker ?? 0]);
   const hasWorkers = stats.totalCount > 0;
   const hasMined = stats.rejectionRate !== null;
   const rejection = stats.rejectionRate === null ? '--' : (stats.rejectionRate * 100).toFixed(2);
@@ -109,26 +113,25 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
       />
       <StatCard
         tour="stats-workers"
-        title="Offline workers"
-        value={stats.offlineCount}
-        captionTone={hasWorkers ? 'strong' : 'muted'}
+        title="Average hashrate"
+        value={perWorker === null ? '--' : formatAxisValue(perWorker, perWorkerScale.divisor)}
+        unit={perWorker === null ? undefined : perWorkerScale.unit}
+        unitSize="base"
+        captionTone={perWorker === null ? 'muted' : 'strong'}
         caption={
-          !hasWorkers
-            ? "You don't have any offline workers."
-            : stats.offlineCount === 0
-              ? 'No worker is offline'
-              : `${stats.offlineCount} worker${stats.offlineCount === 1 ? '' : 's'} inactive in the last 10 minutes`
+          perWorker === null
+            ? 'Shown once a worker is active.'
+            : `Averaged over ${stats.activeCount} active worker${stats.activeCount === 1 ? '' : 's'}`
         }
-        hint={OFFLINE_WORKER_HINT}
+        hint={WORKER_METRICS_HINT}
       />
       <StatCard
         tour="stats-earnings"
         title="Rejection rate"
         value={rejection}
         unit={hasMined ? '%' : undefined}
-        emphasis={hasMined}
         captionTone={hasMined ? 'strong' : 'muted'}
-        caption={hasMined ? 'Last 24 hours across PPLNS and FPPS shares.' : 'Rejected share rate will appear after mining starts.'}
+        caption={hasMined ? 'Last 24 hours across all shares.' : 'Rejected share rate will appear after mining starts.'}
         hint={ACCOUNT_REJECTION_HINT}
       />
       <StatCard
@@ -144,10 +147,10 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
           aggregated
             ? todayEarnings !== undefined && todayEarnings > 0
               ? 'Generated today across all accounts.'
-              : 'Earnings generated today across all accounts will appear here.'
+              : 'Earnings generated today across all accounts.'
             : todayEarnings !== undefined && todayEarnings > 0
               ? 'Paid out on-chain today.'
-              : 'Earnings paid out on-chain today will appear here.'
+              : 'Earnings paid out on-chain today.'
         }
         hint={
           aggregated

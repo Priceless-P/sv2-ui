@@ -1,9 +1,7 @@
 import { useMemo, useState } from 'react';
 import { LiUploadMinimalistic } from 'solar-icon-react/li';
 import { useGeneratedBtc, useAggregatedGeneratedBtc } from '@/hooks/useGeneratedBtc';
-import { useAccountAllWorkers } from '@/hooks/useAccountData';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
-import { useAggregatedData } from '@/hooks/useAggregatedData';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { subaccountName } from '@/lib/subaccountsTable';
 import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
@@ -13,8 +11,8 @@ import {
   filterGeneratedBtcByAccount,
   searchGeneratedBtc,
   sumGenerated,
-  averageWorkerHashrate,
-  workersWithSharesCount,
+  averageEntryHashrate,
+  highestEarningDay,
   generatedBtcToCsv,
   generatedBtcRowId,
 } from '@/lib/generatedBtcTable';
@@ -58,22 +56,9 @@ export function GeneratedBtcPage() {
   // their owner; the two queries have separate cache entries so toggling never serves
   // the wrong set (same pattern as Payouts/Workers).
   const agg = useAggregatedGeneratedBtc(aggregated);
-  const { data, isLoading, isError, refetch } = aggregated ? agg : single;
+  const selectedQuery = aggregated ? agg : single;
+  const { data } = selectedQuery;
   const entries = useMemo(() => data ?? [], [data]);
-
-  // The Average-hashrate/Active-workers cards keep their SINGLE-account definitions
-  // (mean hashrate over connected workers; count of workers with any submitted share —
-  // see averageWorkerHashrate/workersWithSharesCount), just fed a wider roster in
-  // aggregated mode. That roster is SUBACCOUNTS ONLY, matching the aggregated Workers
-  // table and the Home donut (the main account's own workers are shown separately
-  // there too) — it deliberately does NOT reuse Home's "active = connected" figure,
-  // which is a different definition of "active" than this page's "submitted a share".
-  const { data: allWorkers } = useAccountAllWorkers();
-  const aggData = useAggregatedData(aggregated);
-  const workers = useMemo(
-    () => (aggregated ? aggData.accounts.flatMap((a) => a.workers) : (allWorkers ?? [])),
-    [aggregated, aggData.accounts, allWorkers],
-  );
 
   // The Account facet (aggregated mode only) offers the main account plus every
   // subaccount; an empty selection keeps them all. These names must match the row tags
@@ -116,11 +101,15 @@ export function GeneratedBtcPage() {
   const totals = useMemo(
     () => ({
       generated: sumGenerated(entries),
-      averageHashrate: averageWorkerHashrate(workers),
-      activeWorkers: workersWithSharesCount(workers),
+      averageHashrate: averageEntryHashrate(entries),
+      highestDay: highestEarningDay(entries),
     }),
-    [entries, workers],
+    [entries],
   );
+ 
+  const isLoading = selectedQuery.isLoading;
+  const isError = selectedQuery.isError;
+  const refetch = selectedQuery.refetch;
 
   const changeQuery = (next: string) => {
     setQuery(next);
@@ -198,7 +187,7 @@ export function GeneratedBtcPage() {
           <GeneratedBtcStatCards
             generated={totals.generated}
             averageHashrate={totals.averageHashrate}
-            activeWorkers={totals.activeWorkers}
+            highestDay={totals.highestDay}
           />
           <div>
             <GeneratedBtcToolbar

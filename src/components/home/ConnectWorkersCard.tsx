@@ -12,7 +12,7 @@ export function ConnectWorkersCard() {
   const { data: account, isLoading } = useAccountProfile();
 
   return (
-    <div className="border-[0.5px] border-border bg-card p-4 lg:p-8">
+    <div className="h-full border-[0.5px] border-border bg-card p-4 lg:p-8">
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-3">
         <h3 className="!font-body text-lg font-semibold leading-7 text-heading-alt">Connect workers</h3>
