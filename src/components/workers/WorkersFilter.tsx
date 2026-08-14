@@ -14,7 +14,7 @@ import {
 
 type Category = 'status' | 'mode' | 'rejection' | 'account';
 
-const STATUS_OPTIONS: WorkerStatus[] = ['online', 'offline', 'offline_24h'];
+const STATUS_OPTIONS: WorkerStatus[] = ['online', 'offline'];
 const MODE_OPTIONS: WorkerModeFilter[] = ['PPLNS', 'FPPS'];
 const REJECTION_OPTIONS: { value: WorkerRejectionFilter; label: string }[] = [
   { value: 'lt1', label: 'Less than 1%' },
@@ -206,7 +206,7 @@ export function WorkersFilter({
             {STATUS_OPTIONS.map((s) => (
               <CheckOption
                 key={s}
-                label={s === 'offline_24h' ? 'Offline for 24h+' : STATUS_LABEL[s]}
+                label={STATUS_LABEL[s]}
                 checked={draft.status.includes(s)}
                 onClick={() => toggle('status', s)}
               />

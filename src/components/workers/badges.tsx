@@ -6,10 +6,9 @@ import { STATUS_LABEL, type WorkerStatus } from '@/lib/workersTable';
 const STATUS: Record<WorkerStatus, { className: string; dot: boolean }> = {
   online: { className: 'bg-toast-success text-success-text', dot: true },
   offline: { className: 'bg-toast-warning text-warning-text', dot: false },
-  offline_24h: { className: 'bg-toast-error text-destructive-text', dot: false },
 };
 
-/** The Online / Offline / Offline >24h pill in the Status column. */
+/** The Online / Offline pill in the Status column. */
 export function StatusBadge({ status }: { status: WorkerStatus }) {
   const s = STATUS[status];
   return (

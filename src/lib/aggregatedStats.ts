@@ -4,7 +4,6 @@ export interface AggregatedStats {
   totalWorkers: number;
   activeWorkers: number;
   offlineWorkers: number;
-  offline24h: number;
   combinedHashrate: number;
   todayEarnings: number;
   rejectionRate: number | null;
@@ -22,7 +21,6 @@ export interface AggregatedStats {
 export function sumAccountStats(subs: EnrichedSubaccount[]): AggregatedStats {
   let activeWorkers = 0;
   let offlineWorkers = 0;
-  let offline24h = 0;
   let combinedHashrate = 0;
   let todayEarnings = 0;
   let accepted = 0;
@@ -30,7 +28,6 @@ export function sumAccountStats(subs: EnrichedSubaccount[]): AggregatedStats {
   for (const s of subs) {
     activeWorkers += s.active;
     offlineWorkers += s.offline;
-    offline24h += s.offline24h;
     combinedHashrate += s.hashrate;
     todayEarnings += s.todayEarnings;
     accepted += s.accepted;
@@ -41,7 +38,6 @@ export function sumAccountStats(subs: EnrichedSubaccount[]): AggregatedStats {
     totalWorkers: activeWorkers + offlineWorkers,
     activeWorkers,
     offlineWorkers,
-    offline24h,
     combinedHashrate,
     todayEarnings,
     rejectionRate: totalShares > 0 ? rejected / totalShares : null,

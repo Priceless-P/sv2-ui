@@ -5,6 +5,7 @@ import type { GeneratedBtcEntry, Subaccount, SubaccountShareStats, SubaccountSum
 import {
   subaccountName,
   parseHashrate,
+  hasSubaccountHashrate,
   rejectionFromStats,
   enrichSubaccount,
   deriveSubaccountsPageStats,
@@ -34,7 +35,7 @@ function row(over: Partial<Subaccount> = {}): Subaccount {
   };
 }
 function enriched(over: Partial<EnrichedSubaccount> = {}): EnrichedSubaccount {
-  return { id: '1', name: 'X', hashrate: 0, active: 0, offline: 0, offline24h: 0, rejection: null, accepted: 0, rejected: 0, todayEarnings: 0, generatedBtc: null, workers: [], ...over };
+  return { id: '1', name: 'X', hashrate: 0, pplns: 0, fpps: 0, active: 0, offline: 0, pplnsPassword: 't', fppsPassword: null, rejection: null, accepted: 0, rejected: 0, todayEarnings: 0, generatedBtc: null, workers: [], ...over };
 }
 function worker(over: Partial<Worker> = {}): Worker {
   return { name: 'w', hashrate: 1, total_shares: 0, rejected_shares: 0, is_connected: true, ...over };
@@ -64,6 +65,11 @@ test('parseHashrate parses the numeric string; 0 when blank or NaN', () => {
   assert.equal(parseHashrate(row({ hashrate: 'oops' })), 0);
 });
 
+test('hasSubaccountHashrate is true only when a subaccount reports a positive rate', () => {
+  assert.equal(hasSubaccountHashrate([row({ hashrate: '0' }), row({ hashrate: '125000000' })]), true);
+  assert.equal(hasSubaccountHashrate([row({ hashrate: '0' }), row({ hashrate: '' })]), false);
+});
+
 test('rejectionFromStats derives rejected/(accepted+rejected); null without shares', () => {
   assert.equal(rejectionFromStats(STATS), 2 / 1000);
   assert.equal(rejectionFromStats({ ...STATS, accepted: 0, rejected: 0 }), null);
@@ -75,36 +81,34 @@ function summary(over: Partial<SubaccountSummary> = {}): SubaccountSummary {
 }
 
 test('enrichSubaccount combines the row with workers and the summary (rejection + earnings)', () => {
-  const now = Date.UTC(2026, 5, 29, 12);
-  const day = 24 * 60 * 60 * 1000;
   const workers = [
     worker({ name: 'a', is_connected: true }),
-    worker({ name: 'b', is_connected: false, connected_at: Math.floor((now - 2 * day) / 1000) }),
+    worker({ name: 'b', is_connected: true }),
   ];
   const e = enrichSubaccount(
     row({ id: '7', sub_account: 'Farm', hashrate: '50' }),
     summary({ share_stats: { ...STATS, accepted: 99, rejected: 1 }, today_generated_btc: 0.002 }),
     workers,
-    now,
   );
   assert.deepEqual(
-    { id: e.id, name: e.name, hashrate: e.hashrate, active: e.active, offline: e.offline, offline24h: e.offline24h, rejection: e.rejection, todayEarnings: e.todayEarnings },
-    { id: '7', name: 'Farm', hashrate: 50, active: 1, offline: 1, offline24h: 1, rejection: 1 / 100, todayEarnings: 0.002 },
+    { id: e.id, name: e.name, hashrate: e.hashrate, active: e.active, offline: e.offline, rejection: e.rejection, todayEarnings: e.todayEarnings },
+    { id: '7', name: 'Farm', hashrate: 50, active: 2, offline: 0, rejection: 1 / 100, todayEarnings: 0.002 },
   );
+  assert.equal(e.pplnsPassword, 't');
+  assert.equal(e.fppsPassword, null);
   // Raw share counts are carried through for correct cross-subaccount rejection.
   assert.equal(e.accepted, 99);
   assert.equal(e.rejected, 1);
 });
 
 test('enrichSubaccount defaults raw share counts to 0 without a summary', () => {
-  const e = enrichSubaccount(row({ id: '8', sub_account: 'NoStats', hashrate: '0' }), null, [], Date.UTC(2026, 5, 29, 12));
+  const e = enrichSubaccount(row({ id: '8', sub_account: 'NoStats', hashrate: '0' }), null, []);
   assert.equal(e.accepted, 0);
   assert.equal(e.rejected, 0);
 });
 
 test('enrichSubaccount defaults rejection to null and earnings to 0 when the summary is missing', () => {
-  const now = Date.UTC(2026, 5, 29, 12);
-  const e = enrichSubaccount(row({ id: '9', sub_account: 'NoSummary', hashrate: '10' }), null, [], now);
+  const e = enrichSubaccount(row({ id: '9', sub_account: 'NoSummary', hashrate: '10' }), null, []);
   assert.equal(e.rejection, null);
   assert.equal(e.todayEarnings, 0);
   assert.equal(e.hashrate, 10);
@@ -122,10 +126,30 @@ test('deriveSubaccountsPageStats sums active workers, hashrate, and earnings', (
   assert.ok(Math.abs(stats.todayEarnings - 0.0014) < 1e-9);
 });
 
-test('searchSubaccounts matches name case-insensitively; blank passes all', () => {
-  const rows = [enriched({ name: 'Main Farm' }), enriched({ name: 'Warehouse 01' })];
+test('searchSubaccounts matches every displayed field; blank passes all', () => {
+  const rows = [
+    enriched({
+      id: 'farm-id',
+      name: 'Main Farm',
+      active: 4,
+      pplnsPassword: 'pplns-secret',
+      fppsPassword: 'fpps-secret',
+      hashrate: 125_000_000,
+      rejection: 0.012,
+      generatedBtc: 0.4,
+      todayEarnings: 0.02,
+    }),
+    enriched({ id: 'warehouse-id', name: 'Warehouse 01' }),
+  ];
   assert.equal(searchSubaccounts(rows, 'farm').length, 1);
   assert.equal(searchSubaccounts(rows, 'WARE').length, 1);
+  assert.equal(searchSubaccounts(rows, 'farm-id').length, 1);
+  assert.equal(searchSubaccounts(rows, 'pplns-secret').length, 1);
+  assert.equal(searchSubaccounts(rows, 'fpps-secret').length, 1);
+  assert.equal(searchSubaccounts(rows, '125.00 MH/s').length, 1);
+  assert.equal(searchSubaccounts(rows, '1.2%').length, 1);
+  assert.equal(searchSubaccounts(rows, '0.4 BTC').length, 1);
+  assert.equal(searchSubaccounts(rows, '0.02 BTC').length, 1);
   assert.equal(searchSubaccounts(rows, '  ').length, 2);
 });
 
@@ -157,25 +181,13 @@ const f = (over: Partial<SubaccountFilter> = {}): SubaccountFilter => ({ ...EMPT
 
 test('isSubaccountFilterActive is true only when a facet is set', () => {
   assert.equal(isSubaccountFilterActive(EMPTY_SUBACCOUNT_FILTER), false);
-  assert.equal(isSubaccountFilterActive(f({ status: 'healthy' })), true);
+  assert.equal(isSubaccountFilterActive(f({ rejection: 'lt1' })), true);
   assert.equal(isSubaccountFilterActive(f({ sortBy: 'hashrate_desc' })), true);
 });
 
 test('applySubaccountFilter: empty filter passes all, default order is name asc', () => {
   const rows = [enriched({ id: '1', name: 'Beta' }), enriched({ id: '2', name: 'alpha' })];
   assert.deepEqual(applySubaccountFilter(rows, EMPTY_SUBACCOUNT_FILTER).map((s) => s.name), ['alpha', 'Beta']);
-});
-
-test('applySubaccountFilter: status buckets (healthy / has offline / >24h)', () => {
-  const rows = [
-    enriched({ id: 'h', offline: 0, offline24h: 0 }),
-    enriched({ id: 'o', offline: 2, offline24h: 0 }),
-    enriched({ id: 'd', offline: 3, offline24h: 1 }),
-  ];
-  assert.deepEqual(applySubaccountFilter(rows, f({ status: 'healthy' })).map((s) => s.id), ['h']);
-  // "has offline" includes the >24h subset (both o and d have offline > 0)
-  assert.deepEqual(applySubaccountFilter(rows, f({ status: 'has_offline' })).map((s) => s.id).sort(), ['d', 'o']);
-  assert.deepEqual(applySubaccountFilter(rows, f({ status: 'has_offline_24h' })).map((s) => s.id), ['d']);
 });
 
 test('applySubaccountFilter: rejection buckets with inclusive 1%-3% edges; null excluded when active', () => {
@@ -204,14 +216,14 @@ test('applySubaccountFilter: sort by hashrate and earnings, both directions', ()
   assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'earnings_asc' })).map((s) => s.id), ['b', 'a']);
 });
 
-test('applySubaccountFilter: status and rejection combine (AND), then sort', () => {
+test('applySubaccountFilter: rejection and sorting combine', () => {
   const rows = [
-    enriched({ id: 'keep', offline: 1, rejection: 0.02, hashrate: 10 }),
-    enriched({ id: 'wrongStatus', offline: 0, rejection: 0.02, hashrate: 99 }),
-    enriched({ id: 'wrongRej', offline: 1, rejection: 0.5, hashrate: 99 }),
+    enriched({ id: 'keep', rejection: 0.02, hashrate: 10 }),
+    enriched({ id: 'first', rejection: 0.02, hashrate: 99 }),
+    enriched({ id: 'wrongRej', rejection: 0.5, hashrate: 100 }),
   ];
-  const out = applySubaccountFilter(rows, f({ status: 'has_offline', rejection: '1to3', sortBy: 'hashrate_desc' }));
-  assert.deepEqual(out.map((s) => s.id), ['keep']);
+  const out = applySubaccountFilter(rows, f({ rejection: '1to3', sortBy: 'hashrate_desc' }));
+  assert.deepEqual(out.map((s) => s.id), ['first', 'keep']);
 });
 
 function gen(account: string, btc: number | null): GeneratedBtcEntry {
@@ -223,6 +235,15 @@ test('withGeneratedBtc sums each subaccount lifetime BTC from the account-tagged
   const out = withGeneratedBtc(subs, [gen('Alpha', 0.5), gen('Alpha', 0.25), gen('Beta', 1)]);
   assert.equal(out[0].generatedBtc, 0.75);
   assert.equal(out[1].generatedBtc, 1);
+});
+
+test('withGeneratedBtc replaces the misleading newest-row amount with the selected UTC day', () => {
+  const entries = [
+    { entry_day: '2026-08-12', hashrate: null, btc_generated: 0.25, account: 'Alpha' },
+    { entry_day: '2026-08-11', hashrate: null, btc_generated: 9, account: 'Alpha' },
+  ];
+  const [out] = withGeneratedBtc([enriched({ name: 'Alpha', todayEarnings: 9 })], entries, Date.parse('2026-08-12T18:00:00Z'));
+  assert.equal(out.todayEarnings, 0.25);
 });
 
 test('withGeneratedBtc reports null (not 0) when an account has no entries or only null readings', () => {
@@ -242,8 +263,8 @@ test('subaccountsToCsv exports the columns the table shows, including generated 
     enriched({ name: 'Alpha', active: 2, hashrate: 1000, rejection: 0.01, generatedBtc: 0.5, todayEarnings: 0.25 }),
   ]);
   const [header, first] = csv.split('\n');
-  assert.equal(header, 'Name,Active workers,Hashrate (H/s),Rejection rate,Generated BTC,Today\'s earnings (BTC)');
-  assert.equal(first, 'Alpha,2,1000,1.00%,0.5,0.25');
+  assert.equal(header, 'Name,Active workers,Hashrate,Rejection rate,Generated BTC,Today\'s earnings (BTC)');
+  assert.equal(first, 'Alpha,2,1.00 KH/s,1.00%,0.5,0.25');
 });
 
 test('subaccountsToCsv writes an unknown generated-BTC total as --, formula-guarded', () => {

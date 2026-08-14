@@ -42,14 +42,17 @@ export function useAggregatedData(enabled = true) {
   // so one roll-up covers every account without a second code path.
   const mainAccount = useMemo<EnrichedSubaccount>(() => {
     const workers = mainWorkers ?? [];
-    const stats = deriveWorkersPageStats(workers, Date.now());
+    const stats = deriveWorkersPageStats(workers);
     return {
       id: MAIN_ACCOUNT_LABEL,
       name: MAIN_ACCOUNT_LABEL,
       hashrate: mainHashrate?.total_hashrate ?? 0,
+      pplns: mainHashrate?.pplns_hashrate ?? 0,
+      fpps: mainHashrate?.fpps_hashrate ?? 0,
       active: stats.active,
       offline: stats.offline,
-      offline24h: stats.offline24h,
+      pplnsPassword: '',
+      fppsPassword: null,
       rejection: stats.rejectionRate,
       accepted: mainShares?.accepted ?? 0,
       rejected: mainShares?.rejected ?? 0,

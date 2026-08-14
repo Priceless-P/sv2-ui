@@ -1,10 +1,10 @@
-import { LiInfoCircle, LiAltArrowDown, LiAltArrowUp } from 'solar-icon-react/li';
+import { LiAltArrowDown, LiAltArrowUp, LiSort } from 'solar-icon-react/li';
 import { cn, formatHashrate } from '@/lib/utils';
 import { CellCheckbox } from '@/components/ui/CellCheckbox';
+import { InfoHint } from '@/components/ui/InfoHint';
 import type { Worker } from '@/api/types';
 import {
   classifyWorker,
-  formatLastSeen,
   workerHashrate,
   workerMode,
   workerRejection,
@@ -13,6 +13,7 @@ import {
   type TaggedWorker,
   type WorkerSortKey,
 } from '@/lib/workersTable';
+import { ACTIVE_WORKERS_HINT, WORKER_METRICS_HINT, WORKER_REJECTION_HINT } from '@/lib/metricWindows';
 import { ModeBadge, StatusBadge } from './badges';
 
 interface SortState {
@@ -33,21 +34,33 @@ function SortHeader({
   sort: SortState;
   onSort: (key: WorkerSortKey) => void;
   hint?: string;
-  align?: 'left' | 'right';
+  align?: 'left' | 'center' | 'right';
 }) {
   const active = sort.key === sortKey;
   return (
-    <th className={cn('px-6 py-4 font-normal', align === 'right' ? 'text-right' : 'text-left')}>
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={cn('inline-flex items-center gap-1 transition-colors hover:text-foreground', active && 'text-foreground')}
-      >
-        {label}
-        {hint && <LiInfoCircle className="h-3.5 w-3.5 text-placeholder" aria-label={hint} />}
-        {active &&
-          (sort.dir === 'asc' ? <LiAltArrowUp className="h-3 w-3" /> : <LiAltArrowDown className="h-3 w-3" />)}
-      </button>
+    <th
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={cn(
+        'px-6 py-4 font-normal',
+        align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left',
+      )}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onSort(sortKey)}
+          aria-label={`Sort by ${label}`}
+          className={cn('inline-flex items-center gap-1 transition-colors hover:text-foreground', active && 'text-foreground')}
+        >
+          {label}
+          {active ? (
+            sort.dir === 'asc' ? <LiAltArrowUp className="h-3 w-3" /> : <LiAltArrowDown className="h-3 w-3" />
+          ) : (
+            <LiSort className="h-3 w-3 text-placeholder" />
+          )}
+        </button>
+        {hint && <InfoHint text={hint} />}
+      </span>
     </th>
   );
 }
@@ -55,11 +68,11 @@ function SortHeader({
 /**
  * One row as a mobile card (frame 1380:109825): Worker Name/Current hashrate/Mode on
  * one line, Rejection rate/Status below. The frame draws Mode as plain text here
- * (unlike the desktop table's ModeBadge) and carries no Account, Last seen, select
+ * (unlike the desktop table's ModeBadge) and carries no Account, select
  * checkbox, or Details action — so none of those are added; mobile users can't select
  * workers for the CSV export subset or open the Details slide-over from this card.
  */
-function WorkerCard({ worker, now }: { worker: Worker; now: number }) {
+function WorkerCard({ worker }: { worker: Worker }) {
   const rej = workerRejection(worker);
   const hr = workerHashrate(worker);
   return (
@@ -85,7 +98,7 @@ function WorkerCard({ worker, now }: { worker: Worker; now: number }) {
         </div>
         <div className="flex shrink-0 flex-col">
           <p className="text-xs text-body-alt">Status</p>
-          <StatusBadge status={classifyWorker(worker, now)} />
+          <StatusBadge status={classifyWorker(worker)} />
         </div>
       </div>
     </div>
@@ -99,7 +112,6 @@ export function WorkersTable({
   workers,
   sort,
   onSort,
-  now,
   selected,
   allSelected,
   someSelected,
@@ -111,7 +123,6 @@ export function WorkersTable({
   workers: Worker[];
   sort: SortState;
   onSort: (key: WorkerSortKey) => void;
-  now: number;
   selected: Set<string>;
   allSelected: boolean;
   someSelected: boolean;
@@ -137,24 +148,26 @@ export function WorkersTable({
               </th>
               <SortHeader label="Worker" sortKey="name" sort={sort} onSort={onSort} />
               {showAccount && <th className="px-6 py-4 text-left font-normal">Account</th>}
-              <SortHeader label="Hashrate" sortKey="hashrate" sort={sort} onSort={onSort} hint="Current hashrate reported by the worker." />
+              <SortHeader label="Hashrate" sortKey="hashrate" sort={sort} onSort={onSort} hint={WORKER_METRICS_HINT} />
               <th className="px-6 py-4 text-left font-normal">Mode</th>
               <SortHeader
                 label="Rejection rate"
                 sortKey="rejection"
                 sort={sort}
                 onSort={onSort}
-                hint="Rejected share rate for this worker."
+                hint={WORKER_REJECTION_HINT}
+                align="center"
               />
-              <th className="px-6 py-4 text-left font-normal">Status</th>
-              <th className="px-6 py-4 text-left font-normal">Last seen</th>
+              <th className="px-6 py-4 text-left font-normal">
+                <span className="inline-flex items-center gap-2">Status <InfoHint text={ACTIVE_WORKERS_HINT} /></span>
+              </th>
               <th className="px-6 py-4 text-left font-normal">Action</th>
             </tr>
           </thead>
           <tbody>
             {workers.length === 0 && (
               <tr>
-                <td colSpan={showAccount ? 9 : 8} className="px-4 py-10 text-center text-sm text-body-alt">
+                <td colSpan={showAccount ? 8 : 7} className="px-4 py-10 text-center text-sm text-body-alt">
                   No workers match your search.
                 </td>
               </tr>
@@ -180,13 +193,12 @@ export function WorkersTable({
                   <td className="px-6 py-4">
                     <ModeBadge mode={workerMode(w)} />
                   </td>
-                  <td className="px-6 py-4 font-mono text-foreground">
+                  <td className="px-6 py-4 text-center font-mono text-foreground">
                     {rej === null ? '--' : `${(rej * 100).toFixed(1)}%`}
                   </td>
                   <td className="px-6 py-4">
-                    <StatusBadge status={classifyWorker(w, now)} />
+                    <StatusBadge status={classifyWorker(w)} />
                   </td>
-                  <td className="px-6 py-4 text-body-alt">{formatLastSeen(w, now)}</td>
                   <td className="px-6 py-4">
                     <button
                       type="button"
@@ -207,7 +219,7 @@ export function WorkersTable({
           <p className="px-4 py-10 text-center text-sm text-body-alt">No workers match your search.</p>
         )}
         {workers.map((w) => (
-          <WorkerCard key={workerRowId(w)} worker={w} now={now} />
+          <WorkerCard key={workerRowId(w)} worker={w} />
         ))}
       </div>
     </>

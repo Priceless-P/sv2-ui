@@ -4,6 +4,12 @@ import { Reading } from '@/components/ui/Reading';
 import { WorkerBars } from '@/components/ui/WorkerBars';
 import { cn } from '@/lib/utils';
 import type { WorkersPageStats } from '@/lib/workersTable';
+import {
+  ACTIVE_WORKERS_HINT,
+  OFFLINE_WORKER_HINT,
+  WORKER_REJECTION_HINT,
+  WORKER_ROSTER_HINT,
+} from '@/lib/metricWindows';
 
 /**
  * A stat card. Same shell and type ramp as the home cards, so the two pages cannot
@@ -45,13 +51,13 @@ export function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <Card title="Total workers" hint="The total number of workers on this account." caption="Workers on this account">
+      <Card title="Total workers" hint={WORKER_ROSTER_HINT} caption="Seen during the last 24 hours">
         <Reading value={stats.total} />
       </Card>
 
       <Card
         title="Active workers"
-        hint="Workers currently connected and submitting shares to the pool."
+        hint={ACTIVE_WORKERS_HINT}
         captionTone={hasWorkers ? 'strong' : 'muted'}
         caption={
           <span className="flex flex-col gap-2">
@@ -67,17 +73,18 @@ export function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
 
       <Card
         title="Offline"
+        hint={OFFLINE_WORKER_HINT}
         captionTone={hasWorkers ? 'strong' : 'muted'}
-        caption={stats.offline24h > 0 ? `${stats.offline24h} offline for over 24h` : 'None offline over 24h'}
+        caption={stats.offline > 0 ? 'Inactive in the last 10 minutes' : 'All workers are active'}
       >
         <Reading value={stats.offline} />
       </Card>
 
       <Card
         title="Rejection rate"
-        hint="The percentage of shares that were rejected and did not count toward Payouts."
+        hint={WORKER_REJECTION_HINT}
         captionTone={rated ? 'strong' : 'muted'}
-        caption="Across all workers"
+        caption="Last 10 minutes across all workers"
       >
         <Reading value={rejection} unit={rated ? '%' : undefined} tone={rated ? 'success' : 'default'} />
       </Card>

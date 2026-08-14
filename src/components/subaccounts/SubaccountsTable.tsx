@@ -1,6 +1,12 @@
-import { formatHashrate } from '@/lib/utils';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { LiCheckCircle, LiCopy, LiKey } from 'solar-icon-react/li';
+import { cn, formatHashrate, overlayContainer } from '@/lib/utils';
 import { CellCheckbox } from '@/components/ui/CellCheckbox';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { formatBtc, type EnrichedSubaccount } from '@/lib/subaccountsTable';
+import { truncateMiddle } from '@/lib/payoutsTable';
+import { ACCOUNT_REJECTION_HINT, ACTIVE_WORKERS_HINT, LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
 
 /** The empty message shown in the table body when a search or filter excludes every row. */
 export interface SubaccountsEmpty {
@@ -26,6 +32,117 @@ function BtcCell({ value }: { value: number | null }) {
     <>
       <span className="text-foreground">{formatBtc(value)}</span>{' '}
       <span className="text-xs leading-4 text-body-alt">BTC</span>
+    </>
+  );
+}
+
+const SECRET_BUTTON =
+  'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-btn-secondary text-placeholder transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+
+function PasswordRow({ label, value }: { label: string; value: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const available = Boolean(value);
+  const copy = () => {
+    if (!value) return;
+    void navigator.clipboard?.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-12 shrink-0 text-xs leading-4 text-body-alt">{label}</span>
+      <span
+        title={value ?? undefined}
+        className={cn('min-w-0 flex-1 truncate font-mono text-xs', !available && 'font-sans text-body-alt')}
+      >
+        {available ? truncateMiddle(value as string, 8, 6) : 'Not available'}
+      </span>
+      <button
+        type="button"
+        onClick={copy}
+        disabled={!available}
+        aria-label={`Copy ${label} password`}
+        className={SECRET_BUTTON}
+      >
+        {copied ? <LiCheckCircle className="h-3.5 w-3.5 text-success" /> : <LiCopy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
+function PasswordCell({ subaccount }: { subaccount: EnrichedSubaccount }) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const PANEL_WIDTH = 288;
+
+  const toggle = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    // Keep the panel inside the viewport when the column sits near the right edge.
+    setAt({ top: rect.bottom + 6, left: Math.min(rect.left, window.innerWidth - PANEL_WIDTH - 12) });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (panelRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    const close = () => setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        className="inline-flex items-center gap-1.5 rounded-full border-[0.5px] border-border px-3 py-1 text-xs leading-4 text-body-alt transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <LiKey className="h-3.5 w-3.5" />
+        View
+      </button>
+      {open &&
+        at &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="dialog"
+            aria-label={`Mining passwords for ${subaccount.name}`}
+            style={{ top: at.top, left: at.left, width: PANEL_WIDTH }}
+            className="fixed z-50 flex flex-col gap-3 rounded-2xl border-[0.5px] border-border bg-card p-4 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)]"
+          >
+            <p className="text-xs leading-4 text-body-alt">Mining passwords</p>
+            <PasswordRow label="PPLNS" value={subaccount.pplnsPassword} />
+            <PasswordRow label="FPPS" value={subaccount.fppsPassword} />
+          </div>,
+          overlayContainer(),
+        )}
     </>
   );
 }
@@ -58,6 +175,10 @@ function SubaccountCard({ subaccount }: { subaccount: EnrichedSubaccount }) {
           ))}
         </div>
       ))}
+      <div className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+        <p className="text-xs leading-4 text-body-alt">Passwords</p>
+        <PasswordCell subaccount={subaccount} />
+      </div>
     </div>
   );
 }
@@ -106,10 +227,10 @@ export function SubaccountsTable({
   return (
     <>
       <div className="hidden overflow-x-auto sm:block">
-        <table className="w-full min-w-[900px] border-collapse text-sm leading-5">
+        <table className="w-full min-w-[820px] border-collapse text-sm leading-5">
           <thead>
             <tr className="border-b-[0.5px] border-border bg-muted text-sm leading-5 text-body-alt">
-              <th className="w-14 px-6 py-4">
+              <th className="w-14 px-3 py-4">
                 <CellCheckbox
                   checked={allSelected}
                   indeterminate={someSelected && !allSelected}
@@ -117,41 +238,49 @@ export function SubaccountsTable({
                   label="Select all subaccounts"
                 />
               </th>
-              <th className="px-6 py-4 text-left font-normal">Name</th>
-              <th className="px-6 py-4 text-left font-normal">Active workers</th>
-              <th className="px-6 py-4 text-left font-normal">Hashrate</th>
-              <th className="px-6 py-4 text-left font-normal">Rejection rate</th>
-              <th className="px-6 py-4 text-left font-normal">Generated BTC</th>
-              <th className="px-6 py-4 text-left font-normal">Today&rsquo;s earnings</th>
-              <th className="px-8 py-4 text-left font-normal">Action</th>
+              <th className="px-3 py-4 text-left font-normal">Name</th>
+              <th className="px-3 py-4 text-left font-normal">
+                <span className="inline-flex items-center gap-2">Active Workers <InfoHint text={ACTIVE_WORKERS_HINT} /></span>
+              </th>
+              <th className="px-3 py-4 text-left font-normal">Password</th>
+              <th className="px-3 py-4 text-left font-normal">
+                <span className="inline-flex items-center gap-2">Hashrate <InfoHint text={LIVE_HASHRATE_HINT} /></span>
+              </th>
+              <th className="px-3 py-4 text-left font-normal">
+                <span className="inline-flex items-center gap-2">Rejection <InfoHint text={ACCOUNT_REJECTION_HINT} /></span>
+              </th>
+              <th className="px-3 py-4 text-left font-normal">Generated BTC</th>
+              <th className="px-3 py-4 text-left font-normal">Today's earnings</th>
+              <th className="px-5 py-4 text-left font-normal">Action</th>
             </tr>
           </thead>
           <tbody>
             {emptyRow && (
               <tr>
-                <td colSpan={8}>{emptyRow}</td>
+                <td colSpan={9}>{emptyRow}</td>
               </tr>
             )}
             {subaccounts.map((s) => (
               <tr key={s.id} className="border-b-[0.5px] border-border last:border-0">
-                <td className="px-6 py-4">
+                <td className="px-3 py-4">
                   <CellCheckbox
                     checked={selected.has(s.id)}
                     onChange={() => onToggleOne(s.id)}
                     label={`Select ${s.name}`}
                   />
                 </td>
-                <td className="px-6 py-4 font-medium text-foreground">{s.name}</td>
-                <td className="px-6 py-4 text-foreground">{s.active}</td>
-                <td className="px-6 py-4 text-foreground">{formatHashrate(s.hashrate)}</td>
-                <td className="px-6 py-4 text-foreground">{rejectionText(s.rejection)}</td>
-                <td className="px-6 py-4">
+                <td className="px-3 py-4 font-medium text-foreground">{s.name}</td>
+                <td className="px-3 py-4 text-foreground">{s.active}</td>
+                <td className="px-3 py-4 text-foreground"><PasswordCell subaccount={s} /></td>
+                <td className="px-3 py-4 text-foreground">{formatHashrate(s.hashrate)}</td>
+                <td className="px-3 py-4 text-foreground">{rejectionText(s.rejection)}</td>
+                <td className="px-3 py-4">
                   <BtcCell value={s.generatedBtc} />
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-3 py-4">
                   <BtcCell value={s.todayEarnings} />
                 </td>
-                <td className="px-8 py-4">
+                <td className="px-5 py-4">
                   {onOpen && (
                     <button
                       type="button"

@@ -123,6 +123,15 @@ export function getBitcoinAddressError(addr: string, network: 'mainnet' | 'testn
  * keeps the tokens in scope while still escaping any page-level layout wrapper, such
  * as the `space-y-6` container whose child margin was offsetting fixed overlays.
  */
+/**
+ * A timestamped CSV filename, e.g. `workers_report_2026-08-13T14-32-05Z.csv`. The stamp
+ * is UTC to the second so two exports taken minutes apart never overwrite each other.
+ */
+export function exportFilename(prefix: string, now: number): string {
+  const stamp = new Date(now).toISOString().slice(0, 19).replace(/:/g, '-');
+  return `${prefix}_${stamp}Z.csv`;
+}
+
 export function overlayContainer(): HTMLElement {
   return document.querySelector<HTMLElement>('.dmnd-app') ?? document.body;
 }
