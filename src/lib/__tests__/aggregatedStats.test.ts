@@ -61,7 +61,7 @@ test('sumAccountStats returns a null rate when no sub has any shares', () => {
   assert.equal(agg.totalWorkers, 3);
 });
 
-test('donutSlices maps every sub in order, keeping a zero-hashrate sub', () => {
+test('donutSlices maps the mining subs in order, dropping one sitting at zero', () => {
   const subs = [
     sub({ id: 'a', name: 'Alpha', hashrate: 10 }),
     sub({ id: 'b', name: 'Bravo', hashrate: 0 }),
@@ -69,7 +69,6 @@ test('donutSlices maps every sub in order, keeping a zero-hashrate sub', () => {
   ];
   assert.deepEqual(donutSlices(subs), [
     { id: 'a', name: 'Alpha', hashrate: 10 },
-    { id: 'b', name: 'Bravo', hashrate: 0 },
     { id: 'c', name: 'Charlie', hashrate: 5 },
   ]);
 });

@@ -17,6 +17,14 @@ export function cn(...inputs: ClassValue[]) {
  * Decimal places every BTC amount is shown to. Amounts are rounded to this and then
  * trimmed of trailing zeros, so the display is "up to" 8 dp rather than padded.
  */
+/**
+ * Returns the number of milliseconds until the next tick of a periodic timer with the given period. 
+ */
+export function msUntilNextTick(periodMs: number, now: number = Date.now()): number {
+  const remainder = now % periodMs;
+  return remainder === 0 ? periodMs : periodMs - remainder;
+}
+
 export const BTC_DISPLAY_DP = 8;
 
 /**

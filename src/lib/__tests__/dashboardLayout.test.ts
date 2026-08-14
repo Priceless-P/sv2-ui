@@ -2,22 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  DEFAULT_WIDGETS,
-  WIDGET_IDS,
+  defaultWidgets,
+  widgetIds,
   normalizeLayout,
   toggleWidget,
   isLockedWidget,
   moveWidget,
   reorderWidget,
   visibleInOrder,
+  type WidgetDef,
 } from '@/lib/dashboardLayout';
 
 test('the default layout shows every widget in the canonical order', () => {
   assert.deepEqual(
-    DEFAULT_WIDGETS.map((w) => w.id),
-    WIDGET_IDS,
+    defaultWidgets('single').map((w: WidgetDef) => w.id),
+    widgetIds('single'),
   );
-  assert.ok(DEFAULT_WIDGETS.every((w) => w.visible));
+  assert.ok(defaultWidgets('single').every((w) => w.visible));
+  // Combined mode offers its own set: no live-hashrate card, and the breakdown instead.
+  assert.deepEqual(widgetIds('aggregated'), ['stats', 'combined', 'connect', 'performance']);
+  assert.equal(isLockedWidget('aggregated', 'combined'), true);
+  assert.equal(isLockedWidget('aggregated', 'hashrate'), false);
 });
 
 test('normalizeLayout repairs a stored layout: drops unknown ids, adds missing ones, keeps order', () => {
@@ -27,38 +32,38 @@ test('normalizeLayout repairs a stored layout: drops unknown ids, adds missing o
     order: ['performance', 'ghost-widget', 'hashrate'],
     hidden: ['performance'],
   };
-  const layout = normalizeLayout(stored);
+  const layout = normalizeLayout('single', stored);
   // unknown id dropped, known ones kept in their stored order, missing appended
   assert.ok(!(layout.order as string[]).includes('ghost-widget'));
   assert.equal(layout.order[0], 'performance');
   assert.equal(layout.order[1], 'hashrate');
   // every real widget present exactly once
-  assert.deepEqual([...layout.order].sort(), [...WIDGET_IDS].sort());
+  assert.deepEqual([...layout.order].sort(), [...widgetIds('single')].sort());
   // hidden set only keeps real ids
   assert.deepEqual(layout.hidden, ['performance']);
 });
 
 test('normalizeLayout of null/garbage returns the default (all visible, canonical order)', () => {
-  const layout = normalizeLayout(null);
-  assert.deepEqual(layout.order, WIDGET_IDS);
+  const layout = normalizeLayout('single', null);
+  assert.deepEqual(layout.order, widgetIds('single'));
   assert.deepEqual(layout.hidden, []);
 });
 
 test('toggleWidget flips visibility without touching order', () => {
-  const base = normalizeLayout(null);
-  const hidden = toggleWidget(base, 'connect');
+  const base = normalizeLayout('single', null);
+  const hidden = toggleWidget('single', base, 'connect');
   assert.ok(hidden.hidden.includes('connect'));
   assert.deepEqual(hidden.order, base.order);
-  const shownAgain = toggleWidget(hidden, 'connect');
+  const shownAgain = toggleWidget('single', hidden, 'connect');
   assert.ok(!shownAgain.hidden.includes('connect'));
 });
 
 test('reorderWidget moves a widget to a target index, shifting the rest', () => {
-  const base = normalizeLayout(null); // [hashrate, connect, stats, performance]
+  const base = normalizeLayout('single', null); // [hashrate, connect, stats, performance]
   // drag the last (performance) to the front
   const toFront = reorderWidget(base, 'performance', 0);
   assert.equal(toFront.order[0], 'performance');
-  assert.deepEqual([...toFront.order].sort(), [...WIDGET_IDS].sort());
+  assert.deepEqual([...toFront.order].sort(), [...widgetIds('single')].sort());
   // drag the first to index 2
   const moved = reorderWidget(base, base.order[0], 2);
   assert.equal(moved.order[2], base.order[0]);
@@ -70,7 +75,7 @@ test('reorderWidget moves a widget to a target index, shifting the rest', () => 
 });
 
 test('moveWidget reorders up and down and is a no-op at the edges', () => {
-  const base = normalizeLayout(null);
+  const base = normalizeLayout('single', null);
   const first = base.order[0];
   const second = base.order[1];
   const down = moveWidget(base, first, 'down');
@@ -84,10 +89,10 @@ test('moveWidget reorders up and down and is a no-op at the edges', () => {
 });
 
 test('visibleInOrder returns only shown widgets, in the layout order', () => {
-  let layout = normalizeLayout(null);
+  let layout = normalizeLayout('single', null);
   // order[0] is the live hashrate, which is locked, so hide the next one along.
   const target = layout.order[1];
-  layout = toggleWidget(layout, target);
+  layout = toggleWidget('single', layout, target);
   const shown = visibleInOrder(layout);
   assert.ok(!shown.some((w) => w.id === target));
   assert.deepEqual(
@@ -99,22 +104,22 @@ test('visibleInOrder returns only shown widgets, in the layout order', () => {
 test('the live hashrate widget cannot be hidden', () => {
   // The design carries a "Live hashrate can't be hidden" notice, so the toggle is a
   // no-op for that widget rather than a control that silently removes it.
-  const layout = normalizeLayout({});
-  assert.deepEqual(toggleWidget(layout, 'hashrate').hidden, []);
-  assert.equal(isLockedWidget('hashrate'), true);
-  assert.equal(isLockedWidget('connect'), false);
+  const layout = normalizeLayout('single', {});
+  assert.deepEqual(toggleWidget('single', layout, 'hashrate').hidden, []);
+  assert.equal(isLockedWidget('single', 'hashrate'), true);
+  assert.equal(isLockedWidget('single', 'connect'), false);
 });
 
 test('a stored layout that hides the live hashrate is repaired', () => {
   // A layout persisted before the rule existed must not keep the widget hidden.
-  const repaired = normalizeLayout({ order: ['hashrate', 'connect', 'stats', 'performance'], hidden: ['hashrate', 'connect'] });
+  const repaired = normalizeLayout('single', { order: ['hashrate', 'connect', 'stats', 'performance'], hidden: ['hashrate', 'connect'] });
   assert.deepEqual(repaired.hidden, ['connect']);
 });
 
 test('every other widget can still be hidden and shown', () => {
-  let layout = normalizeLayout({});
-  layout = toggleWidget(layout, 'connect');
+  let layout = normalizeLayout('single', {});
+  layout = toggleWidget('single', layout, 'connect');
   assert.deepEqual(layout.hidden, ['connect']);
-  layout = toggleWidget(layout, 'connect');
+  layout = toggleWidget('single', layout, 'connect');
   assert.deepEqual(layout.hidden, []);
 });

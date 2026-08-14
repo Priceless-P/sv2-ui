@@ -4,6 +4,7 @@ import { CellCheckbox } from '@/components/ui/CellCheckbox';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { formatHashrate } from '@/lib/utils';
 import { formatGeneratedDate, formatBtc, generatedBtcRowId } from '@/lib/generatedBtcTable';
+import { DAILY_HASHRATE_HINT } from '@/lib/metricWindows';
 
 /** The empty message shown in the table body when the date filter excludes every row. */
 export interface GeneratedBtcEmpty {
@@ -125,7 +126,7 @@ export function GeneratedBtcTable({
               <th className="px-6 py-4 text-left font-normal">
                 <span className="inline-flex items-center gap-2">
                   Average hashrate
-                  <InfoHint text="The worker's average hashrate" />
+                  <InfoHint text={DAILY_HASHRATE_HINT} />
                 </span>
               </th>
               <th className="px-6 py-4 text-left font-normal">

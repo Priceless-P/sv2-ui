@@ -49,7 +49,7 @@ export function WatcherHashratePanel({
   const total = snapshot?.total_hashrate ?? 0;
   const pplns = snapshot?.pplns_hashrate ?? 0;
   const fpps = snapshot?.fpps_hashrate ?? 0;
-  const lastUpdated = formatLastUpdated(snapshot?.observed_at, Date.now());
+  const lastUpdated = formatLastUpdated(snapshot?.observed_at ?? undefined, Date.now());
 
   return (
     <div className="rounded-xl border border-border bg-card p-6">

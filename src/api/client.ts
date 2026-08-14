@@ -14,7 +14,6 @@ import {
   type RequestOptions,
   type SignupInput,
   type Subaccount,
-  type SubaccountHashratePoint,
   type SubaccountShareStats,
   type SubaccountSummary,
   type Worker,
@@ -334,19 +333,6 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
       // account rather than mixing windows.
       const result = await request<unknown>({ method: 'GET', path: '/api/user/share_stats' }, opts, req);
       return result && typeof result === 'object' ? (result as SubaccountShareStats) : null;
-    },
-    async getSubaccountHashrateHistory(id, token, from, to, req) {
-      const params = new URLSearchParams({ token, from, to }).toString();
-      const result = await request<unknown>(
-        {
-          method: 'GET',
-          path: `/api/user/sub_account/${encodeURIComponent(id)}/hashrate/historical?${params}`,
-          timeoutMs: 20_000,
-        },
-        opts,
-        req,
-      );
-      return Array.isArray(result) ? (result as SubaccountHashratePoint[]) : [];
     },
     getWorkers(from, to, req) {
       const query = new URLSearchParams({ from, to }).toString();

@@ -1,11 +1,11 @@
 /**
- * The home dashboard's customizable widgets. The layout (order + which are hidden)
- * is persisted per browser so a miner can tailor their home. Only widgets that
- * actually exist on our home are listed; aggregated/subaccount widgets in the design
- * (combined hashrate, pending payouts, average uptime) aren't built yet, so they are
- * intentionally absent rather than shown as dead toggles.
+ * The home dashboard's customizable widgets. The layout (order + which are hidden) is
+ * persisted per browser so a miner can tailor their home.
  */
-export type WidgetId = 'hashrate' | 'connect' | 'stats' | 'performance';
+
+export type WidgetId = 'hashrate' | 'combined' | 'connect' | 'stats' | 'performance';
+
+export type DashboardMode = 'single' | 'aggregated';
 
 export interface WidgetDef {
   id: WidgetId;
@@ -14,34 +14,40 @@ export interface WidgetDef {
   visible: boolean;
 }
 
-// Canonical order + labels. Order here is the default dashboard order.
-export const DEFAULT_WIDGETS: WidgetDef[] = [
-  { id: 'hashrate', label: 'Live Hashrate', visible: true },
-  { id: 'connect', label: 'Connect Workers', visible: true },
-  { id: 'stats', label: 'Worker Stats', visible: true },
-  { id: 'performance', label: 'Mining Performance', visible: true },
-];
+const LABELS: Record<WidgetId, string> = {
+  hashrate: 'Live Hashrate',
+  combined: 'Combined Hashrate',
+  connect: 'Connect Workers',
+  stats: 'Worker Stats',
+  performance: 'Mining Performance',
+};
 
-export const WIDGET_IDS: WidgetId[] = DEFAULT_WIDGETS.map((w) => w.id);
+// The default order per mode, and the only widgets that mode offers.
+const MODE_WIDGETS: Record<DashboardMode, WidgetId[]> = {
+  single: ['hashrate', 'connect', 'stats', 'performance'],
+  aggregated: ['stats', 'combined', 'connect', 'performance'],
+};
+
+/** The widget a mode will not let a miner hide: its headline figure. */
+const LOCKED: Record<DashboardMode, WidgetId> = { single: 'hashrate', aggregated: 'combined' };
+
+export function widgetIds(mode: DashboardMode): WidgetId[] {
+  return MODE_WIDGETS[mode];
+}
+
+export function defaultWidgets(mode: DashboardMode): WidgetDef[] {
+  return MODE_WIDGETS[mode].map((id) => ({ id, label: LABELS[id], visible: true }));
+}
 
 /**
- * Widgets a miner cannot hide. The live hashrate is the reason the page exists, and
- * the design says so explicitly ("Live hashrate can't be hidden"), so hiding it is
- * refused here rather than in the panel alone -- that way a stale stored layout or a
- * second entry point cannot get the widget off the page either.
+ * The mode's headline widget cannot be hidden.
  */
-const LOCKED_WIDGETS: WidgetId[] = ['hashrate'];
-
-export function isLockedWidget(id: WidgetId): boolean {
-  return LOCKED_WIDGETS.includes(id);
+export function isLockedWidget(mode: DashboardMode, id: WidgetId): boolean {
+  return LOCKED[mode] === id;
 }
-const LABELS: Record<WidgetId, string> = Object.fromEntries(DEFAULT_WIDGETS.map((w) => [w.id, w.label])) as Record<
-  WidgetId,
-  string
->;
 
-function isWidgetId(value: unknown): value is WidgetId {
-  return typeof value === 'string' && (WIDGET_IDS as string[]).includes(value);
+function isWidgetId(mode: DashboardMode, value: unknown): value is WidgetId {
+  return typeof value === 'string' && (MODE_WIDGETS[mode] as string[]).includes(value);
 }
 
 /** The persisted shape: an explicit order plus the set of hidden widgets. */
@@ -56,9 +62,9 @@ export interface DashboardLayout {
  * (so a newly-added widget appears), and keep only real ids in `hidden`. This makes
  * the persisted layout forward-compatible as widgets are added or removed.
  */
-export function normalizeLayout(stored: unknown): DashboardLayout {
+export function normalizeLayout(mode: DashboardMode, stored: unknown): DashboardLayout {
   const raw = (stored ?? {}) as Partial<DashboardLayout>;
-  const storedOrder = Array.isArray(raw.order) ? raw.order.filter(isWidgetId) : [];
+  const storedOrder = Array.isArray(raw.order) ? raw.order.filter((id) => isWidgetId(mode, id)) : [];
   const seen = new Set<WidgetId>();
   const order: WidgetId[] = [];
   for (const id of storedOrder) {
@@ -67,16 +73,18 @@ export function normalizeLayout(stored: unknown): DashboardLayout {
       order.push(id);
     }
   }
-  for (const id of WIDGET_IDS) {
+  for (const id of MODE_WIDGETS[mode]) {
     if (!seen.has(id)) order.push(id);
   }
-  const hidden = Array.isArray(raw.hidden) ? raw.hidden.filter(isWidgetId).filter((id) => !isLockedWidget(id)) : [];
+  const hidden = Array.isArray(raw.hidden)
+    ? raw.hidden.filter((id) => isWidgetId(mode, id)).filter((id) => !isLockedWidget(mode, id))
+    : [];
   return { order, hidden: [...new Set(hidden)] };
 }
 
 /** Show a hidden widget, or hide a shown one. Order is untouched. */
-export function toggleWidget(layout: DashboardLayout, id: WidgetId): DashboardLayout {
-  if (isLockedWidget(id)) return layout;
+export function toggleWidget(mode: DashboardMode, layout: DashboardLayout, id: WidgetId): DashboardLayout {
+  if (isLockedWidget(mode, id)) return layout;
   const hidden = layout.hidden.includes(id)
     ? layout.hidden.filter((x) => x !== id)
     : [...layout.hidden, id];

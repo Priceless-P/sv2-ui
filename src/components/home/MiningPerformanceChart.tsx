@@ -6,8 +6,10 @@ import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { cn } from '@/lib/utils';
 import type { HashratePoint, HashrateRange } from '@/api/types';
 import { CalendarSheet } from '@/components/payouts/CalendarSheet';
+import { InfoHint } from '@/components/ui/InfoHint';
 import type { DateRange } from '@/lib/payoutsTable';
 import { formatAxisValue, pickHashrateScale, tooltipTimestamp, xAxisTickLabel, yAxisTicks } from '@/lib/chartAxis';
+import { HASHRATE_HISTORY_HINT } from '@/lib/metricWindows';
 
 const RANGES: HashrateRange[] = ['1H', '6H', '24H', '7D'];
 
@@ -103,9 +105,12 @@ export function MiningPerformanceChart() {
     >
       <div className={cn('flex w-full', hasSamples ? 'items-center justify-between' : 'flex-col gap-4')}>
         <div className="flex w-full items-center justify-between">
-          <h3 className="!font-body text-lg font-semibold leading-7 tracking-normal text-heading-alt">
-            Mining Performance
-          </h3>
+          <span className="inline-flex items-center gap-2">
+            <h3 className="!font-body text-lg font-semibold leading-7 tracking-normal text-heading-alt">
+              Mining Performance
+            </h3>
+            <InfoHint text={HASHRATE_HISTORY_HINT} />
+          </span>
           {hasSamples && (
             <div className="flex items-center gap-2 rounded-sm border-[0.5px] border-border bg-muted p-0.5">
               {RANGES.map((r) => {
@@ -217,7 +222,7 @@ export function MiningPerformanceChart() {
                   <YAxis
                     domain={[0, domainMax]}
                     ticks={yTicks}
-                    tickFormatter={(value: number) => formatAxisValue(value, scale.divisor)}
+                    tickFormatter={(value: number) => formatAxisValue(value, scale.divisor, 1)}
                     axisLine={false}
                     tickLine={false}
                     tick={{ fill: 'hsl(var(--body-alt))', fontSize: 12 }}

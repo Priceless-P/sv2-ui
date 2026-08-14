@@ -4,6 +4,7 @@ import { useAuth } from '@/auth';
 import type { CreateSubaccountInput } from '@/api/types';
 import { enrichSubaccount, type EnrichedSubaccount } from '@/lib/subaccountsTable';
 import { useActiveAccountId } from './useActiveAccountId';
+import { msUntilNextTick } from '@/lib/utils';
 
 // The UI checks every five minutes
 const CLOUD_POLL_MS = 5 * 60 * 1000;
@@ -36,7 +37,7 @@ export function useSubaccounts(enabled = true) {
       );
     },
     enabled: !!session && enabled,
-    refetchInterval: CLOUD_POLL_MS,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,

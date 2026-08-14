@@ -3,10 +3,12 @@ import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { DmndSession, HashrateRange } from '@/api/types';
 import { downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
-import { subaccountSeriesToPoints, sumHashrateSeries } from '@/lib/aggregatedHashrate';
+import { sumHashrateSeries } from '@/lib/aggregatedHashrate';
+import { createWatcherClient } from '@/api/watcherClient';
 import { useSubaccountList } from './useSubaccounts';
 import { fetchConfirmedTxsSince, startOfUtcDaySec, sumOutputsTo } from '@/lib/blockstream';
 import { useActiveAccountId } from './useActiveAccountId';
+import { msUntilNextTick } from '@/lib/utils';
 
 // The UI checks account data every five minutes.
 const CLOUD_POLL_MS = 5 * 60 * 1000;
@@ -20,14 +22,14 @@ const MAX_CHART_POINTS = 300;
 const EARNINGS_POLL_MS = 15 * 60 * 1000;
 
 /** Live hashrate snapshot for the signed-in account (home live-hashrate card). */
-export function useAccountHashrate() {
+export function useAccountHashrate(enabled = true) {
   const { session } = useAuth();
   const accountId = useActiveAccountId();
   return useQuery({
     queryKey: ['account', 'hashrate', accountId],
     queryFn: ({ signal }) => getUser().getHashrate({ signal, accountId: accountId ?? undefined }),
-    enabled: !!session,
-    refetchInterval: CLOUD_POLL_MS,
+    enabled: !!session && enabled,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
@@ -57,7 +59,7 @@ export function useAccountHashrateHistory(range: HashrateRange, custom?: { from:
     },
     enabled: !!session,
     // A custom (historical) window doesn't need polling; presets stay live.
-    refetchInterval: custom ? false : CLOUD_POLL_MS,
+    refetchInterval: custom ? false : () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
@@ -92,7 +94,7 @@ export function useAccountWorkers(from: string, to: string) {
     queryKey: ['account', 'workers', from, to, accountId],
     queryFn: ({ signal }) => getUser().getWorkers(from, to, { signal, accountId: accountId ?? undefined }),
     enabled: !!session && !!from && !!to,
-    refetchInterval: CLOUD_POLL_MS,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
@@ -101,11 +103,9 @@ export function useAccountWorkers(from: string, to: string) {
 
 /**
  * The combined hashrate series across the main account and every subaccount, for the
- * chart in aggregated mode. Each account is fetched over the same window and the
- * readings sharing a timestamp are added; the per-subaccount endpoint reports each
- * figure with a unit while the account-level one returns bare H/s, so subaccount points
- * are normalised before being summed. A failed account rejects the query so the chart
- * shows its error state rather than a line that silently omits an account's hashrate.
+ * chart in aggregated mode. Every account is fetched over the same window in raw H/s and
+ * the readings sharing a timestamp are added. A failed account rejects the query so the
+ * chart shows its error state rather than a line that silently omits an account.
  */
 export function useAggregatedHashrateHistory(
   range: HashrateRange,
@@ -119,26 +119,23 @@ export function useAggregatedHashrateHistory(
   return useQuery({
     queryKey: ['account', 'hashrate-history', 'aggregated', key, ownerAccountId],
     queryFn: async ({ signal }) => {
-      const client = getUser();
       const owners = subs ?? [];
       const window = custom ?? rangeToWindow(range, Date.now());
+      // Each subaccount is read through the token-only client rather than the
+      // /sub_account/<id>/hashrate/historical route.
       const [mainPoints, subSeries] = await Promise.all([
-        client.getHashrateHistory(window.from, window.to, { signal, accountId: ownerAccountId ?? undefined }),
+        getUser().getHashrateHistory(window.from, window.to, {
+          signal,
+          accountId: ownerAccountId ?? undefined,
+        }),
         Promise.all(
-          owners.map((s) =>
-            client
-              .getSubaccountHashrateHistory(s.id, s.token, window.from, window.to, {
-                signal,
-                accountId: ownerAccountId ?? undefined,
-              })
-              .then(subaccountSeriesToPoints),
-          ),
+          owners.map((s) => createWatcherClient(s.token).getHashrateHistory(window.from, window.to, signal)),
         ),
       ]);
       return downsampleHashrate(sumHashrateSeries([mainPoints, ...subSeries]), MAX_CHART_POINTS);
     },
     enabled: !!session && enabled && subs !== undefined,
-    refetchInterval: custom ? false : CLOUD_POLL_MS,
+    refetchInterval: custom ? false : () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
@@ -156,22 +153,22 @@ export function useAccountShareStats(enabled = true) {
     queryKey: ['account', 'share-stats', accountId],
     queryFn: ({ signal }) => getUser().getShareStats({ signal, accountId: accountId ?? undefined }),
     enabled: !!session && enabled,
-    refetchInterval: CLOUD_POLL_MS,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
   });
 }
 
-/** The full worker roster (every page) for the home's Active / Offline counts. */
-export function useAccountAllWorkers() {
+/** The full worker roster (every page) for the active account. */
+export function useAccountAllWorkers(enabled = true) {
   const { session } = useAuth();
   const accountId = useActiveAccountId();
   return useQuery({
     queryKey: ['account', 'workers-all', accountId],
     queryFn: ({ signal }) => getUser().getAllWorkers({ signal, accountId: accountId ?? undefined }),
-    enabled: !!session,
-    refetchInterval: CLOUD_POLL_MS,
+    enabled: !!session && enabled,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,

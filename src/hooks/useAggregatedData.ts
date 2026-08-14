@@ -3,10 +3,10 @@ import { donutSlices, sumAccountStats } from '@/lib/aggregatedStats';
 import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
 import { todayGeneratedBtc } from '@/lib/generatedBtcTable';
 import { deriveWorkersPageStats } from '@/lib/workersTable';
-import { sumGeneratedBtc, type EnrichedSubaccount } from '@/lib/subaccountsTable';
+import { sumGeneratedBtc, withGeneratedBtc, type EnrichedSubaccount } from '@/lib/subaccountsTable';
 import { useSubaccounts } from './useSubaccounts';
 import { useAccountAllWorkers, useAccountHashrate, useAccountShareStats } from './useAccountData';
-import { useGeneratedBtc } from './useGeneratedBtc';
+import { useAggregatedGeneratedBtc } from './useGeneratedBtc';
 
 /**
  * Account-wide figures for aggregated mode: the main account and every subaccount
@@ -22,21 +22,48 @@ import { useGeneratedBtc } from './useGeneratedBtc';
  * `today_generated_btc` (rather than the on-chain paid total, which measures something
  * else).
  *
- * Loading and error state stays that of the subaccount fan-out, which is the call that
- * can partially fail; a failure there surfaces instead of a total missing accounts.
+ * Loading and error state covers every source used in the total. A failed master or
+ * subaccount request surfaces instead of silently rendering a partial aggregate.
  */
 export function useAggregatedData(enabled = true) {
   // Gated so the per-subaccount fan-out only runs in aggregated mode; a single-account
   // dashboard never pays for data it does not show.
-  const { data, isLoading, isError, refetch } = useSubaccounts(enabled);
-  const { data: mainWorkers } = useAccountAllWorkers();
-  const { data: mainHashrate } = useAccountHashrate();
-  const { data: mainShares } = useAccountShareStats(enabled);
+  const { data, isLoading: subaccountsLoading, isError: subaccountsError, refetch: refetchSubaccounts } = useSubaccounts(enabled);
+  const {
+    data: mainWorkers,
+    isLoading: mainWorkersLoading,
+    isError: mainWorkersError,
+    refetch: refetchMainWorkers,
+  } = useAccountAllWorkers(enabled);
+  const {
+    data: mainHashrate,
+    isLoading: mainHashrateLoading,
+    isError: mainHashrateError,
+    refetch: refetchMainHashrate,
+  } = useAccountHashrate(enabled);
+  const {
+    data: mainShares,
+    isLoading: mainSharesLoading,
+    isError: mainSharesError,
+    refetch: refetchMainShares,
+  } = useAccountShareStats(enabled);
   // Gated with the rest: the home page has no other use for the generated-BTC list, so
   // a single-account dashboard should not fetch it at all.
-  const { data: mainGenerated } = useGeneratedBtc(enabled);
+  const {
+    data: generatedEntries,
+    isLoading: generatedLoading,
+    isError: generatedError,
+    refetch: refetchGenerated,
+  } = useAggregatedGeneratedBtc(enabled);
 
-  const subs = useMemo(() => data ?? [], [data]);
+  const subs = useMemo(
+    () => withGeneratedBtc(data ?? [], generatedEntries ?? []),
+    [data, generatedEntries],
+  );
+  const mainGenerated = useMemo(
+    () => (generatedEntries ?? []).filter((entry) => entry.account === MAIN_ACCOUNT_LABEL),
+    [generatedEntries],
+  );
 
   // The main account expressed in the same per-account shape as an enriched subaccount,
   // so one roll-up covers every account without a second code path.
@@ -56,8 +83,8 @@ export function useAggregatedData(enabled = true) {
       rejection: stats.rejectionRate,
       accepted: mainShares?.accepted ?? 0,
       rejected: mainShares?.rejected ?? 0,
-      todayEarnings: todayGeneratedBtc(mainGenerated ?? [], Date.now()),
-      generatedBtc: sumGeneratedBtc(mainGenerated ?? []),
+      todayEarnings: todayGeneratedBtc(mainGenerated, Date.now()),
+      generatedBtc: sumGeneratedBtc(mainGenerated),
       workers,
     };
   }, [mainWorkers, mainHashrate, mainShares, mainGenerated]);
@@ -68,5 +95,30 @@ export function useAggregatedData(enabled = true) {
   const stats = useMemo(() => sumAccountStats(accounts), [accounts]);
   const slices = useMemo(() => donutSlices(accounts), [accounts]);
 
-  return { stats, slices, accounts, subaccounts: subs, isLoading, isError, refetch };
+  return {
+    stats,
+    slices,
+    accounts,
+    subaccounts: subs,
+    isLoading:
+      subaccountsLoading ||
+      generatedLoading ||
+      mainWorkersLoading ||
+      mainHashrateLoading ||
+      mainSharesLoading,
+    isError:
+      subaccountsError ||
+      generatedError ||
+      mainWorkersError ||
+      mainHashrateError ||
+      mainSharesError,
+    refetch: () =>
+      Promise.all([
+        refetchSubaccounts(),
+        refetchGenerated(),
+        refetchMainWorkers(),
+        refetchMainHashrate(),
+        refetchMainShares(),
+      ]),
+  };
 }

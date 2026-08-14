@@ -42,18 +42,17 @@ test('pickHashrateScale caps at EH/s rather than inventing a bigger unit', () =>
   assert.deepEqual(pickHashrateScale([1e24]), { unit: 'EH/s', divisor: 1e18 });
 });
 
-test('formatAxisValue renders a bare number in the axis unit, no unit suffix', () => {
-  // The design prints the unit ONCE above the axis, so ticks are bare numbers.
-  assert.equal(formatAxisValue(160e12, 1e12), '160');
-  assert.equal(formatAxisValue(40e12, 1e12), '40');
-  assert.equal(formatAxisValue(8.95e6, 1e6), '8.9');
-  assert.equal(formatAxisValue(8.96e6, 1e6), '9');
-  assert.equal(formatAxisValue(0, 1e6), '0');
+test('formatAxisValue quotes a hashrate to two decimals by default', () => {
+  assert.equal(formatAxisValue(160e12, 1e12), '160.00');
+  assert.equal(formatAxisValue(8.95e6, 1e6), '8.95');
+  assert.equal(formatAxisValue(5.59e6, 1e6), '5.59');
+  assert.equal(formatAxisValue(0, 1e6), '0.00');
 });
 
-test('formatAxisValue keeps one decimal only when it changes the reading', () => {
-  assert.equal(formatAxisValue(1.5e6, 1e6), '1.5');
-  assert.equal(formatAxisValue(2e6, 1e6), '2');
+test('an axis tick asks for one decimal and drops it when the value is round', () => {
+  assert.equal(formatAxisValue(160e12, 1e12, 1), '160');
+  assert.equal(formatAxisValue(1.5e6, 1e6, 1), '1.5');
+  assert.equal(formatAxisValue(2e6, 1e6, 1), '2');
 });
 
 test('xAxisTickLabel labels the final tick "Now" when the window ends at the present', () => {

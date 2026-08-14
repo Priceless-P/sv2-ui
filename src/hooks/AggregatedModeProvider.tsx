@@ -1,7 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { useAuth } from '@/auth';
+import { claimAggregatedDefault, loginMarker } from '@/lib/aggregatedMode';
+import { hasSubaccountHashrate } from '@/lib/subaccountsTable';
 import { useAggregatedMode } from './useAggregatedMode';
-import { useHasSubaccounts } from './useSubaccounts';
+import { useSubaccountList } from './useSubaccounts';
 
 interface AggregatedModeValue {
   aggregated: boolean;
@@ -33,9 +35,11 @@ const AggregatedModeContext = createContext<AggregatedModeValue | null>(null);
  * stored preference can never strand the dashboard in a mode it cannot leave.
  */
 export function AggregatedModeProvider({ children }: { children: ReactNode }) {
-  const { viewingAccountId } = useAuth();
+  const { session, viewingAccountId } = useAuth();
   const { aggregated, setAggregated } = useAggregatedMode();
-  const { hasSubaccounts, isLoading: subaccountsLoading } = useHasSubaccounts();
+  const { data: subaccounts, isLoading: subaccountsLoading } = useSubaccountList();
+  const defaultAppliedFor = useRef<string | null>(null);
+  const hasSubaccounts = (subaccounts?.length ?? 0) > 0;
 
   // Only act once the list has actually loaded: mid-load the count reads as zero, and
   // clearing on that would wipe a legitimate preference on every refresh.
@@ -43,6 +47,19 @@ export function AggregatedModeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (aggregated && noSubaccounts) setAggregated(false);
   }, [aggregated, noSubaccounts, setAggregated]);
+
+  // On the first main-account view of this login, open the combined dashboard when a
+  // subaccount is actively mining. This is a one-time default: after it runs, the user
+  // can switch aggregated mode off without this effect immediately turning it back on.
+  useEffect(() => {
+    if (!session || subaccountsLoading || viewingAccountId !== null) return;
+    const marker = loginMarker(session.accountId, session.expiresAt);
+    if (defaultAppliedFor.current === marker) return;
+    defaultAppliedFor.current = marker;
+    const storage = typeof window === 'undefined' ? null : window.sessionStorage;
+    if (!claimAggregatedDefault(marker, storage)) return;
+    if (hasSubaccountHashrate(subaccounts ?? [])) setAggregated(true);
+  }, [session, subaccounts, subaccountsLoading, viewingAccountId, setAggregated]);
 
   const value = useMemo(
     () => ({ aggregated: aggregated && viewingAccountId === null && !noSubaccounts, setAggregated }),

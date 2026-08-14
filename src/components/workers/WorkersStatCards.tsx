@@ -86,7 +86,7 @@ export function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
         captionTone={rated ? 'strong' : 'muted'}
         caption="Last 10 minutes across all workers"
       >
-        <Reading value={rejection} unit={rated ? '%' : undefined} tone={rated ? 'success' : 'default'} />
+        <Reading value={rejection} unit={rated ? '%' : undefined} />
       </Card>
     </div>
   );

@@ -31,3 +31,6 @@ export const ACCOUNT_REJECTION_HINT =
   'Percentage of shares rejected in the last 24 hours.';
 
 export const DAILY_HASHRATE_HINT = 'Average hashrate for this day.';
+
+export const GENERATED_AVG_HASHRATE_HINT =
+  'Average of the daily hashrate readings in the rows below.';
