@@ -5,8 +5,7 @@ import type {
   SubaccountSummary,
   Worker,
 } from '@/api/types';
-import { deriveWorkersPageStats } from '@/lib/workersTable';
-import { BTC_DISPLAY_DP } from '@/lib/utils';
+import { BTC_DISPLAY_DP, formatHashrate } from '@/lib/utils';
 
 export type SubaccountSortKey = 'name' | 'hashrate' | 'rejection' | 'earnings';
 export type SortDir = 'asc' | 'desc';
@@ -22,6 +21,11 @@ export function parseHashrate(s: Subaccount): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Whether at least one subaccount is currently reporting hashrate. */
+export function hasSubaccountHashrate(subs: Subaccount[]): boolean {
+  return subs.some((sub) => parseHashrate(sub) > 0);
+}
+
 /** Rejected/total share fraction (0..1) from share_stats; null without stats or shares. */
 export function rejectionFromStats(stats: SubaccountShareStats | null | undefined): number | null {
   if (!stats) return null;
@@ -34,9 +38,12 @@ export interface EnrichedSubaccount {
   id: string;
   name: string;
   hashrate: number;
+  pplns: number;
+  fpps: number;
   active: number;
   offline: number;
-  offline24h: number;
+  pplnsPassword: string;
+  fppsPassword: string | null;
   rejection: number | null;
   // Raw accepted/rejected share counts kept alongside the derived rejection rate so an
   // aggregate across subaccounts can recompute a correct combined rate (summing rates
@@ -58,16 +65,17 @@ export function enrichSubaccount(
   row: Subaccount,
   summary: SubaccountSummary | null,
   workers: Worker[],
-  now: number,
 ): EnrichedSubaccount {
-  const stats = deriveWorkersPageStats(workers, now);
   return {
     id: row.id,
     name: subaccountName(row),
     hashrate: parseHashrate(row),
-    active: stats.active,
-    offline: stats.offline,
-    offline24h: stats.offline24h,
+    pplns: summary?.hashrate?.pplns_hashrate ?? 0,
+    fpps: summary?.hashrate?.fpps_hashrate ?? 0,
+    active: workers.length,
+    offline: 0,
+    pplnsPassword: row.token,
+    fppsPassword: row.fpps_token,
     rejection: rejectionFromStats(summary?.share_stats),
     accepted: summary?.share_stats?.accepted ?? 0,
     rejected: summary?.share_stats?.rejected ?? 0,
@@ -87,7 +95,11 @@ export function enrichSubaccount(
  * counted as zero; an account with no usable reading at all stays null (unknown), and
  * only an account with at least one real reading gets a number.
  */
-export function withGeneratedBtc(subs: EnrichedSubaccount[], entries: GeneratedBtcEntry[]): EnrichedSubaccount[] {
+export function withGeneratedBtc(
+  subs: EnrichedSubaccount[],
+  entries: GeneratedBtcEntry[],
+  nowMs: number = Date.now(),
+): EnrichedSubaccount[] {
   const byAccount = new Map<string, GeneratedBtcEntry[]>();
   for (const e of entries) {
     if (e.account === undefined) continue;
@@ -95,7 +107,15 @@ export function withGeneratedBtc(subs: EnrichedSubaccount[], entries: GeneratedB
     if (list) list.push(e);
     else byAccount.set(e.account, [e]);
   }
-  return subs.map((s) => ({ ...s, generatedBtc: sumGeneratedBtc(byAccount.get(s.name) ?? []) }));
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+  return subs.map((s) => {
+    const accountEntries = byAccount.get(s.name) ?? [];
+    return {
+      ...s,
+      generatedBtc: sumGeneratedBtc(accountEntries),
+      todayEarnings: accountEntries.find((entry) => entry.entry_day === today)?.btc_generated ?? 0,
+    };
+  });
 }
 
 /**
@@ -134,11 +154,30 @@ export function deriveSubaccountsPageStats(subs: EnrichedSubaccount[]): Subaccou
   return { total: subs.length, activeWorkers, combinedHashrate, todayEarnings: todayTotal };
 }
 
-/** Case-insensitive substring match on the subaccount name; blank query passes all. */
+/** Lowercased text for every value displayed in a subaccount row. */
+export function subaccountSearchText(sub: EnrichedSubaccount): string {
+  const rejection = sub.rejection === null ? '--' : `${(sub.rejection * 100).toFixed(1)}%`;
+  const generated = sub.generatedBtc === null ? '--' : `${formatBtc(sub.generatedBtc)} BTC`;
+  return [
+    sub.id,
+    sub.name,
+    String(sub.active),
+    sub.pplnsPassword,
+    sub.fppsPassword ?? 'Not available',
+    formatHashrate(sub.hashrate),
+    rejection,
+    generated,
+    `${formatBtc(sub.todayEarnings)} BTC`,
+  ]
+    .join(' ')
+    .toLowerCase();
+}
+
+/** Case-insensitive substring match across every displayed table field. */
 export function searchSubaccounts(subs: EnrichedSubaccount[], query: string): EnrichedSubaccount[] {
   const q = query.trim().toLowerCase();
   if (!q) return subs;
-  return subs.filter((s) => s.name.toLowerCase().includes(q));
+  return subs.filter((sub) => subaccountSearchText(sub).includes(q));
 }
 
 /** Stable sort by the chosen column; a null rejection (no shares) sorts lowest. */
@@ -161,39 +200,24 @@ export function sortSubaccounts(subs: EnrichedSubaccount[], key: SubaccountSortK
     const bv = value(b);
     if (av < bv) return -1 * factor;
     if (av > bv) return 1 * factor;
-    return 0;
+    // Ties break on name, always ascending,
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
 }
 
-// Filter facets: a status bucket, a rejection-rate bucket, and a sort option. Each
-// maps to a value already on the enriched row; null means the facet is unset.
-export type SubaccountStatusFilter = 'healthy' | 'has_offline' | 'has_offline_24h';
 export type SubaccountRejectionFilter = 'lt1' | '1to3' | 'gt3';
 export type SubaccountSortOption = 'hashrate_desc' | 'hashrate_asc' | 'earnings_desc' | 'earnings_asc';
 
 export interface SubaccountFilter {
-  status: SubaccountStatusFilter | null;
   rejection: SubaccountRejectionFilter | null;
   sortBy: SubaccountSortOption | null;
 }
 
-export const EMPTY_SUBACCOUNT_FILTER: SubaccountFilter = { status: null, rejection: null, sortBy: null };
+export const EMPTY_SUBACCOUNT_FILTER: SubaccountFilter = { rejection: null, sortBy: null };
 
 /** True when any facet is set; drives the Filter button's active dot and the no-match copy. */
 export function isSubaccountFilterActive(f: SubaccountFilter): boolean {
-  return f.status !== null || f.rejection !== null || f.sortBy !== null;
-}
-
-/** "Healthy" = no offline workers; the >24h option is the subset of has-offline. */
-function matchesStatus(s: EnrichedSubaccount, status: SubaccountStatusFilter): boolean {
-  switch (status) {
-    case 'healthy':
-      return s.offline === 0;
-    case 'has_offline':
-      return s.offline > 0;
-    case 'has_offline_24h':
-      return s.offline24h > 0;
-  }
+  return f.rejection !== null || f.sortBy !== null;
 }
 
 /** Rejection buckets; the 1%-3% band is inclusive of both edges. A null rate (no shares) matches none. */
@@ -209,12 +233,10 @@ function matchesRejection(s: EnrichedSubaccount, bucket: SubaccountRejectionFilt
   }
 }
 
-/** Filter by status + rejection (AND), then order by the chosen sort (default: name asc). */
+/** Filter by rejection, then order by the chosen sort (default: name asc). */
 export function applySubaccountFilter(subs: EnrichedSubaccount[], filter: SubaccountFilter): EnrichedSubaccount[] {
   const filtered = subs.filter(
-    (s) =>
-      (filter.status === null || matchesStatus(s, filter.status)) &&
-      (filter.rejection === null || matchesRejection(s, filter.rejection)),
+    (s) => filter.rejection === null || matchesRejection(s, filter.rejection),
   );
   switch (filter.sortBy) {
     case 'hashrate_desc':
@@ -226,7 +248,7 @@ export function applySubaccountFilter(subs: EnrichedSubaccount[], filter: Subacc
     case 'earnings_asc':
       return sortSubaccounts(filtered, 'earnings', 'asc');
     case null:
-      return sortSubaccounts(filtered, 'name', 'asc');
+      return sortSubaccounts(filtered, 'hashrate', 'desc');
   }
 }
 
@@ -235,11 +257,12 @@ export function formatBtc(n: number): string {
   return Number(n.toFixed(BTC_DISPLAY_DP)).toString();
 }
 
-// The columns the table shows, in the same order, so the export matches the screen.
+// Passwords are intentionally omitted from CSV exports so downloading an operational
+// report cannot silently write mining credentials to disk.
 const CSV_HEADER = [
   'Name',
   'Active workers',
-  'Hashrate (H/s)',
+  'Hashrate',
   'Rejection rate',
   'Generated BTC',
   "Today's earnings (BTC)",
@@ -259,7 +282,7 @@ export function subaccountsToCsv(subs: EnrichedSubaccount[]): string {
     [
       s.name,
       String(s.active),
-      String(s.hashrate),
+      formatHashrate(s.hashrate),
       s.rejection == null ? '--' : `${(s.rejection * 100).toFixed(2)}%`,
       s.generatedBtc === null ? '--' : formatBtc(s.generatedBtc),
       formatBtc(s.todayEarnings),

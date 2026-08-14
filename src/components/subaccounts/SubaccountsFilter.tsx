@@ -1,21 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { LiStar, LiMinusCircle, LiSort } from 'solar-icon-react/li';
+import { LiMinusCircle, LiSort } from 'solar-icon-react/li';
 import { cn } from '@/lib/utils';
 import {
   EMPTY_SUBACCOUNT_FILTER,
   type SubaccountFilter,
-  type SubaccountStatusFilter,
   type SubaccountRejectionFilter,
   type SubaccountSortOption,
 } from '@/lib/subaccountsTable';
 
-type Category = 'status' | 'rejection' | 'sortBy';
-
-const STATUS_OPTIONS: { value: SubaccountStatusFilter; label: string }[] = [
-  { value: 'healthy', label: 'Healthy' },
-  { value: 'has_offline', label: 'Has offline workers' },
-  { value: 'has_offline_24h', label: 'Has offline workers >24h' },
-];
+type Category = 'rejection' | 'sortBy';
 const REJECTION_OPTIONS: { value: SubaccountRejectionFilter; label: string }[] = [
   { value: 'lt1', label: 'Less than 1%' },
   { value: '1to3', label: '1% – 3%' },
@@ -31,9 +24,8 @@ const SORT_COL_2: { value: SubaccountSortOption; label: string }[] = [
   { value: 'earnings_asc', label: 'Lowest earnings' },
 ];
 
-// Category icons: Status=Star, Rejection rate=Minus Circle, Sort by=Sort.
-const CATEGORIES: { key: Category; label: string; Icon: typeof LiStar }[] = [
-  { key: 'status', label: 'Status', Icon: LiStar },
+// Category icons: Rejection rate=Minus Circle, Sort by=Sort.
+const CATEGORIES: { key: Category; label: string; Icon: typeof LiSort }[] = [
   { key: 'rejection', label: 'Rejection rate', Icon: LiMinusCircle },
   { key: 'sortBy', label: 'Sort by', Icon: LiSort },
 ];
@@ -81,7 +73,7 @@ export function SubaccountsFilter({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<SubaccountFilter>(applied);
-  const [category, setCategory] = useState<Category>('status');
+  const [category, setCategory] = useState<Category>('rejection');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -115,7 +107,7 @@ export function SubaccountsFilter({
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-base font-bold leading-6 text-foreground">Filter subaccounts</p>
-            <p className="text-sm leading-5 text-body-alt">Find by status or performance.</p>
+            <p className="text-sm leading-5 text-body-alt">Find by performance.</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
@@ -165,14 +157,6 @@ export function SubaccountsFilter({
         </div>
 
         <Divider />
-
-        {category === 'status' && (
-          <div className="flex shrink-0 flex-col gap-3" role="radiogroup" aria-label="Status">
-            {STATUS_OPTIONS.map((o) => (
-              <Option key={o.value} label={o.label} checked={draft.status === o.value} onClick={() => pick('status', o.value)} />
-            ))}
-          </div>
-        )}
 
         {category === 'rejection' && (
           <div className="flex shrink-0 flex-col gap-3" role="radiogroup" aria-label="Rejection rate">

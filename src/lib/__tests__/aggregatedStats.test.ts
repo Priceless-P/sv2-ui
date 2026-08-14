@@ -8,9 +8,12 @@ function sub(over: Partial<EnrichedSubaccount> = {}): EnrichedSubaccount {
     id: '1',
     name: 'sub',
     hashrate: 0,
+    pplns: 0,
+    fpps: 0,
     active: 0,
     offline: 0,
-    offline24h: 0,
+    pplnsPassword: '',
+    fppsPassword: null,
     rejection: null,
     accepted: 0,
     rejected: 0,
@@ -23,15 +26,14 @@ function sub(over: Partial<EnrichedSubaccount> = {}): EnrichedSubaccount {
 
 test('sumAccountStats sums workers/hashrate/earnings and combines rejection from raw shares', () => {
   const subs = [
-    sub({ id: 'a', active: 3, offline: 1, offline24h: 1, hashrate: 10, todayEarnings: 0.5, accepted: 1000, rejected: 10 }),
-    sub({ id: 'b', active: 2, offline: 0, offline24h: 0, hashrate: 20, todayEarnings: 0.25, accepted: 500, rejected: 5 }),
-    sub({ id: 'c', active: 0, offline: 2, offline24h: 2, hashrate: 5, todayEarnings: 0.125, accepted: 2000, rejected: 40 }),
+    sub({ id: 'a', active: 3, offline: 1, hashrate: 10, todayEarnings: 0.5, accepted: 1000, rejected: 10 }),
+    sub({ id: 'b', active: 2, offline: 0, hashrate: 20, todayEarnings: 0.25, accepted: 500, rejected: 5 }),
+    sub({ id: 'c', active: 0, offline: 2, hashrate: 5, todayEarnings: 0.125, accepted: 2000, rejected: 40 }),
   ];
   const agg = sumAccountStats(subs);
   assert.equal(agg.totalWorkers, 8); // (3+1)+(2+0)+(0+2)
   assert.equal(agg.activeWorkers, 5);
   assert.equal(agg.offlineWorkers, 3);
-  assert.equal(agg.offline24h, 3);
   assert.equal(agg.combinedHashrate, 35);
   assert.equal(agg.todayEarnings, 0.875); // 0.5 + 0.25 + 0.125, binary-exact
   // combined rate is totalRejected / (totalAccepted + totalRejected), not an average of per-sub rates
@@ -44,7 +46,6 @@ test('sumAccountStats on an empty list is all zeros with a null rate', () => {
   assert.equal(agg.totalWorkers, 0);
   assert.equal(agg.activeWorkers, 0);
   assert.equal(agg.offlineWorkers, 0);
-  assert.equal(agg.offline24h, 0);
   assert.equal(agg.combinedHashrate, 0);
   assert.equal(agg.todayEarnings, 0);
   assert.equal(agg.rejectionRate, null);

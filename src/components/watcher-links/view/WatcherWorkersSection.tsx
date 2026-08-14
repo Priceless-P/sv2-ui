@@ -44,13 +44,12 @@ export function WatcherWorkersSection({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detailsWorker, setDetailsWorker] = useState<Worker | null>(null);
 
-  const now = Date.now();
-  const stats = useMemo(() => deriveWorkersPageStats(workers, now), [workers, now]);
+  const stats = useMemo(() => deriveWorkersPageStats(workers), [workers]);
   // Same pipeline as the signed-in page: tab -> advanced filter -> search -> sort.
   const sorted = useMemo(() => {
-    const narrowed = applyWorkerFilter(filterByTab(workers, tab), filter, now);
-    return sortWorkers(searchWorkers(narrowed, query, now), sort.key, sort.dir);
-  }, [workers, tab, filter, query, sort, now]);
+    const narrowed = applyWorkerFilter(filterByTab(workers, tab), filter);
+    return sortWorkers(searchWorkers(narrowed, query), sort.key, sort.dir);
+  }, [workers, tab, filter, query, sort]);
 
   const pageData = paginate(sorted, page, PAGE_SIZE);
   const counts: Record<WorkersTab, number> = { all: workers.length, online: stats.active, offline: stats.offline };
@@ -138,7 +137,6 @@ export function WatcherWorkersSection({
           workers={pageData.items}
           sort={sort}
           onSort={changeSort}
-          now={now}
           selected={selected}
           allSelected={allSelected}
           someSelected={someSelected}
@@ -149,7 +147,7 @@ export function WatcherWorkersSection({
         <WorkersPagination page={pageData.page} totalPages={pageData.totalPages} onPage={setPage} />
       </div>
       {detailsWorker && (
-        <WorkerDetailsPanel worker={detailsWorker} now={now} onClose={() => setDetailsWorker(null)} />
+        <WorkerDetailsPanel worker={detailsWorker} onClose={() => setDetailsWorker(null)} />
       )}
     </div>
   );

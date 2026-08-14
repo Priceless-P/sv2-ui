@@ -17,6 +17,7 @@ import {
   type SubaccountFilter,
 } from '@/lib/subaccountsTable';
 import { paginate } from '@/lib/workersTable';
+import { exportFilename } from '@/lib/utils';
 import { SubaccountsStatCards } from '@/components/subaccounts/SubaccountsStatCards';
 import { SubaccountsToolbar } from '@/components/subaccounts/SubaccountsToolbar';
 import { SubaccountsTable } from '@/components/subaccounts/SubaccountsTable';
@@ -26,12 +27,12 @@ import { CreateSubaccountModal } from '@/components/subaccounts/CreateSubaccount
 
 const PAGE_SIZE = 10;
 
-function downloadCsv(content: string): void {
+function downloadCsv(content: string, filename: string): void {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `subaccounts-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -42,10 +43,12 @@ function downloadCsv(content: string): void {
 export function SubaccountsPage() {
   const { data, isLoading, isError, refetch } = useSubaccounts();
   const { data: permissions } = usePermissions();
-  // Lifetime generated BTC per account comes from the same account-tagged query the
-  // Generated BTC page uses, so the column costs one shared request instead of a third
-  // call per row. Its failure only blanks that column; the table still renders.
-  const { data: generatedEntries } = useAggregatedGeneratedBtc();
+  const {
+    data: generatedEntries,
+    isLoading: generatedLoading,
+    isError: generatedError,
+    refetch: refetchGenerated,
+  } = useAggregatedGeneratedBtc();
   const { data: rawSubaccounts, refetch: refetchList } = useSubaccountList();
   const { switchToSubaccount, switching } = useAccountSwitcher();
   const { toast, dismiss } = useToastControls();
@@ -61,7 +64,7 @@ export function SubaccountsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const stats = useMemo(() => deriveSubaccountsPageStats(subaccounts), [subaccounts]);
-  // Search narrows by name, then the Filter popover applies status/rejection and the
+  // Search narrows by name, then the Filter popover applies rejection and the
   // Sort by order (default name asc). Export mirrors exactly what's on screen.
   const visible = useMemo(
     () => applySubaccountFilter(searchSubaccounts(subaccounts, query), filter),
@@ -89,7 +92,7 @@ export function SubaccountsPage() {
     const pending = toast({ type: 'info', message: 'Preparing export...', description: 'Generating your CSV file.' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     try {
-      downloadCsv(subaccountsToCsv(exportRows));
+      downloadCsv(subaccountsToCsv(exportRows), exportFilename('subaccounts_report', Date.now()));
       dismiss(pending);
       toast({ type: 'success', message: 'Export complete', description: 'Subaccount data has been exported as CSV.' });
     } catch {
@@ -126,7 +129,9 @@ export function SubaccountsPage() {
   const canCreate = permissions?.create_sub_account ?? false;
   // Header actions only make sense once there's a populated table to act on; the
   // empty and error states carry their own primary button instead.
-  const hasData = !isLoading && !isError && subaccounts.length > 0;
+  const loading = isLoading || generatedLoading;
+  const failed = isError || generatedError;
+  const hasData = !loading && !failed && subaccounts.length > 0;
 
   // Any change to search or filter can shrink the result set, so jump back to page 1
   // to avoid stranding the user on a now-empty page.
@@ -206,7 +211,7 @@ export function SubaccountsPage() {
         )}
       </header>
 
-      {isLoading ? (
+      {loading ? (
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, i) => (
@@ -215,13 +220,13 @@ export function SubaccountsPage() {
           </div>
           <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />
         </div>
-      ) : isError ? (
+      ) : failed ? (
         <div className="rounded-xl border border-border bg-card p-10 text-center">
           <p className="text-base font-semibold text-foreground">Couldn't load subaccounts</p>
           <p className="mt-1 text-sm text-body-alt">Something went wrong fetching your subaccounts.</p>
           <button
             type="button"
-            onClick={() => void refetch()}
+            onClick={() => void Promise.all([refetch(), refetchGenerated()])}
             className="mt-4 inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             Try again

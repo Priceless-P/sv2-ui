@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LiAddCircle, LiDownloadMinimalistic } from 'solar-icon-react/li';
 import type { Worker } from '@/api/types';
+import { cn, exportFilename } from '@/lib/utils';
 import { useAccountAllWorkers } from '@/hooks/useAccountData';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useAggregatedData } from '@/hooks/useAggregatedData';
@@ -14,12 +15,13 @@ import {
   paginate,
   workersToCsv,
   applyWorkerFilter,
-  filterWorkersByRange,
+  filterWorkersByMode,
   EMPTY_WORKER_FILTER,
   type SortDir,
   type WorkerFilter,
   type WorkerSortKey,
   type WorkersTab,
+  type WorkerExportMode,
 } from '@/lib/workersTable';
 import { WorkersStatCards } from '@/components/workers/WorkersStatCards';
 import { WorkersToolbar } from '@/components/workers/WorkersToolbar';
@@ -29,17 +31,111 @@ import { WorkersEmptyState } from '@/components/workers/WorkersEmptyState';
 import { WorkersNoResults } from '@/components/workers/WorkersNoResults';
 import { ConnectWorkersDrawer } from '@/components/workers/ConnectWorkersDrawer';
 import { WorkerDetailsPanel } from '@/components/workers/WorkerDetailsPanel';
-import { PayoutsExportModal } from '@/components/payouts/PayoutsExportModal';
 import { useToast, useToastControls } from '@/components/ui/toast';
 
 const PAGE_SIZE = 10;
 
-function downloadCsv(content: string): void {
+const EXPORT_MODES: { value: WorkerExportMode; label: string }[] = [
+  { value: 'all', label: 'All workers' },
+  { value: 'pplns', label: 'PPLNS only' },
+  { value: 'fpps', label: 'FPPS only' },
+];
+
+/**
+ * The export popover: pick which payout scheme to include, then export.
+ */
+function ExportModePicker({
+  onCancel,
+  onExport,
+}: {
+  onCancel: () => void;
+  onExport: (mode: WorkerExportMode) => void;
+}) {
+  const [mode, setMode] = useState<WorkerExportMode>('all');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onCancel();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onCancel]);
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label="Export worker data"
+      className="absolute right-0 top-full z-20 mt-2 flex w-[396px] max-w-[calc(100vw-2rem)] flex-col gap-4 rounded-3xl border-[0.5px] border-border bg-card px-8 py-6 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)]"
+    >
+      <div className="flex flex-col gap-3">
+        <div>
+          <p className="!font-body text-lg font-bold leading-7 text-foreground">Export worker data</p>
+          <p className="text-sm leading-5 text-body-alt">Choose which payout scheme to include.</p>
+        </div>
+        <div aria-hidden className="h-[0.5px] bg-border" />
+      </div>
+
+      <div className="flex flex-col gap-4" role="radiogroup" aria-label="Export payout scheme">
+        {EXPORT_MODES.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            role="radio"
+            aria-checked={mode === m.value}
+            onClick={() => setMode(m.value)}
+            className="flex items-center gap-2 text-left text-sm leading-5 transition-opacity hover:opacity-80"
+          >
+            <span
+              className={cn(
+                'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
+                mode === m.value ? 'border-[hsl(var(--btn))]' : 'border-placeholder',
+              )}
+            >
+              {mode === m.value && <span className="h-2 w-2 rounded-full bg-[hsl(var(--btn))]" />}
+            </span>
+            <span className={mode === m.value ? 'text-foreground' : 'text-body-alt'}>{m.label}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <div aria-hidden className="h-[0.5px] bg-border" />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="h-11 flex-1 rounded-[32px] border-[0.5px] border-black/20 bg-btn-secondary px-6 text-base leading-6 text-foreground transition-opacity hover:opacity-80"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => onExport(mode)}
+            className="h-11 flex-1 rounded-[32px] bg-[hsl(var(--btn))] px-6 text-base font-medium leading-6 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90"
+          >
+            Export
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function downloadCsv(content: string, filename: string): void {
   const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'workers_report.csv';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -75,16 +171,15 @@ export function WorkersPage() {
   const toast = useToast();
   const { dismiss } = useToastControls();
 
-  const now = Date.now();
-  const stats = useMemo(() => deriveWorkersPageStats(workers, now), [workers, now]);
+  const stats = useMemo(() => deriveWorkersPageStats(workers), [workers]);
 
   const sorted = useMemo(() => {
     // Pipeline: tab -> advanced filter -> search -> sort. The tab and the Filter's
     // Status facet both narrow by health; they intersect (AND), which is expected.
-    const narrowed = applyWorkerFilter(filterByTab(workers, tab), filter, now);
-    const searched = searchWorkers(narrowed, query, now);
+    const narrowed = applyWorkerFilter(filterByTab(workers, tab), filter);
+    const searched = searchWorkers(narrowed, query);
     return sortWorkers(searched, sort.key, sort.dir);
-  }, [workers, tab, filter, query, sort, now]);
+  }, [workers, tab, filter, query, sort]);
 
   const pageData = paginate(sorted, page, PAGE_SIZE);
   const counts: Record<WorkersTab, number> = { all: workers.length, online: stats.active, offline: stats.offline };
@@ -114,17 +209,14 @@ export function WorkersPage() {
   const exportRows = someSelected ? sorted.filter((w) => selected.has(workerRowId(w))) : sorted;
 
   /**
-   * Export the chosen date range as CSV. `/api/workers/all` has no date parameter, so
-   * the range narrows the rows we already hold by when each worker was last connected.
-   * The CSV build is synchronous, so yield a frame first or React batches the preparing
-   * and outcome toasts into one tick and the preparing toast never paints.
+   * Export the chosen payout scheme as CSV.
    */
-  const runExport = async (range: { startSec: number; endSec: number }) => {
+  const runExport = async (mode: WorkerExportMode) => {
     setExportOpen(false);
     const pending = toast({ type: 'info', message: 'Preparing export...', description: 'Generating your CSV file.' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     try {
-      downloadCsv(workersToCsv(filterWorkersByRange(exportRows, range.startSec, range.endSec, now)));
+      downloadCsv(workersToCsv(filterWorkersByMode(exportRows, mode)), exportFilename('workers_report', Date.now()));
       dismiss(pending);
       toast({ type: 'success', message: 'Export complete', description: 'Worker data has been exported as CSV.' });
     } catch {
@@ -195,10 +287,9 @@ export function WorkersPage() {
               Export CSV <LiDownloadMinimalistic className="h-4 w-4" />
             </button>
             {exportOpen && (
-              <PayoutsExportModal
-                title="Export worker data"
+              <ExportModePicker
                 onCancel={() => setExportOpen(false)}
-                onExport={(range) => void runExport(range)}
+                onExport={(mode) => void runExport(mode)}
               />
             )}
           </div>
@@ -261,7 +352,6 @@ export function WorkersPage() {
                   workers={pageData.items}
                   sort={sort}
                   onSort={changeSort}
-                  now={now}
                   selected={selected}
                   allSelected={allSelected}
                   someSelected={someSelected}
@@ -278,7 +368,7 @@ export function WorkersPage() {
 
       {connectOpen && <ConnectWorkersDrawer onClose={() => setConnectOpen(false)} />}
       {detailsWorker && (
-        <WorkerDetailsPanel worker={detailsWorker} now={now} onClose={() => setDetailsWorker(null)} />
+        <WorkerDetailsPanel worker={detailsWorker} onClose={() => setDetailsWorker(null)} />
       )}
     </div>
   );

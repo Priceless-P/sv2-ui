@@ -3,6 +3,7 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { Reading } from '@/components/ui/Reading';
 import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import { formatBtc, type SubaccountsPageStats } from '@/lib/subaccountsTable';
+import { ACTIVE_WORKERS_HINT, SUBACCOUNTS_LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
 
 /**
  * A stat card. Same shell and type ramp as the home and workers cards, so the three
@@ -45,13 +46,13 @@ export function SubaccountsStatCards({ stats }: { stats: SubaccountsPageStats })
 
       <Card
         title="Active workers"
-        hint="Connected workers summed across every subaccount."
+        hint={ACTIVE_WORKERS_HINT}
         caption="Across all subaccounts"
       >
         <Reading value={stats.activeWorkers} />
       </Card>
 
-      <Card title="Combined hashrate" caption="Across all subaccounts">
+      <Card title="Combined hashrate" hint={SUBACCOUNTS_LIVE_HASHRATE_HINT} caption="Across all subaccounts">
         <Reading value={formatAxisValue(stats.combinedHashrate, scale.divisor)} unit={scale.unit} />
       </Card>
 

@@ -2,42 +2,15 @@ import type { Worker } from '@/api/types';
 import { deriveWorkerStats } from '@/lib/workerStats';
 import { formatHashrate } from '@/lib/utils';
 
-/** Health buckets matching the status badges (Online / Offline / Offline >24h). */
-export type WorkerStatus = 'online' | 'offline' | 'offline_24h';
+/** Health buckets matching the API's `is_connected` value. */
+export type WorkerStatus = 'online' | 'offline';
 export type WorkersTab = 'all' | 'online' | 'offline';
 export type WorkerSortKey = 'name' | 'hashrate' | 'rejection' | 'shares';
 export type SortDir = 'asc' | 'desc';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/**
- * `connected_at` normalised to ms, or null when absent. The spec says it is a "unix
- * timestamp" but not whether it's seconds or ms, and the production dashboard stores
- * it raw without converting (it doesn't render a relative time), so the unit isn't
- * confirmable without a live worker row. The 1e12 split handles both: a seconds
- * value only reaches 1e12 in the year ~33000, while a ms value has exceeded it since
- * 2001, so below 1e12 is treated as seconds, at or above as milliseconds.
- */
-export function connectedAtMs(worker: Worker): number | null {
-  const at = worker.connected_at;
-  if (at == null || !Number.isFinite(at)) return null;
-  return at < 1e12 ? at * 1000 : at;
-}
-
-/**
- *  The last-seen time in ms: the connection time if connected. Null when the no `connected_at`.
- */
-export function lastSeenMs(worker: Worker, now: number): number | null {
-  if (worker.is_connected) return now;
-  return connectedAtMs(worker);
-}
-
-/** Online if connected; otherwise offline, escalated to offline_24h past a day. */
-export function classifyWorker(worker: Worker, now: number): WorkerStatus {
-  if (worker.is_connected) return 'online';
-  const seen = lastSeenMs(worker, now);
-  if (seen != null && now - seen > DAY_MS) return 'offline_24h';
-  return 'offline';
+/** Online means the backend received hashrate during its last 10-minute window. */
+export function classifyWorker(worker: Worker): WorkerStatus {
+  return worker.is_connected ? 'online' : 'offline';
 }
 
 /**
@@ -90,88 +63,25 @@ export function workerRejection(worker: Worker): number | null {
   return total > 0 ? workerRejectedShares(worker) / total : null;
 }
 
-function plural(n: number, unit: string): string {
-  return `${n} ${unit}${n === 1 ? '' : 's'}`;
-}
-
-/** "Just now" / "42 mins ago" / "1 day 18 hrs ago", matching the Last seen column. */
-export function formatLastSeen(worker: Worker, now: number): string {
-  const seen = connectedAtMs(worker);
-  if (seen == null) return '--';
-  const mins = Math.floor((now - seen) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${plural(mins, 'min')} ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${plural(hrs, 'hr')} ago`;
-  const days = Math.floor(hrs / 24);
-  const remHrs = hrs % 24;
-  return remHrs > 0 ? `${plural(days, 'day')} ${plural(remHrs, 'hr')} ago` : `${plural(days, 'day')} ago`;
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
-}
-
-/**
- * The worker's connection time as "18 Jun 2026, 08:24 UTC" (the details panel's
- * "Connected Since"). The pool sends no timestamp for a worker that is not currently
- * connected, so its absence means "not connected" and renders "--" rather than "Unknown".
- */
-export function formatConnectedSince(worker: Worker): string {
-  const ms = connectedAtMs(worker);
-  if (ms == null) return '--';
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return '--';
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC`;
-}
-
-/**
- * How long an offline worker has been offline, spelled out for the details banner:
- * "less than a minute", "42 minutes", "3 hours", "1 day 18 hours", "2 days". Full
- * unit words, no trailing "ago" (unlike the table's formatLastSeen). Returns null
- * for a connected worker or when the last-seen time is unknown.
- */
-export function formatOfflineDuration(worker: Worker, now: number): string | null {
-  if (worker.is_connected) return null;
-  const seen = lastSeenMs(worker, now);
-  if (seen == null) return null;
-  const mins = Math.floor((now - seen) / 60000);
-  if (mins < 1) return 'less than a minute';
-  if (mins < 60) return plural(mins, 'minute');
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return plural(hrs, 'hour');
-  const days = Math.floor(hrs / 24);
-  const remHrs = hrs % 24;
-  return remHrs > 0 ? `${plural(days, 'day')} ${plural(remHrs, 'hour')}` : plural(days, 'day');
-}
-
 export interface WorkersPageStats {
   total: number;
   active: number;
   offline: number;
-  offline24h: number;
   rejectionRate: number | null;
 }
 
-/** Stat-card figures: extends the shared worker stats with the offline-over-24h count. */
-export function deriveWorkersPageStats(workers: Worker[], now: number): WorkersPageStats {
+/** Stat-card figures from the roster returned by `/workers/all`. */
+export function deriveWorkersPageStats(workers: Worker[]): WorkersPageStats {
   const base = deriveWorkerStats(workers);
-  let offline24h = 0;
-  for (const worker of workers) {
-    if (classifyWorker(worker, now) === 'offline_24h') offline24h += 1;
-  }
   return {
     total: base.totalCount,
     active: base.activeCount,
     offline: base.offlineCount,
-    offline24h,
     rejectionRate: base.rejectionRate,
   };
 }
 
-/** All / Online / Offline (offline includes the >24h bucket). */
+/** All / Online / Offline. */
 export function filterByTab(workers: Worker[], tab: WorkersTab): Worker[] {
   if (tab === 'all') return workers;
   const wantOnline = tab === 'online';
@@ -217,9 +127,9 @@ function rejectionBucket(worker: Worker): WorkerRejectionFilter | null {
  * combine with OR. A worker with no shares has no rejection rate, so it never matches a
  * rejection bucket.
  */
-export function applyWorkerFilter(workers: Worker[], filter: WorkerFilter, now: number): Worker[] {
+export function applyWorkerFilter(workers: Worker[], filter: WorkerFilter): Worker[] {
   return workers.filter((w) => {
-    if (filter.status.length > 0 && !filter.status.includes(classifyWorker(w, now))) return false;
+    if (filter.status.length > 0 && !filter.status.includes(classifyWorker(w))) return false;
     // A worker of unknown scheme matches neither bucket, so a set Mode facet excludes it.
     const mode = workerMode(w);
     if (filter.mode.length > 0 && (mode === null || !filter.mode.includes(mode))) return false;
@@ -236,11 +146,10 @@ export function applyWorkerFilter(workers: Worker[], filter: WorkerFilter, now: 
 export const STATUS_LABEL: Record<WorkerStatus, string> = {
   online: 'Online',
   offline: 'Offline',
-  offline_24h: 'Offline >24h',
 };
 
 /** Lowercased text of every displayed column, so search can match any of them. */
-export function workerSearchText(worker: Worker, now: number): string {
+export function workerSearchText(worker: Worker): string {
   const rej = workerRejection(worker);
   const hr = workerHashrate(worker);
   return [
@@ -248,27 +157,26 @@ export function workerSearchText(worker: Worker, now: number): string {
     hr ? formatHashrate(hr) : '',
     workerMode(worker) ?? '',
     rej === null ? '' : `${(rej * 100).toFixed(1)}%`,
-    STATUS_LABEL[classifyWorker(worker, now)],
-    formatLastSeen(worker, now),
+    STATUS_LABEL[classifyWorker(worker)],
   ]
     .join(' ')
     .toLowerCase();
 }
 
 /**
- * Comma-separated search across ALL displayed columns (name, hashrate, mode,
- * rejection, status, last seen). A worker matches if its combined column text
+ * Comma-separated search across all displayed data columns (name, hashrate, mode,
+ * rejection, status). A worker matches if its combined column text
  * contains ANY of the trimmed, non-empty terms; a blank or comma-only query
  * passes all.
  */
-export function searchWorkers(workers: Worker[], query: string, now: number): Worker[] {
+export function searchWorkers(workers: Worker[], query: string): Worker[] {
   const terms = query
     .split(',')
     .map((t) => t.trim().toLowerCase())
     .filter((t) => t.length > 0);
   if (terms.length === 0) return workers;
   return workers.filter((w) => {
-    const text = workerSearchText(w, now);
+    const text = workerSearchText(w);
     return terms.some((t) => text.includes(t));
   });
 }
@@ -280,14 +188,14 @@ export function searchWorkers(workers: Worker[], query: string, now: number): Wo
  */
 export function sortWorkers(workers: Worker[], key: WorkerSortKey, dir: SortDir): Worker[] {
   const factor = dir === 'asc' ? 1 : -1;
-  const value = (w: Worker): number | string => {
+  const value = (w: Worker): number | string | null => {
     switch (key) {
       case 'name':
         return w.name.toLowerCase();
       case 'hashrate':
         return workerHashrate(w) ?? 0;
       case 'rejection':
-        return workerRejection(w) ?? -1;
+        return workerRejection(w);
       case 'shares':
         return workerTotalShares(w);
     }
@@ -295,8 +203,15 @@ export function sortWorkers(workers: Worker[], key: WorkerSortKey, dir: SortDir)
   return [...workers].sort((a, b) => {
     const av = value(a);
     const bv = value(b);
-    if (av < bv) return -1 * factor;
-    if (av > bv) return 1 * factor;
+    // Unknown metrics always stay at the bottom; changing direction only reverses
+    // real values, never promotes a worker with no share data above measured rows.
+    if (av === null && bv !== null) return 1;
+    if (av !== null && bv === null) return -1;
+    if (av === null && bv === null) return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    if (av !== null && bv !== null) {
+      if (av < bv) return -1 * factor;
+      if (av > bv) return 1 * factor;
+    }
     const an = a.name.toLowerCase();
     const bn = b.name.toLowerCase();
     if (an < bn) return -1;
@@ -319,28 +234,17 @@ export function paginate<T>(items: T[], page: number, pageSize: number): Page<T>
   return { items: items.slice(start, start + pageSize), page: safePage, totalPages };
 }
 
+export type WorkerExportMode = 'all' | 'pplns' | 'fpps';
+
 /**
- * Restrict the roster to workers whose last connection falls inside an inclusive
- * [startSec, endSec] window, for the CSV export's date range. `/api/workers/all` takes
- * no date parameter (verified live and in the spec: it returns every worker ever
- * connected), so the range is applied here over `connected_at`, i.e. "workers that
- * were connected during this period". A worker with no timestamp cannot be placed in
- * time and is excluded from a ranged export rather than silently included.
+ * Filter the roster to one payout scheme for the CSV export.
  */
-export function filterWorkersByRange(workers: Worker[], startSec: number, endSec: number, now: number): Worker[] {
-  return workers.filter((w) => {
-    const seen = lastSeenMs(w, now);
-    if (seen == null) return false;
-    const sec = Math.floor(seen / 1000);
-    return sec >= startSec && sec <= endSec;
-  });
+export function filterWorkersByMode(workers: Worker[], mode: WorkerExportMode): Worker[] {
+  if (mode === 'all') return workers;
+  return workers.filter((w) => workerKind(w) === mode);
 }
 
-// Matches the production dashboard's workers CSV export: the raw API fields, not
-// the formatted table columns. Verified against the production bundle's CSV
-// builder: `kind` is the lowercase scheme, `is_connected` is "true"/"false", the
-// numeric fields and `connected_at` are raw, and nulls render as empty cells.
-const CSV_HEADER = ['name', 'kind', 'hashrate', 'total_shares', 'rejected_shares', 'is_connected', 'connected_at'];
+const CSV_HEADER = ['name', 'kind', 'hashrate', 'total_shares', 'rejected_shares', 'is_connected'];
 
 function csvCell(value: string): string {
   // Guard against spreadsheet formula injection: a cell starting with =,+,-,@,
@@ -355,6 +259,10 @@ function numCell(value: number | null | undefined): string {
   return value == null ? '' : String(value);
 }
 
+function hashrateCell(value: number | null): string {
+  return value === null ? '' : formatHashrate(value);
+}
+
 /**
  * CSV of the given (already filtered/sorted) rows, in the production export schema. The
  * figure columns carry whichever scheme's numbers the worker has, which `kind` names —
@@ -366,11 +274,10 @@ export function workersToCsv(workers: Worker[]): string {
     return [
       w.name,
       workerKind(w) ?? '',
-      numCell(workerHashrate(w)),
+      hashrateCell(workerHashrate(w)),
       numCell(fpps ? w.fpps_total_shares : w.total_shares),
       numCell(fpps ? w.fpps_rejected_shares : w.rejected_shares),
       w.is_connected ? 'true' : 'false',
-      numCell(w.connected_at),
     ].map(csvCell);
   });
   return [CSV_HEADER.map(csvCell).join(','), ...rows.map((r) => r.join(','))].join('\n');

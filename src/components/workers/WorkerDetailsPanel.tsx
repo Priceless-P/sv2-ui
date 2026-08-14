@@ -1,14 +1,11 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { BdCloseCircle, BdShieldWarning } from 'solar-icon-react/bd';
-import { cn, formatHashrate, formatNumber, overlayContainer } from '@/lib/utils';
+import { BdShieldWarning } from 'solar-icon-react/bd';
+import { formatHashrate, formatNumber, overlayContainer } from '@/lib/utils';
 import type { Worker } from '@/api/types';
 import {
   classifyWorker,
-  formatConnectedSince,
-  formatLastSeen,
-  formatOfflineDuration,
   workerHashrate,
   workerMode,
   workerRejection,
@@ -27,29 +24,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-/**
- * The offline notice at the top of the panel. Under a day it's a warning (check the
- * rig); over a day it escalates to a destructive tone and warns about payouts, matching
- * the two design variants. Duration is spelled out; if the last-seen time is unknown the
- * lead sentence drops the duration rather than printing a broken string. It reads the same
- * clock as `severe` so the wording can't contradict the badge above it.
- */
-function OfflineBanner({ worker, now, severe }: { worker: Worker; now: number; severe: boolean }) {
-  const dur = formatOfflineDuration(worker, now);
-  const lead = dur ? `This worker has been offline for ${dur}.` : 'This worker is currently offline.';
-  const tail = severe
-    ? 'Mining Payouts may be affected until the worker reconnects.'
-    : 'Check power, internet connection, or miner status.';
+function OfflineBanner() {
   return (
-    <div className={cn('flex items-start gap-1 rounded-2xl p-3', severe ? 'bg-toast-error' : 'bg-toast-warning')}>
-      {severe ? (
-        <BdCloseCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
-      ) : (
-        <BdShieldWarning className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-      )}
-      <p className="text-sm text-foreground">
-        {lead} {tail}
-      </p>
+    <div className="flex items-start gap-1 rounded-2xl bg-toast-warning p-3">
+      <BdShieldWarning className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+      <p className="text-sm text-foreground">This worker is currently offline. Check power, internet connection, or miner status.</p>
     </div>
   );
 }
@@ -61,7 +40,7 @@ function OfflineBanner({ worker, now, severe }: { worker: Worker; now: number; s
  * this only for a chosen row).
  *
  */
-export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; now: number; onClose: () => void }) {
+export function WorkerDetailsPanel({ worker, onClose }: { worker: Worker; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -70,7 +49,7 @@ export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; n
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const status = classifyWorker(worker, now);
+  const status = classifyWorker(worker);
   const rej = workerRejection(worker);
   const hashrate = workerHashrate(worker);
 
@@ -103,7 +82,7 @@ export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; n
           <div className="border-t border-border" />
         </div>
 
-        {status !== 'online' && <OfflineBanner worker={worker} now={now} severe={status === 'offline_24h'} />}
+        {status !== 'online' && <OfflineBanner />}
 
         <div className="grid grid-cols-2 gap-4">
           <Field label="Worker Name">{worker.name}</Field>
@@ -121,10 +100,6 @@ export function WorkerDetailsPanel({ worker, now, onClose }: { worker: Worker; n
         </div>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Rejection Rate">{rej === null ? '--' : `${(rej * 100).toFixed(1)}%`}</Field>
-          <Field label="Last seen">{formatLastSeen(worker, now)}</Field>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Connected Since">{formatConnectedSince(worker)}</Field>
         </div>
 
         <div className="flex flex-col gap-4">

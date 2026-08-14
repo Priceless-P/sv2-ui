@@ -3,11 +3,11 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { cn } from '@/lib/utils';
 import { Reading } from '@/components/ui/Reading';
 import { WorkerBars } from '@/components/ui/WorkerBars';
-import { useAccountAllWorkers, useTodayEarnings } from '@/hooks/useAccountData';
+import { useAccountAllWorkers, useAccountShareStats, useTodayEarnings } from '@/hooks/useAccountData';
 import { deriveWorkerStats } from '@/lib/workerStats';
-import { classifyWorker } from '@/lib/workersTable';
 import { BTC_DISPLAY_DP } from '@/lib/utils';
 import type { AggregatedStats } from '@/lib/aggregatedStats';
+import { ACCOUNT_REJECTION_HINT, ACTIVE_WORKERS_HINT, OFFLINE_WORKER_HINT } from '@/lib/metricWindows';
 
 /**
  * A stat card. The reading is one big numeral in the heading face with the unit
@@ -69,12 +69,12 @@ function formatBtc(btc: number): string {
  */
 export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }) {
   const { data: workers } = useAccountAllWorkers();
+  const { data: shareStats } = useAccountShareStats(aggregated === undefined);
   const { data: earnings } = useTodayEarnings();
   const roster = workers ?? [];
   const single = deriveWorkerStats(roster);
-  // Offline for over 24h reuses the workers-page classifier (last-seen from
-  // connected_at), so the home matches how that page counts stale workers.
-  const now = Date.now();
+  const shareTotal = (shareStats?.accepted ?? 0) + (shareStats?.rejected ?? 0);
+  const singleRejection = shareTotal > 0 ? (shareStats?.rejected ?? 0) / shareTotal : null;
   // In aggregated mode every figure is the roll-up across subaccounts, so the cards
   // can never show one account's numbers while the rest of the page shows the total.
   const stats = aggregated
@@ -84,10 +84,7 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
         offlineCount: aggregated.offlineWorkers,
         rejectionRate: aggregated.rejectionRate,
       }
-    : single;
-  const offline24h = aggregated
-    ? aggregated.offline24h
-    : roster.filter((w) => classifyWorker(w, now) === 'offline_24h').length;
+    : { ...single, rejectionRate: singleRejection };
   const todayEarnings = aggregated ? aggregated.todayEarnings : earnings;
   const hasWorkers = stats.totalCount > 0;
   const hasMined = stats.rejectionRate !== null;
@@ -108,7 +105,7 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
         caption={
           hasWorkers ? `${stats.activeCount} active • ${stats.offlineCount} offline` : 'Connected workers will appear here.'
         }
-        hint="Workers currently connected and submitting shares to the pool."
+        hint={ACTIVE_WORKERS_HINT}
       />
       <StatCard
         tour="stats-workers"
@@ -120,10 +117,9 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
             ? "You don't have any offline workers."
             : stats.offlineCount === 0
               ? 'No worker is offline'
-              : offline24h > 0
-                ? `${offline24h} offline for over 24h`
-                : `${stats.offlineCount} worker${stats.offlineCount === 1 ? '' : 's'} offline`
+              : `${stats.offlineCount} worker${stats.offlineCount === 1 ? '' : 's'} inactive in the last 10 minutes`
         }
+        hint={OFFLINE_WORKER_HINT}
       />
       <StatCard
         tour="stats-earnings"
@@ -132,8 +128,8 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
         unit={hasMined ? '%' : undefined}
         emphasis={hasMined}
         captionTone={hasMined ? 'strong' : 'muted'}
-        caption={hasMined ? 'Across PPLNS and FPPS shares.' : 'Rejected share rate will appear after mining starts.'}
-        hint="The percentage of shares that were rejected and did not count toward Payouts."
+        caption={hasMined ? 'Last 24 hours across PPLNS and FPPS shares.' : 'Rejected share rate will appear after mining starts.'}
+        hint={ACCOUNT_REJECTION_HINT}
       />
       <StatCard
         tour="stats-earnings"
@@ -153,7 +149,11 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
               ? 'Paid out on-chain today.'
               : 'Earnings paid out on-chain today will appear here.'
         }
-        hint="Payouts are based on your contribution to recently submitted shares. Earnings can vary, but may be higher over time."
+        hint={
+          aggregated
+            ? 'Bitcoin generated today across the accounts in this view.'
+            : 'Confirmed payouts sent to your payout address today.'
+        }
       />
     </div>
   );
