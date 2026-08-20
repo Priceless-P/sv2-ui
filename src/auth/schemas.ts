@@ -9,6 +9,21 @@ export const signInSchema = z.object({
 });
 export type SignInValues = z.infer<typeof signInSchema>;
 
+// The miner sign-in adds "Remember me". The broker screen does not, so
+// the two forms stay independent.
+export const minerSignInSchema = signInSchema.extend({
+  remember: z.boolean(),
+});
+export type MinerSignInValues = z.infer<typeof minerSignInSchema>;
+
+// Watcher sign-in: the two halves of a Watcher link, typed or pasted.
+// The token is the password.
+export const watcherSignInSchema = z.object({
+  userId: z.string().trim().min(1, 'Enter the account ID from your Watcher link'),
+  token: z.string().trim().min(1, 'Enter your Watcher token'),
+});
+export type WatcherSignInValues = z.infer<typeof watcherSignInSchema>;
+
 export const emailSchema = z.object({ email });
 export type EmailValues = z.infer<typeof emailSchema>;
 

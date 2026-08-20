@@ -7,9 +7,11 @@ import {
   emailSchema,
   resetPasswordSchema,
   resetTokenSchema,
+  minerSignInSchema,
   signInSchema,
   signUpDetailsSchema,
   signUpPasswordSchema,
+  watcherSignInSchema,
 } from '../schemas';
 
 function firstError(result: {
@@ -160,5 +162,32 @@ test('brokerPasswordSchema enforces length and matching, with no referral field'
   assert.equal(
     brokerPasswordSchema.safeParse({ password: 'longenough', confirmPassword: 'longenough' }).success,
     true,
+  );
+});
+
+test('minerSignInSchema is the sign-in schema plus the Remember me flag', () => {
+  assert.equal(minerSignInSchema.safeParse({ email: 'm@x.io', password: 'pw', remember: true }).success, true);
+  assert.equal(minerSignInSchema.safeParse({ email: 'm@x.io', password: 'pw', remember: false }).success, true);
+  // The flag is required, so the form can never submit an undefined "remember".
+  assert.equal(minerSignInSchema.safeParse({ email: 'm@x.io', password: 'pw' }).success, false);
+  // The email and password rules still apply unchanged.
+  assert.equal(
+    firstError(minerSignInSchema.safeParse({ email: 'nope', password: 'pw', remember: false }))?.message,
+    'Enter a valid email',
+  );
+});
+
+test('watcherSignInSchema needs both halves of the link, and trims what it keeps', () => {
+  const ok = watcherSignInSchema.safeParse({ userId: '  -739  ', token: '  ABC123  ' });
+  assert.equal(ok.success, true);
+  assert.deepEqual(ok.data, { userId: '-739', token: 'ABC123' });
+
+  assert.equal(
+    firstError(watcherSignInSchema.safeParse({ userId: '   ', token: 'ABC123' }))?.message,
+    'Enter the account ID from your Watcher link',
+  );
+  assert.equal(
+    firstError(watcherSignInSchema.safeParse({ userId: '-739', token: '   ' }))?.message,
+    'Enter your Watcher token',
   );
 });

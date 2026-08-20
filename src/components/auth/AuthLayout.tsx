@@ -12,6 +12,12 @@ interface AuthLayoutProps {
   topRight?: ReactNode;
   /** When true, shows the branded auto-rotating marketing carousel (large screens). */
   marketing?: boolean;
+  /**
+   * Which way the panel artwork faces. The miner and broker screens are otherwise the
+   * same page -- same panel, same email and password -- so handing the artwork the other
+   * way tells them apart at a glance without adding anything to either one.
+   */
+  marketingArt?: 'left' | 'right';
 }
 
 /**
@@ -20,7 +26,7 @@ interface AuthLayoutProps {
  * and an optional branded panel on the right. The form card scrolls internally
  * on short viewports so the page itself never scrolls.
  */
-export function AuthLayout({ children, onBack, topRight, marketing }: AuthLayoutProps) {
+export function AuthLayout({ children, onBack, topRight, marketing, marketingArt = 'left' }: AuthLayoutProps) {
   return (
     <div className="dmnd-auth flex h-screen w-full overflow-hidden bg-background p-0 text-foreground lg:bg-canvas lg:p-2">
       <div className="flex min-h-0 flex-1 lg:gap-2">
@@ -51,7 +57,7 @@ export function AuthLayout({ children, onBack, topRight, marketing }: AuthLayout
           </div>
         </div>
 
-        {marketing && <MarketingPanel />}
+        {marketing && <MarketingPanel art={marketingArt} />}
       </div>
     </div>
   );
@@ -68,7 +74,7 @@ const SLIDES = [
 ];
 const SLIDE_INTERVAL_MS = 5000;
 
-function MarketingPanel() {
+function MarketingPanel({ art }: { art: 'left' | 'right' }) {
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -81,7 +87,7 @@ function MarketingPanel() {
   return (
     <div className="relative hidden w-[33%] shrink-0 flex-col justify-end overflow-hidden bg-background p-20 lg:flex">
       {/* Fixed maroon art (stays put across slides). */}
-      <SidePanelArt />
+      <SidePanelArt facing={art} />
 
       <div className="relative">
         <div className="mb-2.5 flex gap-[3px]">
@@ -111,9 +117,9 @@ function MarketingPanel() {
  * panel; on taller or shorter panels it keeps each piece anchored to its corner
  * instead of drifting with the height.
  */
-function SidePanelArt() {
+function SidePanelArt({ facing = 'left' }: { facing?: 'left' | 'right' }) {
   return (
-    <div aria-hidden className="absolute inset-0 overflow-hidden">
+    <div aria-hidden className={cn('absolute inset-0 overflow-hidden', facing === 'right' && '-scale-x-100')}>
       <div className="absolute inset-x-0 top-0 aspect-[469/784]">
         <img src="/panel-art-top.svg" alt="" className="absolute" style={{ left: '-30%', top: '-8%', width: '133.3%' }} />
       </div>

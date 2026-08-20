@@ -209,3 +209,126 @@ test('refreshing session profile fields preserves the selected account and expir
   assert.equal(after.session?.idleExpiresAt, before?.idleExpiresAt);
   assert.equal(JSON.parse(storage.getItem('dmnd_session') ?? '').company_name, 'Updated Mining');
 });
+
+test('remembering a sign-in stores it outside the tab, and not remembering keeps it in the tab', () => {
+  const tab = memoryStorage();
+  const remembered = memoryStorage();
+
+  const store = createAuthStore({ tabId: 'A', storage: tab, persistentStorage: remembered, channel: null });
+  store.signIn(minerSession({ remember: true }));
+  assert.equal(remembered.getItem('dmnd_session') !== null, true, 'kept where it survives the tab');
+  assert.equal(tab.getItem('dmnd_session'), null, 'not duplicated into the tab slot');
+
+  // Signing in again without the box ticked moves the session back to the tab and
+  // leaves nothing behind in the persistent slot.
+  store.signIn(minerSession({ remember: false }));
+  assert.equal(tab.getItem('dmnd_session') !== null, true);
+  assert.equal(remembered.getItem('dmnd_session'), null);
+});
+
+test('a remembered session is restored in a brand-new tab; an ordinary one is not', () => {
+  const remembered = memoryStorage();
+  const first = createAuthStore({
+    tabId: 'A',
+    storage: memoryStorage(),
+    persistentStorage: remembered,
+    channel: null,
+  });
+  first.signIn(minerSession({ remember: true }));
+
+  // A fresh tab: its own empty sessionStorage, the same persistent slot.
+  const newTab = createAuthStore({
+    tabId: 'B',
+    storage: memoryStorage(),
+    persistentStorage: remembered,
+    channel: null,
+  });
+  assert.equal(newTab.getSnapshot().session?.accountId, 'master');
+  assert.equal(newTab.getSnapshot().session?.remember, true);
+  // A remembered session comes back on the master account, not a stale subaccount.
+  assert.equal(newTab.getSnapshot().viewingAccountId, null);
+
+  const notRemembered = createAuthStore({
+    tabId: 'C',
+    storage: memoryStorage(),
+    persistentStorage: memoryStorage(),
+    channel: null,
+  });
+  notRemembered.signIn(minerSession({ remember: false }));
+  const anotherTab = createAuthStore({
+    tabId: 'D',
+    storage: memoryStorage(),
+    persistentStorage: memoryStorage(),
+    channel: null,
+  });
+  assert.equal(anotherTab.getSnapshot().session, null);
+});
+
+test('later writes stay in the slot the session lives in', () => {
+  const tab = memoryStorage();
+  const remembered = memoryStorage();
+  const store = createAuthStore({ tabId: 'A', storage: tab, persistentStorage: remembered, channel: null });
+  store.signIn(minerSession({ remember: true }));
+
+  store.bumpActivity(5_000);
+  store.updateSessionProfile({
+    email: 'updated@x.io',
+    company_name: 'Updated Mining',
+    company_primary_location: 'Abuja, NG',
+    kyb_status: 'Approved',
+  });
+
+  assert.equal(tab.getItem('dmnd_session'), null, 'a refresh must not migrate the session');
+  assert.equal(JSON.parse(remembered.getItem('dmnd_session') ?? '').email, 'updated@x.io');
+  assert.equal(JSON.parse(remembered.getItem('dmnd_session') ?? '').remember, true);
+});
+
+test('signing out clears both slots, so nothing can be restored from the other one', () => {
+  const tab = memoryStorage();
+  const remembered = memoryStorage();
+  const store = createAuthStore({ tabId: 'A', storage: tab, persistentStorage: remembered, channel: null });
+  store.signIn(minerSession({ remember: true }));
+
+  store.signOut();
+  assert.equal(remembered.getItem('dmnd_session'), null);
+  assert.equal(tab.getItem('dmnd_session'), null);
+  assert.equal(
+    createAuthStore({ tabId: 'B', storage: tab, persistentStorage: remembered, channel: null }).getSnapshot()
+      .session,
+    null,
+  );
+});
+
+test('a second tab claiming the account clears the remembered session too', () => {
+  const bus = channelBus();
+  const remembered = memoryStorage();
+
+  const tabA = createAuthStore({
+    tabId: 'A',
+    storage: memoryStorage(),
+    persistentStorage: remembered,
+    channelFactory: bus.make,
+  });
+  tabA.connect();
+  tabA.signIn(minerSession({ accountId: '1', remember: true }));
+
+  const tabB = createAuthStore({
+    tabId: 'B',
+    storage: memoryStorage(),
+    persistentStorage: memoryStorage(),
+    channelFactory: bus.make,
+  });
+  tabB.connect();
+  tabB.signIn(minerSession({ accountId: '1' }));
+
+  assert.equal(tabA.getSnapshot().session, null);
+  assert.equal(remembered.getItem('dmnd_session'), null, 'no remembered copy left to restore');
+});
+
+test('remembering degrades to an ordinary session when there is nowhere persistent to store it', () => {
+  const tab = memoryStorage();
+  const store = createAuthStore({ tabId: 'A', storage: tab, persistentStorage: null, channel: null });
+  store.signIn(minerSession({ remember: true }));
+  assert.equal(store.getSnapshot().session?.accountId, 'master');
+  assert.equal(tab.getItem('dmnd_session') !== null, true);
+});

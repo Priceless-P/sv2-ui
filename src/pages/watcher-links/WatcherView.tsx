@@ -264,10 +264,13 @@ function WatcherInvalid() {
         </p>
       </div>
       <Link
-        href="/signin"
+        href="/watcher/signin"
         className="inline-flex items-center rounded-full border border-border px-5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
       >
-        Go to sign in
+        Enter a Watcher link
+      </Link>
+      <Link href="/signin" className="text-xs text-link underline underline-offset-4 hover:opacity-80">
+        Sign in as a miner
       </Link>
     </div>
   );

@@ -9,7 +9,7 @@ import { TooltipPill } from './tooltip-pill';
  * Popover) so it opens and closes with the pointer instead of latching open, and
  * portals into the themed shell so it keeps the design tokens.
  */
-export function InfoHint({ text }: { text: string }) {
+export function InfoHint({ text, size = 'md' }: { text: string; size?: 'sm' | 'md' }) {
   return (
     <TooltipPill label={text}>
       <button
@@ -17,7 +17,7 @@ export function InfoHint({ text }: { text: string }) {
         aria-label="More information"
         className="inline-flex shrink-0 text-placeholder transition-colors hover:text-body-alt"
       >
-        <LiQuestionCircle className="h-4 w-4" />
+        <LiQuestionCircle className={size === 'sm' ? 'h-2.5 w-2.5' : 'h-4 w-4'} />
       </button>
     </TooltipPill>
   );

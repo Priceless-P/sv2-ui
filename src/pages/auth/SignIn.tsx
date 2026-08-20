@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, Redirect, useSearch } from 'wouter';
@@ -7,10 +8,19 @@ import { AuthHeading } from '@/components/auth/AuthHeading';
 import { FieldLabel, IconInput } from '@/components/auth/AuthField';
 import { PasswordField } from '@/components/auth/PasswordField';
 import { AuthSubmit } from '@/components/auth/AuthSubmit';
+import { AuthCheckbox } from '@/components/auth/AuthCheckbox';
+import { InfoHint } from '@/components/ui/InfoHint';
 import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
-import { createSession, readNextParam, useAuth } from '@/auth';
-import { signInSchema, type SignInValues } from '@/auth/schemas';
+import {
+  clearRememberedEmail,
+  createSession,
+  readNextParam,
+  readRememberedEmail,
+  useAuth,
+  writeRememberedEmail,
+} from '@/auth';
+import { minerSignInSchema, type MinerSignInValues } from '@/auth/schemas';
 import { getUser } from '@/api';
 
 export function SignIn() {
@@ -18,14 +28,19 @@ export function SignIn() {
   const search = useSearch();
   const toast = useToast();
 
+  // A previous "Remember me" sign-in leaves its email behind, so the form offers it back
+  // and starts with the box ticked. It says nothing about that session still being
+  // valid -- only which address to pre-fill.
+  const [rememberedEmail] = useState(readRememberedEmail);
+
   const {
     register,
     handleSubmit,
     formState: { errors, isSubmitting, isValid },
-  } = useForm<SignInValues>({
-    resolver: zodResolver(signInSchema),
+  } = useForm<MinerSignInValues>({
+    resolver: zodResolver(minerSignInSchema),
     mode: 'onChange',
-    defaultValues: { email: '', password: '' },
+    defaultValues: { email: rememberedEmail ?? '', password: '', remember: rememberedEmail !== null },
   });
 
   // Already signed in (or just signed in): the redirect carries post-login nav,
@@ -34,9 +49,11 @@ export function SignIn() {
     return <Redirect to={readNextParam(search, '/home')} replace />;
   }
 
-  const onSubmit = async (values: SignInValues) => {
+  const onSubmit = async (values: MinerSignInValues) => {
     try {
       const account = await getUser().login(values.email, values.password);
+      if (values.remember) writeRememberedEmail(values.email);
+      else clearRememberedEmail();
       toast({ type: 'success', message: 'Sign in successful' });
       signIn(
         createSession({
@@ -45,6 +62,7 @@ export function SignIn() {
           company_name: account.company_name,
           company_primary_location: account.company_primary_location,
           kyb_status: account.kyb_status,
+          remember: values.remember,
         }),
       );
     } catch (e) {
@@ -55,9 +73,14 @@ export function SignIn() {
   return (
     <AuthLayout
       topRight={
-        <Link href="/broker/signin" className="text-xs text-link underline underline-offset-4 hover:opacity-80">
-          Sign in as broker
-        </Link>
+        <>
+          <Link href="/broker/signin" className="text-xs text-link underline underline-offset-4 hover:opacity-80">
+            Sign in as broker
+          </Link>
+          <Link href="/watcher/signin" className="text-xs text-link underline underline-offset-4 hover:opacity-80">
+            Open watcher view
+          </Link>
+        </>
       }
       marketing
     >
@@ -75,7 +98,7 @@ export function SignIn() {
             icon={LiLetter}
             type="email"
             autoComplete="email"
-            autoFocus
+            autoFocus={rememberedEmail === null}
             placeholder="Enter your email address"
             {...register('email')}
           />
@@ -86,9 +109,18 @@ export function SignIn() {
           <FieldLabel htmlFor="password" required>
             Password
           </FieldLabel>
-          <PasswordField id="password" autoComplete="current-password" {...register('password')} />
+          <PasswordField
+            id="password"
+            autoComplete="current-password"
+            autoFocus={rememberedEmail !== null}
+            {...register('password')}
+          />
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-          <div className="flex justify-end pt-0.5">
+          <div className="flex items-center justify-between gap-4 pt-2.5">
+            <div className="flex items-center gap-1.5">
+              <AuthCheckbox id="remember" label="Remember me" {...register('remember')} />
+              <InfoHint size="sm" text="Keeps you signed in on this browser for 7 days." />
+            </div>
             <Link href="/forgot-password" className="text-xs text-link underline-offset-4 hover:underline">
               Forgot password?
             </Link>

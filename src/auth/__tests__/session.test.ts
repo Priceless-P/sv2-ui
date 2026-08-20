@@ -4,12 +4,17 @@ import test from 'node:test';
 import {
   FIXED_TTL_MS,
   IDLE_TTL_MS,
+  REMEMBERED_TTL_MS,
+  REMEMBER_EMAIL_KEY,
   STORAGE_KEY,
+  clearRememberedEmail,
   createSession,
   isExpired,
+  readRememberedEmail,
   readSession,
   refreshIdle,
   viewingAccountFromAuth,
+  writeRememberedEmail,
   writeSession,
 } from '../session';
 
@@ -117,4 +122,70 @@ test('viewingAccountFromAuth uses log_subaccount AuthResponse.id as the active a
     company_primary_location: 'Lagos, NG',
     kyb_status: 'Approved',
   });
+});
+
+test('a remembered session runs on the 7-day window, with idle no longer the first cap', () => {
+  const s = createSession(sessionInput({ now: 1_000, remember: true }));
+  assert.equal(s.remember, true);
+  assert.equal(s.expiresAt, 1_000 + REMEMBERED_TTL_MS);
+  assert.equal(s.idleExpiresAt, 1_000 + REMEMBERED_TTL_MS);
+  // Half an hour idle would have ended an ordinary session; a remembered one lives on.
+  assert.equal(isExpired(s, 1_000 + IDLE_TTL_MS), false);
+  assert.equal(isExpired(s, 1_000 + FIXED_TTL_MS), false);
+  assert.equal(isExpired(s, 1_000 + REMEMBERED_TTL_MS), true);
+});
+
+test('createSession defaults to not remembered', () => {
+  assert.equal(createSession(sessionInput({ now: 0 })).remember, false);
+  assert.equal(createSession(sessionInput({ now: 0, remember: false })).expiresAt, FIXED_TTL_MS);
+});
+
+test('refreshIdle extends by the window the session was created with', () => {
+  const ordinary = refreshIdle(createSession(sessionInput({ now: 0 })), 5_000);
+  assert.equal(ordinary.idleExpiresAt, 5_000 + IDLE_TTL_MS);
+
+  const remembered = refreshIdle(createSession(sessionInput({ now: 0, remember: true })), 5_000);
+  assert.equal(remembered.idleExpiresAt, 5_000 + REMEMBERED_TTL_MS);
+  assert.equal(remembered.remember, true);
+});
+
+test('readSession round-trips the remembered flag', () => {
+  const storage = memoryStorage();
+  writeSession(createSession(sessionInput({ remember: true })), storage);
+  assert.equal(readSession(storage)?.remember, true);
+});
+
+test('a session stored before "Remember me" existed reads as not remembered', () => {
+  const storage = memoryStorage();
+  storage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      accountId: 'a1',
+      email: 'm@x.io',
+      company_name: null,
+      company_primary_location: null,
+      kyb_status: 'Approved',
+      expiresAt: Number.MAX_SAFE_INTEGER,
+      idleExpiresAt: Number.MAX_SAFE_INTEGER,
+    }),
+  );
+  assert.equal(readSession(storage)?.remember, false);
+});
+
+test('the remembered email round-trips and is cleared on request', () => {
+  const storage = memoryStorage();
+  assert.equal(readRememberedEmail(storage), null);
+
+  writeRememberedEmail('m@x.io', storage);
+  assert.equal(storage.getItem(REMEMBER_EMAIL_KEY), 'm@x.io');
+  assert.equal(readRememberedEmail(storage), 'm@x.io');
+
+  clearRememberedEmail(storage);
+  assert.equal(readRememberedEmail(storage), null);
+});
+
+test('a blank remembered email reads as nothing to pre-fill', () => {
+  const storage = memoryStorage();
+  storage.setItem(REMEMBER_EMAIL_KEY, '   ');
+  assert.equal(readRememberedEmail(storage), null);
 });
