@@ -1,26 +1,60 @@
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Link, useRoute } from 'wouter';
+import { LiArrowRightUp, LiAltArrowDown } from 'solar-icon-react/li';
+import { BoInfoCircle } from 'solar-icon-react/bo';
 import heroImage from '@/assets/guide-hero-merge-mining.png';
 import {
-  DocPage,
   DocHero,
   DocSection,
+  DocSectionHeader,
+  DocSectionNav,
+  DocLede,
   DocText,
   DocList,
   DocTable,
-  CodeBlock,
+  DocCallout,
+  DocPager,
   Chip,
   DocFooterPrompt,
 } from '@/components/docs/DocPrimitives';
+import {
+  DocPage,
+  StackSummary,
+  GuidePrereqs,
+  StepDone,
+  useGuideTicks,
+  CodeBlock,
+} from '@/components/docs/DocGuide';
 
-const DMND_CLIENT_REPO = 'https://github.com/dmnd-pool/dmnd-client';
+const DMND_CLIENT_MERGE_MINING = 'https://github.com/dmnd-pool/dmnd-client/blob/master/MERGE_MINING.md';
+const RUST_INSTALL = 'https://www.rust-lang.org/tools/install';
+const JOB_DECLARATION_PAGE = '/build-your-block/job-declaration';
+const BUILD_YOUR_BLOCK_PAGE = '/build-your-block';
 
-const RSK_PAYLOAD_LAYOUT = `ASCII "RSKBLOCK:"                 52534b424c4f434b3a
-blockHashForMergedMining          32 bytes / 64 hexadecimal characters
-complete payload                  41 bytes / 82 hexadecimal characters`;
+const GUIDE_NAME = 'Merge mining';
+const BUILD_YOUR_BLOCK = 'BUILD YOUR BLOCK';
+const BASE_PATH = '/build-your-block/merge-mining';
 
-const DECLARATION_FLOW = `one NewTemplate -> one miner-facing extended job -> one DeclareMiningJob
-                -> one SetCustomMiningJob -> one pool job mapping`;
+const CLIENT_RUN = `API_BIND_ADDRESS=127.0.0.1 \\
+API_SECRET=<shared-secret> \\
+TOKEN=<DMND-token> \\
+./dmnd-client -l info -d 250T --tp-address="127.0.0.1:8336"`;
 
-const CANONICAL_SCRIPT = 'OP_RETURN <one canonical push of the payload bytes>';
+const RSK_REWARD_ADDRESS = 'reward.address = "<your-RSK-address>"';
+
+const RSKJ_RUN = `docker run --rm \\
+  -e RSKJ_SYS_PROPS='-Drpc.providers.web.http.bind_address=127.0.0.1 \\
+    -Drpc.modules.mnr.version=1.0 -Drpc.modules.mnr.enabled=true \\
+    -Dminer.server.enabled=true -Dminer.reward.address=<your-RSK-address>' \\
+  rsksmart/rskj:VETIVER-9.0.3`;
+
+const BRIDGE_BUILD = 'cargo build --release -p demand-rsk-op-return-bridge';
+
+const BRIDGE_RUN = `RSK_RPC_URL=http://127.0.0.1:4444 \\
+DMND_CLIENT_API_SECRET=<strong-random-shared-secret> \\
+DMND_CLIENT_OP_RETURN_URL=http://127.0.0.1:3001/api/coinbase/op-return \\
+DMND_CLIENT_FOUND_JOB_URL=http://127.0.0.1:3001/api/merge-mining/found-job \\
+./target/release/demand-rsk-op-return-bridge`;
 
 const SUCCESS_ENVELOPE = `{
   "success": true,
@@ -115,326 +149,507 @@ const RAW_BLOCK = 'raw_block_hex = block_header_hex || "01" || coinbase_tx_hex';
 
 const SUBMIT_BLOCK = 'mnr_submitBitcoinBlock(raw_block_hex)';
 
-const RSKJ_FLAGS = '-Drpc.modules.mnr.enabled=true -Dminer.server.enabled=true';
+/** The RFC-style keywords the wire contract is written in. */
+function Must({ children }: { children: ReactNode }) {
+  return <strong className="font-medium text-foreground">{children}</strong>;
+}
 
-const PROXY_INVOCATION = `API_BIND_ADDRESS='127.0.0.1' \\
-API_SECRET='<shared-secret>' \\
-TOKEN='<DMND-token>' \\
-cargo run -- -l info -d '<average-hashrate>T' --tp-address='127.0.0.1:8336'`;
+interface GuideSection {
+  /** The URL segment under `/build-your-block/merge-mining`. */
+  slug: string;
+  title: string;
+  /** Short form for the nav and pager, where a full headline will not fit. */
+  navTitle?: string;
+  /** The heading it is filed under in the section nav, in this order. */
+  group: string;
+  /** Set on the setup steps; it numbers them and nothing else. */
+  step?: number;
+  content: () => ReactNode;
+}
 
-const COMPANION_PATH = '../demand/rust-backend/services/demand-rsk-op-return-bridge/';
+
+const TROUBLE: { step: number; issue: ReactNode; check: ReactNode }[] = [
+  {
+    step: 1,
+    issue: (
+      <>
+        <Chip>503 Service Unavailable</Chip> from the client
+      </>
+    ),
+    check: (
+      <>
+        Confirm a non-empty <Chip>API_SECRET</Chip> is set on the client.
+      </>
+    ),
+  },
+  {
+    step: 1,
+    issue: 'Connection refused on port 3001',
+    check: 'Check the client’s API port, bind address, and local firewall. Do not fix this by exposing the port.',
+  },
+  {
+    step: 1,
+    issue: (
+      <>
+        RskJ reports <Chip>method not found</Chip>
+      </>
+    ),
+    check: (
+      <>
+        Enable the <Chip>mnr</Chip> module and the miner server, then restart RskJ.
+      </>
+    ),
+  },
+  {
+    step: 2,
+    issue: (
+      <>
+        <Chip>401 Unauthorized</Chip> from the client
+      </>
+    ),
+    check: (
+      <>
+        <Chip>DMND_CLIENT_API_SECRET</Chip> must exactly match the client&rsquo;s <Chip>API_SECRET</Chip>.
+      </>
+    ),
+  },
+  {
+    step: 2,
+    issue: 'Jobs expire immediately',
+    check: (
+      <>
+        Check UTC clock sync between hosts and <Chip>FOUND_JOB_MAX_AGE_SECS</Chip>.
+      </>
+    ),
+  },
+  { step: 2, issue: 'Repeated rate-limit messages', check: 'Let the bridge cooldown finish, then review the RskJ rate-limit policy.' },
+  {
+    step: 2,
+    issue: 'Repeated transport timeouts',
+    check: 'Check the route, service health, and proxy bypass. The client uses 5s connect / 20s request timeouts.',
+  },
+  {
+    step: 4,
+    issue: 'Work is fetched but no RSK jobs reach miners',
+    check: 'Confirm RskJ is synced, the client is in Job Declaration mode, and its Template Provider is serving new templates.',
+  },
+];
+
+/** The issues for one step, closed until something has gone wrong. */
+function StepTrouble({ step }: { step: number }) {
+  const rows = TROUBLE.filter((t) => t.step === step);
+  if (!rows.length) return null;
+  return (
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl border-[0.5px] border-border bg-muted px-4 py-3 text-sm leading-5 text-foreground transition-colors hover:border-placeholder [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2">
+          <BoInfoCircle className="h-4 w-4 shrink-0 text-placeholder" />
+          Troubleshooting
+        </span>
+        <LiAltArrowDown className="h-4 w-4 shrink-0 text-placeholder transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="pt-3">
+        <DocTable headers={['Issue', 'Check']} rows={rows.map((t) => [t.issue, t.check])} />
+      </div>
+    </details>
+  );
+}
+
+const MERGE_MINING_EXTRA = [
+  {
+    id: 'rust',
+    name: (
+      <>
+        A Rust 2024 toolchain to build the bridge.{' '}
+        <a
+          href={RUST_INSTALL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-foreground underline underline-offset-4 hover:opacity-70"
+        >
+          Install Rust
+          <LiArrowRightUp className="h-3.5 w-3.5" />
+        </a>
+      </>
+    ),
+    label: 'A Rust 2024 toolchain to build the bridge.',
+  },
+  {
+    id: 'supervisor',
+    name: 'A process supervisor (systemd, Docker Compose) that restarts the bridge on its own, independently of the client and the pool.',
+  },
+  {
+    id: 'rskj',
+    label: 'RskJ node',
+    coveredNext: true,
+    name: (
+      <>
+        A synchronized RskJ node on mainnet, release <Chip>VETIVER-9.0.3</Chip>, with the <Chip>mnr</Chip> RPC module
+        and the miner server enabled and the node fully synced. There is no testnet pool endpoint, so RSK merge mining
+        runs on mainnet.
+      </>
+    ),
+  },
+  {
+    id: 'client-build',
+    label: 'DMND Client build with merge-mining support',
+    coveredNext: true,
+    name: (
+      <>
+        A DMND Client build with merge-mining support. The published <Chip>v0.3.28</Chip> release predates the feature
+        and will not work, so until a release ships with it merged, build and pin the reviewed commit{' '}
+        <Chip>b1d46b306f1415770e2dba9232aa47d6ca335999</Chip> (package <Chip>0.3.29</Chip>) or a later reviewed
+        revision that keeps the same contract.
+      </>
+    ),
+  },
+  {
+    id: 'clocks',
+    coveredNext: true,
+    name: 'Both hosts synchronized to UTC, because the bridge expires jobs using the client’s timestamps and clock drift makes jobs look stale.',
+  },
+];
 
 /**
- * Merge mining in dmnd: how RSK merge mining works in the proxy, and the wire
- * contract a bridge must satisfy.
+ * The guide, one section per page.
  *
- * The samples here are operational: a bridge author copies them verbatim, so each
- * one is transcribed from the client's own MERGE_MINING.md rather than retyped.
+ * The operator path comes first: what the miner gets, readiness, setup, security,
+ * verification, and support.
+ *
+ * The last three are the wire contract from the client's MERGE_MINING.md. They are for
+ * anyone writing their own bridge rather than running the companion one, so they are placed
+ * under Advanced, collapsed, and not part of the main operator path.
  */
-export function MergeMiningPage() {
-  return (
-    <DocPage title="Merge mining in dmnd">
-      <DocHero src={heroImage} height={160} />
+const SECTIONS: GuideSection[] = [
+  {
+    slug: 'earn-rbtc',
+    title: 'Add direct rBTC rewards to the blocks you already build',
+    navTitle: 'Earn rBTC',
+    group: 'Overview',
+    content: () => (
+      <>
+        <DocLede>
+          Your Job Declaration setup already puts the coinbase in your hands. Add a Rootstock commitment and earn rBTC
+          to an address you control using the same ASICs and Bitcoin hash rate—without changing your Bitcoin mining
+          path.
+        </DocLede>
 
-      <DocText>
-        This document explains how RSK merge mining is implemented in this proxy and defines the wire contract for a
-        bridge that connects the proxy to RskJ.
-      </DocText>
+        <DocCallout label="An optional upgrade to Job Declaration">
+          Merge mining adds an RskJ node and bridge service, but requires no new ASIC hardware or firmware.
+        </DocCallout>
 
-      <DocText>The primary safety invariant is:</DocText>
+        <DocSection title="Before you start" level={3}>
+          <StackSummary href={JOB_DECLARATION_PAGE} />
+          <DocText>On top of that stack you need:</DocText>
+          <GuidePrereqs
+            items={MERGE_MINING_EXTRA}
+            storageKey="merge-mining"
+            coveredNextHref={sectionPath('configuration')}
+          />
+        </DocSection>
+      </>
+    ),
+  },
+  {
+    slug: 'configuration',
+    title: 'Prepare the DMND Client and RskJ',
+    group: 'Set it up',
+    step: 1,
+    content: () => (
+      <>
+        <DocSection title="Configure the DMND Client" level={3}>
+          <DocText>
+            The bridge talks to the client over a small protected API, so bind that API to loopback and give it a
+            strong, dedicated secret. The client&rsquo;s default API bind is not loopback, so set it explicitly:
+          </DocText>
+          <CodeBlock code={CLIENT_RUN} />
+          <DocText>
+            This is the same client run line from the setup guide with the merge-mining API switched on. The API
+            defaults to port 3001 (<Chip>--api-server-port</Chip>, short form <Chip>-s</Chip>). The secret you set here
+            has to match the one you give the bridge in the next step.
+          </DocText>
+          <DocCallout label="Verify" check>
+            The client is running in Job Declaration mode, declaring templates to the pool, with the API listening on{' '}
+            <Chip>127.0.0.1:3001</Chip>.
+          </DocCallout>
+        </DocSection>
 
-      <DocText>
-        Merge mining is optional. No merge-mining failure may invalidate Bitcoin work, suppress an otherwise valid
-        Bitcoin share or block solution, disconnect miners, or bring down the proxy.
-      </DocText>
-
-      <DocText>
-        The words MUST, MUST NOT, SHOULD, and MAY describe requirements for a compatible bridge. Details explicitly
-        described as current limits are implementation details of this proxy.
-      </DocText>
-
-      <DocSection number="1" title="Architecture">
-        <DocText>The integration has two independent directions:</DocText>
+        <DocSection title="Configure RskJ" level={3}>
+          <DocText>
+            The setting that matters most is where you get paid. rBTC rewards go to an RSK address configured on your
+            node, so for a live mainnet deployment, set an explicit address you control:
+          </DocText>
+          <CodeBlock code={RSK_REWARD_ADDRESS} />
+          <DocText>
+            The alternative, <Chip>miner.coinbase.secret</Chip>, is a passphrase RskJ uses to derive an address into a
+            local wallet; RSK does not recommend it for production, so treat it as testing only. This setting is
+            separate from the client API secret and does not need to match it. Rewards arrive through RSK&rsquo;s Reward
+            Manager (REMASC) after a maturity delay, not the instant a block is found, so an empty balance right after
+            your first block is not a failure. Think of RSK as a bonus on the same work, not a second full income
+            stream.
+          </DocText>
+          <DocText>
+            Beyond the payout address, RskJ has to expose HTTP RPC with the <Chip>mnr</Chip> module and the miner server
+            on. The example below binds the RPC listener to loopback and runs on mainnet. Treat it as a starting point:
+            for a real deployment, follow the official RskJ node docs and manage node configuration through a protected
+            service setup rather than ad hoc command lines.
+          </DocText>
+          <CodeBlock code={RSKJ_RUN} />
+          <DocText>Three settings carry the work here:</DocText>
+          <DocList
+            items={[
+              <>
+                <Chip>rpc.modules.mnr.enabled=true</Chip> exposes <Chip>mnr_getWork</Chip>,{' '}
+                <Chip>mnr_submitBitcoinBlock</Chip>, and <Chip>mnr_submitBitcoinBlockPartialMerkle</Chip>.
+              </>,
+              <>
+                <Chip>miner.server.enabled=true</Chip> is required for <Chip>mnr_getWork</Chip>.
+              </>,
+              <>
+                <Chip>RSK_RPC_URL</Chip>, set on the bridge in the next step, must point at this listener, normally{' '}
+                <Chip>http://127.0.0.1:4444</Chip>.
+              </>,
+            ]}
+          />
+          <DocText>
+            Leave the bind address on loopback rather than <Chip>0.0.0.0</Chip>.
+          </DocText>
+          <DocCallout label="Verify" check>
+            The node is synced and <Chip>mnr_getWork</Chip> responds over the RPC listener.
+          </DocCallout>
+        </DocSection>
+      </>
+    ),
+  },
+  {
+    slug: 'run-the-bridge',
+    title: 'Build and run the bridge',
+    group: 'Set it up',
+    step: 2,
+    content: () => (
+      <>
         <DocText>
-          The proxy and bridge must run as separately supervised processes. The bridge may fail or restart without
-          restarting <Chip>dmnd-client</Chip>; <Chip>dmnd-client</Chip> may lose RSK opportunities without interrupting
-          Bitcoin mining.
+          Build the bridge from <a
+            href="https://github.com/dmnd-pool/demand-rsk-op-return-bridge"
+            target='_blank'
+            rel='noopener noreferrer'
+            className='underline underline-offset-2 hover:text-foreground'
+          >this repo</a>
         </DocText>
-      </DocSection>
-
-      <DocSection number="2" title="Enabling merge mining">
-        <DocText>All of the following are required:</DocText>
+        <CodeBlock code={BRIDGE_BUILD} />
+        <DocText>Then run it with its environment configured through your supervisor:</DocText>
+        <CodeBlock code={BRIDGE_RUN} />
+        <DocText>
+          Only two variables are required: <Chip>RSK_RPC_URL</Chip> and <Chip>DMND_CLIENT_API_SECRET</Chip> (which must
+          exactly match the client&rsquo;s <Chip>API_SECRET</Chip>). Everything else has a sane default:
+        </DocText>
+        <DocTable
+          headers={['Variable', 'Required', 'Default', 'Purpose']}
+          rows={[
+            [<Chip>RSK_RPC_URL</Chip>, 'Yes', 'none', 'Protected RskJ HTTP RPC listener.'],
+            [
+              <Chip>DMND_CLIENT_API_SECRET</Chip>,
+              'Yes',
+              'none',
+              <>
+                Must exactly match the client <Chip>API_SECRET</Chip>.
+              </>,
+            ],
+            [
+              <Chip>DMND_CLIENT_OP_RETURN_URL</Chip>,
+              'No',
+              <Chip>http://127.0.0.1:3001/api/coinbase/op-return</Chip>,
+              'Where the RSK commitment is posted.',
+            ],
+            [
+              <Chip>DMND_CLIENT_FOUND_JOB_URL</Chip>,
+              'No',
+              'Derived from the OP_RETURN URL',
+              'Where found jobs are polled. Set explicitly if the OP_RETURN URL is custom.',
+            ],
+            [<Chip>RSK_POLL_INTERVAL_SECS</Chip>, 'No', <Chip>1</Chip>, 'How often to poll RskJ for work.'],
+            [
+              <Chip>FOUND_JOB_POLL_INTERVAL_SECS</Chip>,
+              'No',
+              <Chip>1</Chip>,
+              'How often to poll the client for found jobs.',
+            ],
+            [<Chip>JOB_RETRY_INTERVAL_SECS</Chip>, 'No', <Chip>5</Chip>, 'Delay between submission retries.'],
+            [<Chip>FOUND_JOB_MAX_AGE_SECS</Chip>, 'No', <Chip>600</Chip>, 'Oldest job age still worth submitting.'],
+            [
+              <Chip>DMND_CLIENT_WORK_RESYNC_INTERVAL_SECS</Chip>,
+              'No',
+              <Chip>60</Chip>,
+              'Idempotent repost of unchanged work.',
+            ],
+            [<Chip>MAX_PENDING_FOUND_JOBS</Chip>, 'No', <Chip>256</Chip>, 'Proofs held in bridge memory.'],
+          ]}
+        />
+        <DocText>
+          The binary loads a local <Chip>.env</Chip> file if one exists. A configuration error exits with status 2;
+          runtime RPC and HTTP errors are logged and retried, because temporary RskJ failures are expected.
+        </DocText>
+        <DocText>
+          Run the bridge and the client as separate supervised processes with independent restart policies. A bridge
+          crash must not restart the client. When the client restarts, restart the bridge once the client API is healthy
+          so it reposts the current RSK work; reconnects inside a still-running client process keep the desired pair on
+          their own. Keep both hosts synchronized to UTC with NTP or chrony, since proof expiry uses the client&rsquo;s
+          timestamp.
+        </DocText>
+      </>
+    ),
+  },
+  {
+    slug: 'security',
+    title: 'Secure the control plane',
+    group: 'Set it up',
+    step: 3,
+    content: () => (
+      <>
+        <DocText>The bridge model only holds if the control plane stays private.</DocText>
         <DocList
           items={[
             <>
-              <Chip>dmnd-client</Chip> runs in Job Declaration mode with <Chip>--tp-address</Chip> and a reachable
-              Template Provider.
+              Neither the client API nor the RskJ RPC listener may face the public internet. Run RskJ, the bridge, and
+              the client on one host with both listeners bound to <Chip>127.0.0.1</Chip>; across hosts, carry the
+              traffic over an authenticated private tunnel (TLS/mTLS or an encrypted network). A private IP by itself is
+              not authentication.
             </>,
             <>
-              <Chip>API_SECRET</Chip> is non-empty and shared with the bridge.
+              <Chip>API_SECRET</Chip> is application authentication, not a network perimeter. It proves the caller; it
+              does not firewall the port.
             </>,
-            'The Template Provider honors the additional coinbase-output capacity advertised by the proxy.',
-            'The pool accepts every Bitcoin-consensus-valid template that also satisfies its ordinary token/tip policy.',
-            'RskJ enables its merge-mining and miner RPC modules.',
+            'The found-job request carries the secret in its URL query string. Any proxy, access log, or APM in front of these services must redact full request targets and query strings. Never put the secret, tokens, or credentials in an endpoint URL.',
+            'Keep secrets distinct. The client API secret, the RskJ miner secret, and your mining token are three different things. Do not reuse one for another.',
           ]}
         />
-
+      </>
+    ),
+  },
+  {
+    slug: 'verify-it-is-working',
+    title: 'Verify it is working',
+    group: 'Set it up',
+    step: 4,
+    content: () => (
+      <>
         <DocText>
-          Merge mining does not negotiate a private SV2 capability and does not require any pool or Job Declaration
-          protocol change. Setup requests and responses use the ordinary upstream protocol; <Chip>flags = 0</Chip> is
-          valid.
+          The bridge exposes no health endpoint, so you monitor it through its process and its logs. Healthy operation
+          shows three log lines:
         </DocText>
-
+        <DocList
+          items={[
+            <>
+              <Chip>queued RSK merge-mining payload into dmnd-client</Chip> — new or resynced RSK work was accepted by
+              the client.
+            </>,
+            <>
+              <Chip>queued found merge-mining job for RSK submission</Chip> — a miner found a qualifying share
+              (naturally rare).
+            </>,
+            <>
+              <Chip>submitted merge-mined Bitcoin block to RSK</Chip> — RskJ accepted a submission.
+            </>,
+          ]}
+        />
         <DocText>
-          An HTTP <Chip>202 Accepted</Chip> response does not prove that an RSK job was sent to miners. It means only
-          that the pair is stored and available for a subsequent compatible <Chip>NewTemplate</Chip>.
+          The submission log tags a <Chip>submission_mode</Chip>: <Chip>partial-merkle</Chip> for a multi-transaction
+          block, <Chip>coinbase-only-block</Chip> for a one-transaction block. Found-job and submission logs are sparse
+          by nature, so their absence alone does not mean the bridge is broken, only that no RSK-qualified share has
+          come up yet.
         </DocText>
-
         <DocText>
-          The proxy advertises 100 additional serialized coinbase-output bytes to the Template Provider. The standard
-          RSK commitment consumes 52 bytes.
+          Your logs may contain job IDs, template IDs, and work hashes, but never API secrets, POST authentication
+          bodies, or full found-job request targets — sanitize before sharing.
         </DocText>
-      </DocSection>
-
-      <DocSection number="3" title="How the proxy processes merge-mining work">
-        <DocSection number="3.1" title="Desired pair" level={3}>
-          <DocText>The bridge obtains work from RskJ and sends one atomic pair to the proxy:</DocText>
-          <DocList
-            items={[
-              <>
-                the <Chip>RSKBLOCK:</Chip> OP_RETURN payload; and
-              </>,
-              'the RSK target belonging to that exact payload.',
-            ]}
-          />
-          <DocText>
-            The most recently accepted pair remains active for later templates until another pair replaces it.
-            Replacement never rewrites an older template: every template generation keeps the payload and target that
-            were current when that generation was prepared.
-          </DocText>
-          <DocText>
-            POSTing a pair does not request or synthesize a fresh Template Distribution template. The pair becomes
-            eligible when a subsequent compatible <Chip>NewTemplate</Chip> is processed. Jobs already published for an
-            older pair can remain valid and can produce found-job responses after a newer pair is installed.
-          </DocText>
-          <DocText>
-            The desired pair survives Mining, Job Declaration, and Template Provider reconnects within the same{' '}
-            <Chip>dmnd-client</Chip> process. It is not persisted across a complete process restart.
-          </DocText>
-        </DocSection>
-
-        <DocSection number="3.2" title="Atomic template injection and pristine fallback" level={3}>
-          <DocText>
-            For each compatible Template Distribution <Chip>NewTemplate</Chip>, the proxy first keeps a pristine copy.
-            It validates the complete MM change and then applies it to the one canonical template used by both the
-            miner-facing job factory and Job Declaration. The original Template Distribution template ID is never
-            replaced with a synthetic ID.
-          </DocText>
-          <DocText>The canonical template receives a zero-value output whose script is exactly:</DocText>
-          <CodeBlock code={CANONICAL_SCRIPT} />
-          <DocText>For RSK, the payload is exactly 41 bytes:</DocText>
-          <CodeBlock code={RSK_PAYLOAD_LAYOUT} aligned />
-          <DocText>
-            The RskJ work hash is appended in the orientation returned by <Chip>mnr_getWork</Chip>; it is not reversed.
-            The output leaves all existing outputs and <Chip>coinbase_tx_value_remaining</Chip> unchanged and increments
-            the output count once.
-          </DocText>
-          <DocText>
-            RskJ locates work by scanning the complete witness-stripped coinbase bytes without respecting
-            transaction-field, output, or script boundaries. The last raw occurrence of <Chip>RSKBLOCK:</Chip> must
-            begin the exact desired 41-byte payload, and no more than 128 bytes may follow the 32-byte work hash. The
-            128-byte limit is inclusive and includes later output bytes and locktime. A newly appended final canonical
-            output normally has only the four-byte locktime after its hash.
-          </DocText>
-          <DocText>The proxy still requires its own commitment to be a canonical OP_RETURN output:</DocText>
-          <DocList
-            items={[
-              'if an existing exact canonical desired output also satisfies the raw last-tag and 128-byte rules, it is not duplicated;',
-              <>
-                if a different or hidden raw <Chip>RSKBLOCK:</Chip> follows it, or more than 128 bytes follow its hash,
-                the desired canonical commitment is appended again;
-              </>,
-              'unrelated outputs remain byte-for-byte unchanged; and',
-              <>
-                an RSK work hash containing another raw <Chip>RSKBLOCK:</Chip> marker is rejected before it becomes
-                active, because RskJ could not select the leading intended commitment unambiguously.
-              </>,
-            ]}
-          />
-          <DocText>
-            Before publication, the proxy applies the raw scan again to the prospective serialized outputs plus
-            locktime. This also rejects a later marker assembled across serialized field boundaries, such as a
-            work-hash suffix combined with the locktime bytes.
-          </DocText>
-          <DocText>
-            Injection is rejected if the output does not fit the reserved bytes, the existing outputs cannot be decoded,
-            an SV2 field would overflow, MM state is unavailable, or the current coinbase converter could cross its safe
-            one-byte output-count range. The proxy decodes and counts every output in the pool token and permits
-            injection only when <Chip>{'template outputs + pool outputs <= 252'}</Chip>. With the current one-output
-            pool token, the canonical template may contain at most 251 outputs. A token with multiple outputs lowers
-            that limit accordingly, and the same full output set is used by the miner job and Job Declaration. The exact
-            canonical desired RSK output is accepted idempotently when it satisfies the raw-selection rules and the
-            final combined count is safe. If another output cannot be appended safely, the byte-for-byte pristine
-            template is used for the one normal Bitcoin job, as it is on every other pre-publication MM failure.
-          </DocText>
-          <DocText>
-            The modified candidate is also passed through a throwaway instance of the pinned coinbase job builder with
-            every pool output and the live channel&rsquo;s extranonce length. This verifies the complete miner-facing
-            coinbase prefix and suffix, not only the Template Distribution output field. The throwaway builder cannot
-            mutate the live channel factory. If either complete field cannot fit its <Chip>B064K</Chip> representation,
-            the unpublished MM generation is discarded and the byte-for-byte pristine template is published once through
-            the ordinary flow.
-          </DocText>
-        </DocSection>
-
-        <DocSection number="3.3" title="One ordinary Job Declaration flow" level={3}>
-          <DocText>Every processed template produces only the existing normal sequence:</DocText>
-          <CodeBlock code={DECLARATION_FLOW} aligned />
-          <DocText>
-            There is no optional token, second declaration, second custom job, capability gate, delayed upgrade, or
-            replacement notify. The declaration uses the coinbase prefix and suffix from that exact miner-facing job.
-            Custom-job responses are correlated by request ID, then map the exact local miner job ID to its accepted
-            pool job ID; template IDs are not used as a latest-job shortcut.
-          </DocText>
-          <DocText>
-            On <Chip>SetNewPrevHash</Chip>, the proxy records immutable MM chain context first and then preserves the
-            existing orchestration order: start the Job Declarator transition before publishing the matching prevhash to
-            miners. It does not wait for the pool response before publication.
-          </DocText>
-          <DocText>
-            The existing proxy publishes miner work before the ordinary declaration/custom-job exchange has completed.
-            This design therefore relies on the deployment requirement above: the pool accepts any
-            Bitcoin-consensus-valid template under its normal token/tip rules. The injected zero-value canonical
-            OP_RETURN is locally validated before publication and fits the pool&rsquo;s advertised 100-byte allowance. A
-            later token, tip, transport, or generic JD rejection is an ordinary Job Declaration failure that can affect
-            a clean job in the same way; it is not handled by a second MM attempt.
-          </DocText>
-        </DocSection>
-
-        <DocSection number="3.4" title="Immutable job context" level={3}>
-          <DocText>Every published RSK job is bound to one immutable template generation containing:</DocText>
-          <DocTable
-            headers={['Value', 'Source']}
-            rows={[
-              ['Template ID', <Chip>NewTemplate.template_id</Chip>],
-              ['Payload and target', 'Atomic pair applied to that generation'],
-              ['Merkle siblings', <Chip>NewTemplate.merkle_path</Chip>],
-              ['Transaction count', <Chip>RequestTransactionDataSuccess.transaction_list.length + 1</Chip>],
-              [
-                <>
-                  Previous block hash and <Chip>nBits</Chip>
-                </>,
-                <>
-                  Matching <Chip>SetNewPrevHash</Chip>
-                </>,
-              ],
-              ['Coinbase prefix and suffix', 'Accepted live miner job'],
-              ['Miner job binding', 'Exact miner-facing extended job'],
-            ]}
-          />
-          <DocText>
-            The transaction count includes the coinbase and is never inferred from merkle-path length. Non-future
-            templates inherit the active chain state, which covers the normal{' '}
-            <Chip>SetNewPrevHash(A) -&gt; NewTemplate(B, future=false)</Chip> refresh. Future templates remain
-            incomplete until their matching <Chip>SetNewPrevHash</Chip> arrives. A job binding immediately retains its
-            immutable template context; no pending-upgrade pin or second publication phase exists.
-          </DocText>
-          <DocText>
-            Reused template or job IDs are separated by local generations. The transaction-data request keeps the
-            generation selected when the request was made; its response writes the transaction count once to that
-            generation rather than looking up a reusable template ID later. A share never falls back to the newest
-            template or to context belonging to another job. Miner-job announcements are matched by job ID and stale
-            earlier announcements are discarded deliberately, so one missing job cannot shift every later merge-mining
-            binding.
-          </DocText>
-          <DocText>
-            The context behind the last miner-facing notify, the selected future job awaiting its prevhash, and
-            bindings already queued for ordered notify delivery are protected from bounded-history eviction. Claiming a
-            binding and applying that protection is atomic; when future-job coalescing replaces a future, the discarded
-            binding is released. Once a newer notify becomes active, older inactive contexts are eligible for normal
-            retirement. If every bounded slot is temporarily protected, the incoming template remains pristine and
-            Bitcoin-only instead of evicting context that a miner can use.
-          </DocText>
-        </DocSection>
-
-        <DocSection number="3.5" title="Share observation and proof construction" level={3}>
-          <DocText>
-            After authentication and structural validation, the proxy offers each submitted share to a bounded RSK
-            observer before normal Bitcoin-difficulty filtering. The offer uses a nonblocking queue. A full or
-            unavailable observer loses only that RSK observation.
-          </DocText>
-          <DocText>For an observed share, the worker:</DocText>
-          <DocList
-            items={[
-              'resolves its exact job binding and immutable template snapshot;',
-              'reconstructs the full extranonce as channel extranonce1 plus submitted extranonce2;',
-              <>
-                reconstructs and deserializes <Chip>coinbase_prefix || full_extranonce || coinbase_suffix</Chip>;
-              </>,
-              <>
-                verifies that the expected payload is the last canonical <Chip>RSKBLOCK:</Chip> commitment;
-              </>,
-              <>
-                clears all coinbase input witness stacks, serializes the coinbase once, and verifies that the expected
-                payload starts at the last raw <Chip>RSKBLOCK:</Chip> occurrence with at most 128 trailing bytes;
-              </>,
-              'computes the witness-stripped coinbase txid;',
-              "reconstructs the merkle root from the template's bottom-up sibling path;",
-              <>
-                builds the 80-byte Bitcoin header from the share version, timestamp and nonce plus the exact prevhash,
-                merkle root and <Chip>nBits</Chip>;
-              </>,
-              'compares the header hash numerically with the template-scoped RSK target; and',
-              <>
-                enqueues the proof only when <Chip>{'bitcoin_block_hash <= rsk_target'}</Chip>.
-              </>,
-            ]}
-          />
-          <DocText>
-            This side path never changes the result of normal Bitcoin share validation. A share or solution continues
-            through its configured Bitcoin relay and block-submission paths even if every RSK step fails.
-          </DocText>
-        </DocSection>
-
-        <DocSection number="3.6" title="Current bounds and failure policy" level={3}>
-          <DocTable
-            headers={['State', 'Current bound', 'Overflow/failure behavior']}
-            rows={[
-              [
-                'Template generations',
-                '128',
-                'Retire inactive old context; never evict active/queued work; otherwise use the pristine incoming template',
-              ],
-              ['Job bindings', '256', 'Retire inactive old RSK reconstruction context'],
-              ['Job announcements', '256', 'Retire the oldest announcement'],
-              ['Observer queue', '128', 'Drop the RSK observation without delaying the share'],
-              ['Early shares awaiting context', '64', 'Drop the oldest RSK observation'],
-              ['Found-job FIFO', '32', 'Drop the oldest proof candidate'],
-              ['Recent proof identities', '128', 'Retire the oldest deduplication identity'],
-            ]}
-          />
-          <DocText>
-            An unavailable observer makes the merge-mining API unavailable. If it is unavailable while a new template is
-            being prepared, the proxy uses the pristine Bitcoin template. If it fails after a job was bound, later
-            observations may be lost, but the job, Bitcoin shares, and Bitcoin block solution path are unchanged. A
-            thread-spawn failure is retried after a five-second backoff; an unexpected worker exit is retried on the
-            next operation that needs it. API bind failures likewise leave mining active and retry every five seconds;
-            an API serve failure retries after one second.
-          </DocText>
-        </DocSection>
-      </DocSection>
-
-      <DocSection number="4" title="Bridge-facing HTTP contract">
+        <DocCallout label="Setup complete" check>
+          Once the first line appears, merge mining is running and there is nothing left to configure. The other two
+          follow on their own, whenever a share qualifies.
+        </DocCallout>
+      </>
+    ),
+  },
+  {
+    slug: 'troubleshooting',
+    title: 'Troubleshooting',
+    group: 'Support',
+    content: () => (
+      <>
+        <DocTable headers={['issue', 'Check']} rows={TROUBLE.map((t) => [t.issue, t.check])} />
+        <DocText>
+          <Chip>RUST_LOG=debug</Chip> helps temporarily, but debug output carries extra work and proof metadata and must
+          follow the same log-handling rules.
+        </DocText>
+        <DocText>
+          RSK merge mining is live, and it is opt-in and off by default, so turning it on is your choice. It runs
+          against the specific reviewed builds named in the prerequisites, and none of it goes near your Bitcoin block
+          submission path, so if the RSK side ever pauses, your Bitcoin mining keeps running untouched.
+        </DocText>
+        <DocText>
+          Keep an eye on the client README. The canonical, always-current merge-mining reference lives at{' '}
+          <Chip>github.com/dmnd-pool/dmnd-client</Chip>. Releases move regularly, so if a flag, port, endpoint, or
+          commit ever differs from what you read here, the README is the source of truth.
+        </DocText>
+      </>
+    ),
+  },
+  {
+    slug: 'known-limitation',
+    title: 'Known miner-target limitation',
+    group: 'Support',
+    content: () => (
+      <>
+        <DocText>
+          The client deliberately never lowers a miner&rsquo;s normal Bitcoin share difficulty. It evaluates every
+          authenticated, structurally valid share it receives before the normal Bitcoin-difficulty filter, so an
+          RSK-valid submitted share is not hidden by a harder upstream filter.
+        </DocText>
+        <DocText>
+          An ASIC, however, reports only hashes that satisfy the target assigned to it. If the RSK target is easier than
+          the miner&rsquo;s assigned target, some hashes can satisfy RSK while never being submitted by the ASIC. The
+          client and bridge cannot observe or recover those hashes.
+        </DocText>
+        <DocText>
+          This is an intentional stability-first policy: merge mining does not change miner traffic or normal Bitcoin
+          difficulty. It is a known deviation from a design that guarantees observation of every RSK-valid hash. A
+          bridge implementation cannot remove this limitation.
+        </DocText>
+        <DocCallout label="Operator setup is complete" check>
+          You have reached the end of the operator guide. Return to{' '}
+          <Link href={BUILD_YOUR_BLOCK_PAGE} className="underline underline-offset-2 hover:text-foreground">
+            Build your block
+          </Link>{' '}
+          or open the advanced bridge contract only if you are writing or hardening a bridge of your own.
+        </DocCallout>
+        <Link
+          href={sectionPath('http-contract')}
+          className="inline-flex w-fit items-center text-sm text-foreground underline underline-offset-4 hover:opacity-70"
+        >
+          Open advanced bridge documentation
+        </Link>
+      </>
+    ),
+  },
+  {
+    slug: 'http-contract',
+    title: 'Bridge-facing HTTP contract',
+    group: 'Advanced',
+    content: () => (
+      <>
+        <DocCallout label="For bridge authors">
+          This section and the two that follow define the wire contract a bridge must satisfy. The companion{' '}
+          <Chip>demand-rsk-op-return-bridge</Chip> already implements it, so skip them if you are running that bridge.
+        </DocCallout>
         <DocText>Both endpoints use JSON and the envelope:</DocText>
         <CodeBlock code={SUCCESS_ENVELOPE} />
         <DocText>An application error uses:</DocText>
         <CodeBlock code={ERROR_ENVELOPE} />
         <DocText>
-          A bridge <strong className="font-medium text-foreground">MUST</strong> treat a non-2xx status, malformed JSON,{' '}
-          <Chip>success: false</Chip>, or missing required success data as a failed call.
+          A bridge <Must>MUST</Must> treat a non-2xx status, malformed JSON, <Chip>success: false</Chip>, or missing
+          required success data as a failed call.
         </DocText>
 
-        <DocSection number="4.1" title="Set the desired payload and target" level={3}>
+        <DocSection title="Set the desired payload and target" level={3}>
           <CodeBlock code={OP_RETURN_REQUEST} />
           <CodeBlock code={OP_RETURN_BODY} />
           <DocText>Request fields:</DocText>
@@ -444,7 +659,7 @@ export function MergeMiningPage() {
               [
                 <Chip>secret</Chip>,
                 <>
-                  Exact value of the proxy&rsquo;s non-empty <Chip>API_SECRET</Chip>
+                  Exact value of the client&rsquo;s non-empty <Chip>API_SECRET</Chip>
                 </>,
               ],
               [
@@ -472,7 +687,9 @@ export function MergeMiningPage() {
           <CodeBlock code={OP_RETURN_ACCEPTED} />
           <DocText>
             <Chip>replaced_pending</Chip> is true whenever any desired pair was already stored, including an identical
-            pair. Reposting is valid and does not duplicate a commitment in one template.
+            pair. Reposting is valid and does not duplicate a commitment in one template. An HTTP{' '}
+            <Chip>202 Accepted</Chip> does not prove that an RSK job was sent to miners; it means only that the pair is
+            stored and available for a subsequent compatible <Chip>NewTemplate</Chip>.
           </DocText>
           <DocText>Actual error statuses are:</DocText>
           <DocTable
@@ -493,12 +710,9 @@ export function MergeMiningPage() {
               ],
             ]}
           />
-          <DocText>
-            Malformed JSON may be rejected by the HTTP framework with another non-success response.
-          </DocText>
         </DocSection>
 
-        <DocSection number="4.2" title="Poll one found job" level={3}>
+        <DocSection title="Poll one found job" level={3}>
           <CodeBlock code={FOUND_JOB_REQUEST} />
           <DocText>An empty queue is successful:</DocText>
           <CodeBlock code={FOUND_JOB_EMPTY} />
@@ -508,8 +722,8 @@ export function MergeMiningPage() {
           <DocTable
             headers={['Field', 'Contract']}
             rows={[
-              [<Chip>id</Chip>, 'Positive identifier unique during this proxy process lifetime'],
-              [<Chip>observed_at_unix_ts</Chip>, 'UTC Unix seconds when the proxy observed the share'],
+              [<Chip>id</Chip>, 'Positive identifier unique during this client process lifetime'],
+              [<Chip>observed_at_unix_ts</Chip>, 'UTC Unix seconds when the client observed the share'],
               [<Chip>template_id</Chip>, 'Exact Template Distribution template used for reconstruction'],
               [<Chip>version</Chip>, 'Submitted Bitcoin header version; diagnostic'],
               [<Chip>header_timestamp</Chip>, 'Submitted header timestamp; diagnostic'],
@@ -534,24 +748,29 @@ export function MergeMiningPage() {
             intentionally pop an item.
           </DocText>
           <DocText>
-            Delivery is at-most-once. If the HTTP response is lost after the proxy removes the item, the proxy does not
-            deliver it again. A bridge therefore owns a job as soon as it receives a successful object and{' '}
-            <strong className="font-medium text-foreground">MUST</strong> keep that job in its own bounded retry state
-            until RskJ accepts it, the job expires, or a terminal error makes it unusable.
+            Delivery is at-most-once. If the HTTP response is lost after the client removes the item, the client does
+            not deliver it again. A bridge therefore owns a job as soon as it receives a successful object and{' '}
+            <Must>MUST</Must> keep that job in its own bounded retry state until RskJ accepts it, the job expires, or a
+            terminal error makes it unusable.
           </DocText>
           <DocText>
             An ambiguous GET failure must not be treated as a retry of the same queue item: a later GET may pop the next
             item because the first may already have been removed. The bridge should continue normal polling and accept
             that the response-lost candidate is unrecoverable. It should also ignore unknown response fields so additive
-            proxy changes remain compatible.
+            changes remain compatible.
           </DocText>
         </DocSection>
-      </DocSection>
-
-      <DocSection number="5" title="Byte order and proof validation">
+      </>
+    ),
+  },
+  {
+    slug: 'byte-order-and-validation',
+    title: 'Byte order and proof validation',
+    group: 'Advanced',
+    content: () => (
+      <>
         <DocText>
-          A production bridge <strong className="font-medium text-foreground">MUST</strong> validate a found job before
-          submitting it to RskJ. At minimum:
+          A production bridge <Must>MUST</Must> validate a found job before submitting it to RskJ. At minimum:
         </DocText>
         <DocList
           items={[
@@ -571,38 +790,56 @@ export function MergeMiningPage() {
               last raw tag in the witness-stripped serialization;
             </>,
             'compute the witness-stripped coinbase txid;',
-            'reconstruct the merkle root and compare it with the header; and',
+            'reconstruct the merkle root and compare it with the header;',
             'validate the transaction count and exact sibling count; and',
             'require at most 128 bytes after the selected 32-byte RSK work hash.',
           ]}
         />
         <DocText>
-          The companion <Chip>demand-rsk-op-return-bridge</Chip> is interoperable with the current proxy, but it does
-          not yet perform every independent check above. In particular, it trusts the proxy and RskJ for the
+          The companion <Chip>demand-rsk-op-return-bridge</Chip> is interoperable with the current client, but it does
+          not yet perform every independent check above. In particular, it trusts the client and RskJ for the
           header-hash, last-commitment, and reconstructed-merkle-root checks. A new production bridge should not copy
-          that trust shortcut unless the proxy connection is inside the same trusted failure domain; RskJ rejection
+          that trust shortcut unless the client connection is inside the same trusted failure domain; RskJ rejection
           still affects only merge-mining submission and never Bitcoin processing.
         </DocText>
-        <DocText>
-          The companion bridge&rsquo;s pending proof retry <Chip>VecDeque</Chip> also has no hard item cap. Job expiry
-          limits retention time but not the maximum number of retained jobs. It is therefore not production conformant
-          with this document&rsquo;s bounded-state requirement until that queue has a hard cap and a documented eviction
-          policy. This does not consume proxy memory or affect Bitcoin mining.
-        </DocText>
 
-        <DocSection number="5.1" title="Header layout" level={3}>
+        <DocSection title="Header layout" level={3}>
           <DocText>
             <Chip>block_header_hex</Chip> is the normal Bitcoin consensus header:
           </DocText>
           <DocTable
             headers={['Bytes', 'Value', 'Encoding']}
             rows={[
-              [<Chip>0..4</Chip>, 'version', <>little-endian <Chip>u32</Chip></>],
+              [
+                <Chip>0..4</Chip>,
+                'version',
+                <>
+                  little-endian <Chip>u32</Chip>
+                </>,
+              ],
               [<Chip>4..36</Chip>, 'previous block hash', 'raw Bitcoin header byte order'],
               [<Chip>36..68</Chip>, 'merkle root', 'raw Bitcoin header byte order'],
-              [<Chip>68..72</Chip>, 'timestamp', <>little-endian <Chip>u32</Chip></>],
-              [<Chip>72..76</Chip>, <Chip>nBits</Chip>, <>little-endian <Chip>u32</Chip></>],
-              [<Chip>76..80</Chip>, 'nonce', <>little-endian <Chip>u32</Chip></>],
+              [
+                <Chip>68..72</Chip>,
+                'timestamp',
+                <>
+                  little-endian <Chip>u32</Chip>
+                </>,
+              ],
+              [
+                <Chip>72..76</Chip>,
+                <Chip>nBits</Chip>,
+                <>
+                  little-endian <Chip>u32</Chip>
+                </>,
+              ],
+              [
+                <Chip>76..80</Chip>,
+                'nonce',
+                <>
+                  little-endian <Chip>u32</Chip>
+                </>,
+              ],
             ]}
           />
           <DocText>
@@ -612,7 +849,7 @@ export function MergeMiningPage() {
           </DocText>
         </DocSection>
 
-        <DocSection number="5.2" title="Merkle siblings" level={3}>
+        <DocSection title="Merkle siblings" level={3}>
           <DocText>
             <Chip>merkle_hashes_hex</Chip> contains:
           </DocText>
@@ -634,7 +871,7 @@ export function MergeMiningPage() {
           </DocText>
         </DocSection>
 
-        <DocSection number="5.3" title="RskJ raw commitment selection" level={3}>
+        <DocSection title="RskJ raw commitment selection" level={3}>
           <DocText>
             Let <Chip>C</Chip> be the complete witness-stripped consensus serialization of the coinbase and{' '}
             <Chip>H</Chip> the 32-byte work hash from this found job. A compatible producer or validating bridge must
@@ -644,14 +881,20 @@ export function MergeMiningPage() {
           <DocText>
             The scan is byte-oriented across all fields and scripts; a marker can therefore occur in a non-OP_RETURN
             script or span a serialization boundary. Witness bytes are excluded. The bound is inclusive: 128 trailing
-            bytes pass and 129 fail. The proxy separately requires its intended output to use the canonical OP_RETURN
+            bytes pass and 129 fail. The client separately requires its intended output to use the canonical OP_RETURN
             form before it publishes RSK-bound work.
           </DocText>
         </DocSection>
-      </DocSection>
-
-      <DocSection number="6" title="RskJ-facing bridge contract">
-        <DocSection number="6.1" title="Fetch work" level={3}>
+      </>
+    ),
+  },
+  {
+    slug: 'rskj-contract',
+    title: 'RskJ-facing bridge contract',
+    group: 'Advanced',
+    content: () => (
+      <>
+        <DocSection title="Fetch work" level={3}>
           <DocText>Call JSON-RPC 2.0:</DocText>
           <CodeBlock code={GET_WORK} />
           <DocText>
@@ -673,12 +916,12 @@ export function MergeMiningPage() {
             unusable; do not POST a partial pair.
           </DocText>
           <DocText>
-            Only remember a pair as installed after the proxy returns a valid <Chip>202</Chip> success envelope with all
-            three metadata fields. Retry failed delivery. Reposting the same pair is safe.
+            Only remember a pair as installed after the client returns a valid <Chip>202</Chip> success envelope with
+            all three metadata fields. Retry failed delivery. Reposting the same pair is safe.
           </DocText>
         </DocSection>
 
-        <DocSection number="6.2" title="Submit a multi-transaction proof" level={3}>
+        <DocSection title="Submit a multi-transaction proof" level={3}>
           <DocText>
             When <Chip>{'block_tx_count > 1'}</Chip>, call:
           </DocText>
@@ -691,11 +934,11 @@ export function MergeMiningPage() {
             that work hash; a terminal &ldquo;work not found&rdquo; response retires it.
           </DocText>
           <DocText>
-            The proxy-to-bridge values remain in standard Bitcoin display order. At the RskJ RPC boundary, the bridge
-            derives the witness-stripped coinbase txid and byte-reverses it and every proxy-provided sibling into raw
-            hash order. The sibling order remains bottom-up and unchanged. This compensates for VETIVER&rsquo;s RSKIP92
-            proof builder reversing each submitted value internally. The sibling list from the proxy itself never
-            contains the coinbase txid.
+            The client-to-bridge values remain in standard Bitcoin display order. At the RskJ RPC boundary, the bridge
+            derives the witness-stripped coinbase txid and byte-reverses it and every provided sibling into raw hash
+            order. The sibling order remains bottom-up and unchanged. This compensates for VETIVER&rsquo;s RSKIP92 proof
+            builder reversing each submitted value internally. The sibling list from the client itself never contains
+            the coinbase txid.
           </DocText>
           <DocText>
             The equivalent JSON-RPC <Chip>params</Chip> value is:
@@ -706,7 +949,7 @@ export function MergeMiningPage() {
           </DocText>
         </DocSection>
 
-        <DocSection number="6.3" title="Submit a coinbase-only block" level={3}>
+        <DocSection title="Submit a coinbase-only block" level={3}>
           <DocText>
             When <Chip>block_tx_count == 1</Chip>, construct:
           </DocText>
@@ -717,12 +960,11 @@ export function MergeMiningPage() {
           <CodeBlock code={SUBMIT_BLOCK} />
         </DocSection>
 
-        <DocSection number="6.4" title="Retry and queue policy" level={3}>
+        <DocSection title="Retry and queue policy" level={3}>
           <DocText>
             After destructive GET, RskJ submission errors belong entirely to the bridge. A production bridge{' '}
-            <strong className="font-medium text-foreground">MUST</strong> hard-bound its locally owned proof queue and
-            define which job is evicted on overflow. It{' '}
-            <strong className="font-medium text-foreground">SHOULD</strong> also:
+            <Must>MUST</Must> hard-bound its locally owned proof queue and define which job is evicted on overflow. It{' '}
+            <Must>SHOULD</Must> also:
           </DocText>
           <DocList
             items={[
@@ -735,175 +977,133 @@ export function MergeMiningPage() {
               <>
                 continue fetching newer <Chip>mnr_getWork</Chip> while older proof submission is retrying; and
               </>,
-              'process locally owned proofs even when a later proxy poll fails.',
+              'process locally owned proofs even when a later client poll fails.',
             ]}
           />
           <DocText>
-            Use <Chip>observed_at_unix_ts</Chip> to expire jobs. Synchronize the bridge and proxy hosts with NTP or
+            Use <Chip>observed_at_unix_ts</Chip> to expire jobs. Synchronize the bridge and client hosts with NTP or
             chrony.
           </DocText>
         </DocSection>
-      </DocSection>
 
-      <DocSection number="7" title="Restart and resynchronization">
-        <DocText>
-          The proxy keeps the desired pair only in process memory. A bridge that suppresses an unchanged pair after one
-          successful POST can leave a restarted proxy without RSK work indefinitely.
-        </DocText>
-        <DocText>
-          A compatible deployment <strong className="font-medium text-foreground">MUST</strong> provide one
-          resynchronization mechanism:
-        </DocText>
-        <DocList
-          items={[
-            <>
-              restart the bridge after every full <Chip>dmnd-client</Chip> restart; or
-            </>,
-            'make the bridge periodically repost the current pair; or',
-            "detect a new proxy process/session and clear the bridge's last-installed cache.",
-          ]}
-        />
-        <DocText>
-          A simple deployment uses separate supervisors and restarts the bridge after the proxy is healthy. Internal
-          upstream reconnects do not require a repost because the proxy retains the desired pair and clears only
-          session-scoped bindings.
-        </DocText>
-      </DocSection>
-
-      <DocSection number="8" title="Security and deployment">
-        <DocText>
-          The merge-mining endpoints use a shared secret but provide no TLS. The GET contract places that secret in the
-          query string. A production deployment must:
-        </DocText>
-        <DocList
-          items={[
-            <>
-              set <Chip>API_BIND_ADDRESS=127.0.0.1</Chip> when the bridge is on the same host;
-            </>,
-            'keep the API on a trusted private network or behind an authenticated TLS reverse proxy;',
-            'firewall it from the public internet;',
-            'avoid logging full GET URLs or query strings;',
-            <>
-              use the same strong secret for <Chip>API_SECRET</Chip> and the bridge credential; and
-            </>,
-            'supervise the bridge independently from the proxy.',
-          ]}
-        />
-        <DocText>RskJ must be started with:</DocText>
-        <CodeBlock code={RSKJ_FLAGS} />
-        <DocText>Example proxy invocation:</DocText>
-        <CodeBlock code={PROXY_INVOCATION} />
-        <DocText>A bridge may use these configuration names, matching the companion implementation:</DocText>
-        <DocTable
-          headers={['Variable', 'Required', 'Typical/default value']}
-          rows={[
-            [<Chip>RSK_RPC_URL</Chip>, 'Yes', <Chip>http://127.0.0.1:4444</Chip>],
-            [
-              <Chip>DMND_CLIENT_API_SECRET</Chip>,
-              'Yes',
+        <DocSection title="Restart and resynchronization" level={3}>
+          <DocText>
+            The client keeps the desired pair only in process memory. A bridge that suppresses an unchanged pair after
+            one successful POST can leave a restarted client without RSK work indefinitely.
+          </DocText>
+          <DocText>
+            A compatible deployment <Must>MUST</Must> provide one resynchronization mechanism:
+          </DocText>
+          <DocList
+            items={[
               <>
-                Same value as <Chip>API_SECRET</Chip>
+                restart the bridge after every full <Chip>dmnd-client</Chip> restart; or
               </>,
-            ],
-            [
-              <Chip>DMND_CLIENT_OP_RETURN_URL</Chip>,
-              'No',
-              <Chip>http://127.0.0.1:3001/api/coinbase/op-return</Chip>,
-            ],
-            [
-              <Chip>DMND_CLIENT_FOUND_JOB_URL</Chip>,
-              'No',
-              <Chip>http://127.0.0.1:3001/api/merge-mining/found-job</Chip>,
-            ],
-            [<Chip>RSK_POLL_INTERVAL_SECS</Chip>, 'No', <Chip>1</Chip>],
-            [<Chip>FOUND_JOB_POLL_INTERVAL_SECS</Chip>, 'No', <Chip>1</Chip>],
-            [<Chip>JOB_RETRY_INTERVAL_SECS</Chip>, 'No', <Chip>5</Chip>],
-            [<Chip>FOUND_JOB_MAX_AGE_SECS</Chip>, 'No', <Chip>600</Chip>],
-          ]}
-        />
-        <DocText>
-          These environment-variable names are not part of the wire protocol; another bridge may expose equivalent
-          configuration differently.
-        </DocText>
-      </DocSection>
+              'make the bridge periodically repost the current pair; or',
+              "detect a new client process/session and clear the bridge's last-installed cache.",
+            ]}
+          />
+          <DocText>
+            A simple deployment uses separate supervisors and restarts the bridge after the client is healthy. Internal
+            upstream reconnects do not require a repost because the client retains the desired pair and clears only
+            session-scoped bindings.
+          </DocText>
+        </DocSection>
+      </>
+    ),
+  },
+];
 
-      <DocSection number="9" title="Known miner-target limitation">
-        <DocText>
-          This proxy deliberately never lowers a miner&rsquo;s normal Bitcoin share difficulty. It evaluates every
-          authenticated, structurally valid share it receives before the normal Bitcoin-difficulty filter, so an
-          RSK-valid submitted share is not hidden by a harder upstream filter.
-        </DocText>
-        <DocText>
-          An ASIC, however, reports only hashes that satisfy the target assigned to it. If the RSK target is easier than
-          the miner&rsquo;s assigned target, some hashes can satisfy RSK while never being submitted by the ASIC. The
-          proxy and bridge cannot observe or recover those hashes.
-        </DocText>
-        <DocText>
-          This is an intentional stability-first policy: merge mining does not change miner traffic or normal Bitcoin
-          difficulty. It is a known deviation from a design that guarantees observation of every RSK-valid hash. A
-          bridge implementation cannot remove this limitation.
-        </DocText>
-      </DocSection>
+const sectionPath = (slug: string) => `${BASE_PATH}/${slug}`;
 
-      <DocSection number="10" title="Bridge conformance checklist">
-        <DocText>A bridge is compatible when it verifies all of the following:</DocText>
-        <DocList
-          items={[
-            <>
-              It constructs exactly <Chip>RSKBLOCK:</Chip> plus the 32-byte RskJ work hash without reversal.
-            </>,
-            'It sends the matching 32-byte target in the same POST and never installs half a pair.',
-            <>
-              It treats only <Chip>202</Chip> plus a valid success envelope as successful installation.
-            </>,
-            'It retries failed pair delivery and provides restart resynchronization.',
-            <>
-              It treats <Chip>data: null</Chip> from GET as an empty queue, not an error.
-            </>,
-            'It understands that GET is destructive and retains fetched jobs in bounded local retry state.',
-            'It validates header length/hash, target, the canonical output, the last raw RSK tag, the inclusive 128-byte trailing limit, transaction count, merkle path length, and reconstructed merkle root.',
-            'It derives the RskJ work hash from each found job and does not mix old proof context with the newest cached pair.',
-            <>
-              It submits single-transaction blocks with <Chip>mnr_submitBitcoinBlock</Chip>.
-            </>,
-            <>
-              It submits multi-transaction proofs with the exact RSKIP92 hash order and{' '}
-              <Chip>mnr_submitBitcoinBlockPartialMerkle</Chip> parameters above.
-            </>,
-            'It retries only transient RskJ failures, expires old work, and bounds rate-limit pressure.',
-            "It never sends bridge failures back into the proxy's Bitcoin lifecycle.",
-            'Operators have verified one declaration, one custom-job request, and one miner job per affected template, with no private capability flag or delayed second flow.',
-            'Operators understand and accept the miner-target limitation above.',
-          ]}
-        />
-      </DocSection>
+/** How a section is named in the pager, which has room for the step prefix. */
+const sectionLabel = (s: GuideSection) => {
+  const name = s.navTitle ?? s.title;
+  return s.step ? `Step ${s.step}: ${name}` : name;
+};
 
-      <DocSection number="11" title="Current implementation map">
-        <DocTable
-          headers={['Area', 'Source']}
-          rows={[
-            ['HTTP route registration', <Chip>src/api/mod.rs</Chip>],
-            [
-              'Pair validation, template state, reconstruction, queues and API handlers',
-              <Chip>src/merge_mining.rs</Chip>,
-            ],
-            ['Atomic template injection and pristine fallback', <Chip>src/jd_client/template_receiver/mod.rs</Chip>],
-            ['Single ordinary declaration flow', <Chip>src/jd_client/job_declarator/mod.rs</Chip>],
-            ['Exact custom-job response correlation', <Chip>src/jd_client/mining_upstream/upstream.rs</Chip>],
-            [
-              'Miner job binding, chain context and Bitcoin solution isolation',
-              <Chip>src/jd_client/mining_downstream/mod.rs</Chip>,
-            ],
-            ['Pre-difficulty, nonblocking share observation', <Chip>src/translator/downstream/downstream.rs</Chip>],
-          ]}
-        />
-        <DocText>
-          The companion implementation and its deeper behavioral test specification live at:
-        </DocText>
-        <CodeBlock code={COMPANION_PATH} />
-      </DocSection>
+const STEP_COUNT = SECTIONS.filter((s) => s.step).length;
 
-      <DocFooterPrompt href={DMND_CLIENT_REPO} />
-    </DocPage>
+/** The one group held back until a reader asks for it. */
+const ADVANCED_GROUP = 'Advanced';
+const OPERATOR_SECTIONS = SECTIONS.filter((section) => section.group !== ADVANCED_GROUP);
+const ADVANCED_SECTIONS = SECTIONS.filter((section) => section.group === ADVANCED_GROUP);
+
+/**
+ * Merge mining in dmnd: what you get, how to turn it on, and the wire contract for a
+ * bridge of your own.
+ *
+ */
+export function MergeMiningPage() {
+  const [, params] = useRoute(`${BASE_PATH}/:section`);
+  // Setting this up spans days, so a finished step stays finished across visits.
+  const { ticked, toggle } = useGuideTicks('merge-mining-steps');
+  const found = SECTIONS.findIndex((s) => s.slug === params?.section);
+  const index = found === -1 ? 0 : found;
+  const section = SECTIONS[index];
+  // The normal operator journey deliberately ends after its support material. Advanced
+  // bridge-contract pages form their own small sequence and are never a surprise Next.
+  const pagerSections = section.group === ADVANCED_GROUP ? ADVANCED_SECTIONS : OPERATOR_SECTIONS;
+  const pagerIndex = pagerSections.findIndex((candidate) => candidate.slug === section.slug);
+  const prev = pagerSections[pagerIndex - 1];
+  const next = pagerSections[pagerIndex + 1];
+
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    root.current?.closest('main')?.scrollTo({ top: 0 });
+  }, [index]);
+
+  return (
+    <div ref={root}>
+      <DocPage
+        trail={[
+          { label: BUILD_YOUR_BLOCK, href: BUILD_YOUR_BLOCK_PAGE },
+          { label: GUIDE_NAME, href: sectionPath(SECTIONS[0].slug) },
+          { label: section.navTitle ?? section.title },
+        ]}
+      >
+        {index === 0 && <DocHero src={heroImage} height={160} />}
+
+        <div className="flex flex-col gap-6 lg:flex-row lg:gap-10">
+          <DocSectionNav
+            collapsible={[ADVANCED_GROUP]}
+            items={SECTIONS.map((s) => ({
+              href: sectionPath(s.slug),
+              label: s.navTitle ?? s.title,
+              group: s.group,
+              step: s.step,
+              done: s.step !== undefined && ticked.includes(s.slug),
+              active: s.slug === section.slug,
+            }))}
+          />
+
+          <div className="flex min-w-0 flex-1 flex-col gap-6 lg:order-1">
+            <DocSectionHeader step={section.step} stepCount={STEP_COUNT} title={section.title} />
+
+            {section.content()}
+
+            {section.step !== undefined && (
+              <>
+                <StepTrouble step={section.step} />
+                <StepDone done={ticked.includes(section.slug)} onToggle={() => toggle(section.slug)} />
+              </>
+            )}
+
+            <DocPager
+              guide={GUIDE_NAME}
+              prev={prev && { href: sectionPath(prev.slug), label: sectionLabel(prev) }}
+              next={next && { href: sectionPath(next.slug), label: sectionLabel(next) }}
+            />
+
+            <DocFooterPrompt
+              href={DMND_CLIENT_MERGE_MINING}
+              title="Need the complete merge-mining reference?"
+              description="Use the DMND Client merge-mining documentation for the current bridge contract and release details."
+              linkLabel="Open merge-mining reference"
+            />
+          </div>
+        </div>
+      </DocPage>
+    </div>
   );
 }

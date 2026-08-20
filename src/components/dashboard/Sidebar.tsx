@@ -9,7 +9,7 @@ import { TooltipPill } from '@/components/ui/tooltip-pill';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useHasSubaccounts } from '@/hooks/useSubaccounts';
 import { useAccountScope } from '@/hooks/useAccountScope';
-import { NAV_GROUPS, SETTINGS_ITEM, isSubaccountRestrictedRoute, type NavItem } from './nav';
+import { NAV_GROUPS, SETTINGS_ITEM, isPathActive, isSubaccountRestrictedRoute, type NavItem } from './nav';
 import { AccountSwitcher } from './AccountSwitcher';
 import { accountInitials } from './accountInitials';
 
@@ -26,14 +26,14 @@ function NavDropdown({
 }) {
   const children = item.children ?? [];
   // Open while the reader is on one of its pages, so the trail back is always visible.
-  const [open, setOpen] = useState(() => children.some((c) => c.href === location));
+  const [open, setOpen] = useState(() => children.some((c) => isPathActive(location, c.href)));
   const Icon = item.icon;
 
   if (collapsed) {
-    // The rail has no room for the label or the sub-items; the parent has no page of
-    // its own, so it links to its first child rather than nowhere.
+    // The rail has no room for the sub-items, but the parent now has a useful
+    // overview page.
     return (
-      <Link href={children[0]?.href ?? item.href} onClick={onNavigate}>
+      <Link href={item.href} onClick={onNavigate}>
         <span
           title={item.label}
           className="flex items-center justify-center rounded-lg px-0 py-2 text-sm text-body-alt transition-colors hover:bg-muted hover:text-foreground"
@@ -46,20 +46,21 @@ function NavDropdown({
 
   return (
     <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-body-alt transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <Icon className="h-[18px] w-[18px] shrink-0" />
-        <span className="flex-1 text-xs font-medium uppercase tracking-wider">{item.label}</span>
-        {open ? (
-          <LiAltArrowUp className="h-4 w-4 shrink-0" />
-        ) : (
-          <LiAltArrowDown className="h-4 w-4 shrink-0" />
-        )}
-      </button>
+      <div className="flex items-center rounded-lg px-3 py-2 text-sm text-body-alt transition-colors hover:bg-muted hover:text-foreground">
+        <Link href={item.href} onClick={onNavigate} className="flex min-w-0 flex-1 items-center gap-2.5">
+          <Icon className="h-[18px] w-[18px] shrink-0" />
+          <span className="truncate text-xs font-medium uppercase tracking-wider">{item.label}</span>
+        </Link>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${item.label}`}
+          className="-mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-body-alt transition-colors hover:text-foreground"
+        >
+          {open ? <LiAltArrowUp className="h-4 w-4" /> : <LiAltArrowDown className="h-4 w-4" />}
+        </button>
+      </div>
       {open && (
         <div className="space-y-0.5">
           {children.map((child) => (
@@ -69,7 +70,7 @@ function NavDropdown({
                   // The drawn sub-row keeps an empty 20px slot where the parent's icon
                   // sits, so the labels align in a single column.
                   'flex items-center gap-2 rounded-lg py-2 pl-[38px] pr-3 text-sm transition-colors',
-                  location === child.href
+                  isPathActive(location, child.href)
                     ? 'bg-muted font-medium text-foreground'
                     : 'text-body-alt hover:bg-muted hover:text-foreground',
                 )}

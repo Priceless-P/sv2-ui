@@ -14,6 +14,7 @@ import { GeneratedBtcPage } from '@/pages/generated-btc/GeneratedBtcPage';
 import { PayoutsPage } from '@/pages/payouts/PayoutsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
 import { HelpPage } from '@/pages/help/HelpPage';
+import { BuildYourBlockPage } from '@/pages/build-your-block/BuildYourBlockPage';
 import { JobDeclarationPage } from '@/pages/build-your-block/JobDeclarationPage';
 import { PrioritizeTransactionsPage } from '@/pages/build-your-block/PrioritizeTransactionsPage';
 import { MergeMiningPage } from '@/pages/build-your-block/MergeMiningPage';
@@ -118,17 +119,22 @@ function AppRoutes() {
           <HelpPage />
         </DashboardShell>
       </Route>
-      <Route path="/build-your-block/job-declaration">
+      <Route path="/build-your-block">
+        <DashboardShell>
+          <BuildYourBlockPage />
+        </DashboardShell>
+      </Route>
+      <Route path="/build-your-block/job-declaration/:section?">
         <DashboardShell>
           <JobDeclarationPage />
         </DashboardShell>
       </Route>
-      <Route path="/build-your-block/merge-mining">
+      <Route path="/build-your-block/merge-mining/:section?">
         <DashboardShell>
           <MergeMiningPage />
         </DashboardShell>
       </Route>
-      <Route path="/build-your-block/prioritize-transactions">
+      <Route path="/build-your-block/prioritize-transactions/:section?">
         <DashboardShell>
           <PrioritizeTransactionsPage />
         </DashboardShell>
