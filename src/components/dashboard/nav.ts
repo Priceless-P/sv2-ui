@@ -120,7 +120,14 @@ const ALL_ITEMS = [
 // Routes reachable outside the sidebar (top-bar actions) still need a title.
 const EXTRA_TITLES: Record<string, string> = { '/help': 'Help & Support' };
 
+export function isPathActive(path: string, href: string): boolean {
+  return path === href || path.startsWith(`${href}/`);
+}
+
 /** The page title shown in the top bar for a given route. */
 export function titleForPath(path: string): string {
-  return ALL_ITEMS.find((item) => item.href === path)?.label ?? EXTRA_TITLES[path] ?? 'Home';
+  const owner = ALL_ITEMS.filter((item) => isPathActive(path, item.href)).sort(
+    (a, b) => b.href.length - a.href.length,
+  )[0];
+  return owner?.label ?? EXTRA_TITLES[path] ?? 'Home';
 }
