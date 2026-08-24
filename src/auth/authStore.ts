@@ -5,7 +5,8 @@ import {
   clearSession,
   refreshIdle,
   isExpired,
-  isKybStatus,
+  persistentStorage,
+  type KybStatus,
   type ViewingAccountSession,
 } from './session';
 import { setDmndAccountId } from '@/api';
@@ -41,6 +42,8 @@ export interface AuthStore {
 export interface AuthStoreOptions {
   tabId?: string;
   storage?: Storage;
+  /** Where a remembered session is kept so it outlives the tab. null disables it. */
+  persistentStorage?: Storage | null;
   channel?: BroadcastChannel | null;
   channelFactory?: () => BroadcastChannel | null;
 }
@@ -71,6 +74,8 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
   const tabId = options.tabId ?? generateTabId();
   const storage =
     options.storage ?? (typeof sessionStorage !== 'undefined' ? sessionStorage : undefined);
+  const remembered =
+    options.persistentStorage !== undefined ? options.persistentStorage ?? undefined : persistentStorage();
   const resolveChannel = (): BroadcastChannel | null =>
     options.channel !== undefined
       ? options.channel
@@ -94,12 +99,7 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       const value: unknown = JSON.parse(raw);
       if (typeof value !== 'object' || value === null) return null;
       const account = value as Record<string, unknown>;
-      if (
-        typeof account.accountId !== 'string' ||
-        !account.accountId ||
-        typeof account.email !== 'string' ||
-        !isKybStatus(account.kyb_status)
-      ) {
+      if (typeof account.accountId !== 'string' || !account.accountId || typeof account.email !== 'string') {
         return null;
       }
       return {
@@ -108,7 +108,7 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
         company_name: typeof account.company_name === 'string' ? account.company_name : null,
         company_primary_location:
           typeof account.company_primary_location === 'string' ? account.company_primary_location : null,
-        kyb_status: account.kyb_status,
+        kyb_status: account.kyb_status as KybStatus,
       };
     } catch {
       return null;
@@ -120,7 +120,18 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
   };
 
   const listeners = new Set<() => void>();
-  const restoredSession = readSession(storage);
+  // Read the remembered slot first: a session there means this browser was explicitly
+  // trusted, so it wins over anything left in the tab's own slot.
+  const rememberedSession = remembered ? readSession(remembered) : null;
+  const restoredSession = rememberedSession ?? readSession(storage);
+  let sessionSlot: Storage = rememberedSession && remembered ? remembered : storage;
+  const writeCurrentSession = (session: Session) => writeSession(session, sessionSlot);
+  // Sign-out clears both slots, so no stale copy can be restored from the other one.
+  const clearStoredSession = () => {
+    clearSession(storage);
+    if (remembered) clearSession(remembered);
+    sessionSlot = storage;
+  };
   if (!restoredSession) writeViewingAccount(null);
   const restoredViewingAccount = restoredSession ? readViewingAccount() : null;
   if (restoredViewingAccount) writeViewingAccount(restoredViewingAccount);
@@ -160,7 +171,7 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
     if (m.tabId === tabId) return;
     if (!state.session) return;
     if (m.accountId !== state.session.accountId) return;
-    clearSession(storage);
+    clearStoredSession();
     writeViewingAccount(null);
     setState({ session: null, signOutReason: 'duplicate_tab', viewingAccountId: null, viewingAccount: null });
   };
@@ -201,22 +212,27 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       return state;
     },
     signIn(session) {
+      // A remembered session goes to localStorage so closing the browser does not end
+      // it; otherwise it stays in the tab's own slot. Both are cleared first so only
+      // one copy of the session exists, whichever slot it lands in.
+      clearStoredSession();
+      sessionSlot = session.remember && remembered ? remembered : storage;
+      writeSession(session, sessionSlot);
       // A fresh sign-in always starts on the master account, clearing any stale view
       // scope from a previous session.
-      writeSession(session, storage);
       writeViewingAccount(null);
       setState({ session, signOutReason: null, viewingAccountId: null, viewingAccount: null });
       postClaim(session.accountId);
     },
     signOut(reason: SignOutReason = 'user') {
-      clearSession(storage);
+      clearStoredSession();
       writeViewingAccount(null);
       setState({ session: null, signOutReason: reason, viewingAccountId: null, viewingAccount: null });
     },
     updateSessionProfile(profile) {
       if (!state.session) return;
       const session = { ...state.session, ...profile };
-      writeSession(session, storage);
+      writeCurrentSession(session);
       setState({ ...state, session });
     },
     setViewingAccount(account: ViewingAccountSession | null) {
@@ -231,13 +247,13 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       // An idle refresh preserves the viewed account: a mere activity tick must not
       // yank the miner out of a subaccount they are viewing.
       const refreshed = refreshIdle(state.session, now);
-      writeSession(refreshed, storage);
+      writeCurrentSession(refreshed);
       setState({ ...state, session: refreshed });
     },
     checkExpiry(now?: number) {
       if (!state.session) return;
       if (isExpired(state.session, now)) {
-        clearSession(storage);
+        clearStoredSession();
         writeViewingAccount(null);
         setState({ session: null, signOutReason: 'expired', viewingAccountId: null, viewingAccount: null });
       }

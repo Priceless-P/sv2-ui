@@ -141,5 +141,5 @@ export function exportFilename(prefix: string, now: number): string {
 }
 
 export function overlayContainer(): HTMLElement {
-  return document.querySelector<HTMLElement>('.dmnd-app') ?? document.body;
+  return document.querySelector<HTMLElement>('.dmnd-app, .dmnd-auth') ?? document.body;
 }

@@ -25,6 +25,7 @@ import { SignIn } from '@/pages/auth/SignIn';
 import { SignUp } from '@/pages/auth/SignUp';
 import { ResetPassword } from '@/pages/auth/ResetPassword';
 import { BrokerSignIn } from '@/pages/auth/BrokerSignIn';
+import { WatcherSignIn } from '@/pages/auth/WatcherSignIn';
 import { BrokerSignUp } from '@/pages/auth/BrokerSignUp';
 import { BrokerHome } from '@/pages/broker/BrokerHome';
 import { BrokerSettings } from '@/pages/broker/BrokerSettings';
@@ -173,6 +174,9 @@ function Router() {
       </Route>
       <Route path="/broker/signin">
         <BrokerSignIn />
+      </Route>
+      <Route path="/watcher/signin">
+        <WatcherSignIn />
       </Route>
       <Route path="/broker/signup">
         <BrokerSignUp />

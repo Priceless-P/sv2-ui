@@ -276,6 +276,10 @@
   border-color: hsl(var(--ring));
   outline: none;
 }
+.dmnd-auth input[type='checkbox'],
+.dmnd-auth input[type='checkbox']:focus {
+  border-width: 1px;
+}
 
 @layer base {
   * {

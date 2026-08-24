@@ -55,8 +55,9 @@ export function BrokerSignIn() {
         </Link>
       }
       marketing
+      marketingArt="right"
     >
-      <AuthHeading title="Welcome back" subtitle="Enter your details to access your broker account" />
+      <AuthHeading title="Broker sign in" subtitle="Enter your details to access your broker account" />
 
       <div className="my-6 h-px w-full bg-border" />
 

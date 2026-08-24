@@ -13,7 +13,13 @@ export {
   clearSession,
   FIXED_TTL_MS,
   IDLE_TTL_MS,
+  REMEMBERED_TTL_MS,
   STORAGE_KEY,
+  REMEMBER_EMAIL_KEY,
+  readRememberedEmail,
+  writeRememberedEmail,
+  clearRememberedEmail,
+  persistentStorage,
   viewingAccountFromAuth,
 } from './session';
 export type { Session, CreateSessionInput, KybStatus, ViewingAccountSession } from './session';
