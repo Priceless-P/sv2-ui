@@ -4,6 +4,10 @@ export class DmndApiError extends Error {
   constructor(
     message: string,
     public readonly code: DmndApiErrorCode,
+    /**
+     * The HTTP status behind the failure, set whenever the server answered with one.
+     */
+    public readonly status?: number,
   ) {
     super(message);
     this.name = 'DmndApiError';
@@ -320,4 +324,34 @@ export interface DmndClient {
    * session (the new tab carries its own server-set cookie).
    */
   logSubaccount(ownerToken: string, subaccountToken: string, req?: RequestOptions): Promise<DmndSession>;
+  /**
+   * The cached PPLNS projection for an account (GET /api/user/sub_account/{id}/pplns_projection).
+   * Returns null when no model-v2 projection is available yet (404 / cache not refreshed).
+   */
+  getPplnsProjection(id: string, req?: RequestOptions): Promise<PplnsProjection | null>;
+}
+
+export interface PplnsProjectionHorizon {
+  horizon: number;
+  retained_difficulty: number;
+  total_modeled_window_difficulty: number;
+  difficulty_score: number;
+  gross_subsidy_sats: number;
+  pool_fee: number;
+  broker_fee: number;
+  net_sats: number;
+}
+
+export interface PplnsProjection {
+  subaccount_id: string;
+  calculated_at: string;
+  source_snapshot_at: string;
+  source_block_height: number;
+  last_pool_block_height: number;
+  pool_work_since_last_block: number;
+  synthetic_fill_difficulty: number;
+  network_difficulty: number;
+  block_subsidy_sats: number;
+  model_version: number;
+  horizons: PplnsProjectionHorizon[];
 }

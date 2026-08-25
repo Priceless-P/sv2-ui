@@ -3,10 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { createWatcherClient } from '@/api/watcherClient';
 import type { HashrateRange } from '@/api/types';
 import { rangeToWindow } from '@/lib/hashrateHistory';
+import { isSupportedPplnsProjection } from '@/lib/pplnsProjection';
 
 // The public view polls a little slower than the owner's dashboard; it is a shared,
 // read-only page and does not need second-by-second freshness.
 const WATCHER_POLL_MS = 60 * 1000;
+
+// The projection is recomputed only when the cache crosses a PPLNS boundary, so it is
+// polled on the same five-minute (+5s) cadence the owner's dashboard uses for it.
+const PROJECTION_POLL_MS = 5 * 61 * 1000;
 
 /** A memoised token-only client for one watcher token. */
 function useClient(token: string) {
@@ -87,6 +92,25 @@ export function useWatcherFees(token: string, enabled: boolean) {
     queryFn: ({ signal }) => client.getFees(signal),
     enabled,
     staleTime: WATCHER_POLL_MS,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+export function useWatcherPplnsProjection(accountId: string, token: string, enabled: boolean) {
+  const client = useClient(token);
+  return useQuery({
+    queryKey: ['watcher', token, 'pplns-projection', accountId],
+    queryFn: async ({ signal }) => {
+      const projection = await client.getPplnsProjection(accountId, signal);
+      if (projection && !isSupportedPplnsProjection(projection)) {
+        throw new Error('Unsupported PPLNS projection model');
+      }
+      return projection;
+    },
+    enabled,
+    staleTime: PROJECTION_POLL_MS,
+    refetchInterval: PROJECTION_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
   });
