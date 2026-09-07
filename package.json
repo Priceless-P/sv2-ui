@@ -1,19 +1,12 @@
 {
   "name": "sv2-ui",
   "version": "0.1.0",
-  "description": "Unified monitoring dashboard for the SRI mining stack",
+  "description": "Frontend dashboard for DMND mining accounts",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "server"
-  ],
   "scripts": {
-    "dev": "concurrently --kill-signal SIGTERM --kill-others-on-fail \"vite\" \"npm run dev --prefix server\"",
-    "dev:ui": "vite",
-    "dev:server": "npm run dev --prefix server",
+    "dev": "vite",
     "build": "tsc && vite build",
-    "build:server": "npm run build --prefix server",
-    "build:all": "npm run build && npm run build:server",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "test": "node --test --import tsx src/*/__tests__/*.test.ts",
@@ -31,7 +24,6 @@
     "@zxcvbn-ts/language-common": "^3.0.4",
     "@zxcvbn-ts/language-en": "^3.0.2",
     "bitcoinjs-lib": "^7.0.1",
-    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.468.0",
@@ -53,7 +45,6 @@
     "@types/react-dom": "^18.3.3",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
-    "concurrently": "^9.2.1",
     "eslint": "^9.17.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
