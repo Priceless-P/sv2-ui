@@ -253,14 +253,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
               )}
 
               {active === 'pplns' && (
-                <section className="space-y-6">
-                  <div>
-                    <h1 className="text-xl font-semibold text-heading">PPLNS projection</h1>
-                    <p className="mt-1 text-sm text-body-alt">
-                      See how the accepted work still retained in the PPLNS window contributes to a
-                      modeled block subsidy.
-                    </p>
-                  </div>
+                <section>
                   <PplnsProjectionPanel
                     projection={pplns.data}
                     isLoading={pplns.isLoading}

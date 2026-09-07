@@ -4,6 +4,7 @@ import test from 'node:test';
 import { createUser, setDmndAccountId } from '../client';
 import { API_ERROR_MESSAGES } from '../errorMessages';
 import { DmndApiError } from '../types';
+import { pplnsProjectionFixture } from './pplnsProjectionFixture';
 
 interface Call {
   url: string;
@@ -639,15 +640,22 @@ test('getPayoutAddresses GETs the payout addresses', async () => {
 });
 
 test('getPplnsProjection GETs the sub_account projection and returns it', async () => {
-  const body = { subaccount_id: 'acct-1', model_version: 2, horizons: [] };
+  const body = pplnsProjectionFixture();
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(body));
   const client = createUser({ fetchImpl, backoffMs: 0 });
 
-  const result = await client.getPplnsProjection('acct-1');
+  const result = await client.getPplnsProjection('123');
 
   assert.equal(calls[0].init.method, 'GET');
-  assert.ok(calls[0].url.endsWith('/api/user/sub_account/acct-1/pplns_projection'));
+  assert.ok(calls[0].url.endsWith('/api/user/sub_account/123/pplns_projection'));
   assert.deepEqual(result, body);
+});
+
+test('getPplnsProjection rejects a projection for a different account', async () => {
+  const { fetchImpl } = fakeFetch(() => jsonResponse({ ...pplnsProjectionFixture(), subaccount_id: '456' }));
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+
+  await assert.rejects(() => client.getPplnsProjection('123'), /account does not match/);
 });
 
 test('a 404 means nothing is cached yet, so getPplnsProjection returns null', async () => {

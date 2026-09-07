@@ -3,7 +3,6 @@ import { useQuery } from '@tanstack/react-query';
 import { createWatcherClient } from '@/api/watcherClient';
 import type { HashrateRange } from '@/api/types';
 import { rangeToWindow } from '@/lib/hashrateHistory';
-import { isSupportedPplnsProjection } from '@/lib/pplnsProjection';
 
 // The public view polls a little slower than the owner's dashboard; it is a shared,
 // read-only page and does not need second-by-second freshness.
@@ -101,13 +100,7 @@ export function useWatcherPplnsProjection(accountId: string, token: string, enab
   const client = useClient(token);
   return useQuery({
     queryKey: ['watcher', token, 'pplns-projection', accountId],
-    queryFn: async ({ signal }) => {
-      const projection = await client.getPplnsProjection(accountId, signal);
-      if (projection && !isSupportedPplnsProjection(projection)) {
-        throw new Error('Unsupported PPLNS projection model');
-      }
-      return projection;
-    },
+    queryFn: ({ signal }) => client.getPplnsProjection(accountId, signal),
     enabled,
     staleTime: PROJECTION_POLL_MS,
     refetchInterval: PROJECTION_POLL_MS,

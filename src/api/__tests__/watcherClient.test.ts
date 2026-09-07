@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createWatcherClient } from '../watcherClient';
+import { pplnsProjectionFixture } from './pplnsProjectionFixture';
 
 interface Call {
   url: string;
@@ -141,17 +142,24 @@ test('a non-array historical response collapses to an empty series', async () =>
 });
 
 test('getPplnsProjection reads the account path with the token and no session', async () => {
-  const body = { subaccount_id: 'acct-1', model_version: 2, horizons: [] };
+  const body = pplnsProjectionFixture();
   const { fetchImpl, calls } = fakeFetch(() => jsonResponse(body));
   const client = createWatcherClient('SECRETTOKEN', { fetchImpl });
 
-  const result = await client.getPplnsProjection('acct-1');
+  const result = await client.getPplnsProjection('00123');
 
   const call = calls[0];
-  assert.ok(call.url.includes('/api/user/sub_account/acct-1/pplns_projection'));
+  assert.ok(call.url.includes('/api/user/sub_account/00123/pplns_projection'));
   assert.ok(call.url.includes('token=SECRETTOKEN'));
   assert.notEqual(call.init.credentials, 'include');
   assert.deepEqual(result, body);
+});
+
+test('getPplnsProjection rejects a projection for a different watcher account', async () => {
+  const { fetchImpl } = fakeFetch(() => jsonResponse({ ...pplnsProjectionFixture(), subaccount_id: '456' }));
+  const client = createWatcherClient('TOK', { fetchImpl });
+
+  await assert.rejects(() => client.getPplnsProjection('123'), /account does not match/);
 });
 
 test('getPplnsProjection returns null when nothing is cached yet', async () => {

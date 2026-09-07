@@ -1,3 +1,11 @@
+import type { PplnsProjection } from './pplnsProjection';
+
+export type {
+  PplnsProjection,
+  PplnsProjectionDailyWork,
+  PplnsProjectionHorizon,
+} from './pplnsProjection';
+
 export type DmndApiErrorCode = 'unauthorized' | 'network' | 'server' | 'other';
 
 export class DmndApiError extends Error {
@@ -325,33 +333,9 @@ export interface DmndClient {
    */
   logSubaccount(ownerToken: string, subaccountToken: string, req?: RequestOptions): Promise<DmndSession>;
   /**
-   * The cached PPLNS projection for an account (GET /api/user/sub_account/{id}/pplns_projection).
-   * Returns null when no model-v2 projection is available yet (404 / cache not refreshed).
+   * The cached PPLNS projection for an account (GET /api/user/sub_account/{id}/pplns_projection),
+   * including its source metadata, horizon scenarios, and daily work. Returns null
+   * when no projection is available yet (404 / cache not refreshed).
    */
   getPplnsProjection(id: string, req?: RequestOptions): Promise<PplnsProjection | null>;
-}
-
-export interface PplnsProjectionHorizon {
-  horizon: number;
-  retained_difficulty: number;
-  total_modeled_window_difficulty: number;
-  difficulty_score: number;
-  gross_subsidy_sats: number;
-  pool_fee: number;
-  broker_fee: number;
-  net_sats: number;
-}
-
-export interface PplnsProjection {
-  subaccount_id: string;
-  calculated_at: string;
-  source_snapshot_at: string;
-  source_block_height: number;
-  last_pool_block_height: number;
-  pool_work_since_last_block: number;
-  synthetic_fill_difficulty: number;
-  network_difficulty: number;
-  block_subsidy_sats: number;
-  model_version: number;
-  horizons: PplnsProjectionHorizon[];
 }

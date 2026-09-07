@@ -1,5 +1,6 @@
 import { API_BASE, isPplnsProjectionMissing } from './client';
 import { API_ERROR_MESSAGES } from './errorMessages';
+import { decodePplnsProjection, pplnsProjectionMatchesAccount } from './pplnsProjection';
 import type {
   GeneratedBtcEntry,
   HashratePoint,
@@ -97,11 +98,16 @@ export function createWatcherClient(token: string, options: WatcherClientOptions
     },
     async getPplnsProjection(accountId, signal) {
       try {
-        return await get<PplnsProjection>(
+        const payload = await get<unknown>(
           `/api/user/sub_account/${encodeURIComponent(accountId)}/pplns_projection`,
           {},
           signal,
         );
+        const projection = decodePplnsProjection(payload);
+        if (!pplnsProjectionMatchesAccount(projection, accountId)) {
+          throw new Error('PPLNS projection account does not match the request');
+        }
+        return projection;
       } catch (err) {
         if (err instanceof WatcherRequestError && isPplnsProjectionMissing(err.status, err.message)) {
           return null;
