@@ -4,5 +4,5 @@ import { PplnsProjectionPanel } from '@/components/pplns-projection/PplnsProject
 export function PplnsProjectionPage() {
   const { data, isLoading, isError } = usePplnsProjection();
 
-  return <PplnsProjectionPanel projection={data} isLoading={isLoading} isError={isError} />;
+  return <PplnsProjectionPanel projection={data} isLoading={isLoading} isError={isError} showStats />;
 }

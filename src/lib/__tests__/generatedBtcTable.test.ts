@@ -16,6 +16,7 @@ import {
   generatedBtcToCsv,
   dedupeGeneratedBtc,
   filterGeneratedBtcByAccount,
+  highestEarningDay,
   searchGeneratedBtc,
   type GeneratedBtcFilter,
   generatedBtcRowId,
@@ -26,8 +27,12 @@ function entry(over: Partial<GeneratedBtcEntry> = {}): GeneratedBtcEntry {
   return { entry_day: '2026-06-21', hashrate: 100e12, btc_generated: 0.0001, fpps_btc_generated: 0.0001, pplns_btc_generated: 0, pplns_hashrate: 0, ...over };
 }
 
-test('sumGenerated adds btc_generated across entries; 0 when empty', () => {
-  assert.ok(Math.abs(sumGenerated([entry({ btc_generated: 0.001 }), entry({ btc_generated: 0.0004 })]) - 0.0014) < 1e-12);
+test('sumGenerated adds only FPPS-generated BTC; 0 when empty', () => {
+  const entries = [
+    entry({ fpps_btc_generated: 0.001, pplns_btc_generated: 9, btc_generated: 9.001 }),
+    entry({ fpps_btc_generated: 0.0004, pplns_btc_generated: 8, btc_generated: 8.0004 }),
+  ];
+  assert.ok(Math.abs(sumGenerated(entries) - 0.0014) < 1e-12);
   assert.equal(sumGenerated([]), 0);
 });
 
@@ -84,12 +89,21 @@ test('isGeneratedBtcFilterActive is true only when a bound is set', () => {
 
 test('todayGeneratedBtc picks the entry for the current UTC day', () => {
   const now = Date.parse('2026-07-24T09:30:00Z');
-  const entries = [entry({ entry_day: '2026-07-24', btc_generated: 0.5 }), entry({ entry_day: '2026-07-23', btc_generated: 0.25 })];
+  const entries = [
+    entry({ entry_day: '2026-07-24', fpps_btc_generated: 0.5, pplns_btc_generated: 7, btc_generated: 7.5 }),
+    entry({ entry_day: '2026-07-23', fpps_btc_generated: 0.25, pplns_btc_generated: 6, btc_generated: 6.25 }),
+  ];
   assert.equal(todayGeneratedBtc(entries, now), 0.5);
   // Late in the UTC day the answer must not slide onto the neighbouring day.
   assert.equal(todayGeneratedBtc(entries, Date.parse('2026-07-24T23:59:59Z')), 0.5);
   // No entry for today yet reads as nothing generated.
-  assert.equal(todayGeneratedBtc([entry({ entry_day: '2026-07-20', btc_generated: 9 })], now), 0);
+  assert.equal(todayGeneratedBtc([entry({ entry_day: '2026-07-20', fpps_btc_generated: 9 })], now), 0);
+});
+
+test('highestEarningDay compares FPPS earnings rather than the combined API total', () => {
+  const fppsWinner = entry({ entry_day: '2026-07-24', fpps_btc_generated: 2, btc_generated: 2 });
+  const pplnsHeavy = entry({ entry_day: '2026-07-23', fpps_btc_generated: 1, pplns_btc_generated: 99, btc_generated: 100 });
+  assert.equal(highestEarningDay([pplnsHeavy, fppsWinner]), fppsWinner);
 });
 
 test('formatBtc shows the amount as the API sent it, never in exponent form', () => {
@@ -101,12 +115,12 @@ test('formatBtc shows the amount as the API sent it, never in exponent form', ()
   assert.equal(formatBtc(0.001 + 0.0004), '0.0014');
 });
 
-test('generatedBtcToCsv exports both payment modes and zero hashrate, a row per entry, and guards formula injection', () => {
+test('generatedBtcToCsv exports only FPPS fields, one row per entry, and guards formula injection', () => {
   const csv = generatedBtcToCsv([entry({ entry_day: '2026-06-21', hashrate: 102e12, fpps_btc_generated: 0.00001, pplns_btc_generated: 0.00000342, btc_generated: 0.00001342 })]);
   const lines = csv.split('\n');
-  assert.equal(lines[0], 'entry_day,hashrate,pplns_hashrate,fpps_btc_generated,pplns_btc_generated,btc_generated');
+  assert.equal(lines[0], 'entry_day,hashrate,fpps_btc_generated');
   assert.equal(lines.length, 2);
-  assert.equal(lines[1], '2026-06-21,102000000000000,0,0.00001,0.00000342,0.00001342');
+  assert.equal(lines[1], '2026-06-21,102000000000000,0.00001');
   // a leading '=' in a cell is neutralized
   const inj = generatedBtcToCsv([entry({ entry_day: '=SUM(A1)', hashrate: 1, btc_generated: 1 })]);
   assert.match(inj.split('\n')[1], /^'=SUM\(A1\)/);

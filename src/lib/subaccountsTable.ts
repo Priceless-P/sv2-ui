@@ -112,15 +112,15 @@ export function withGeneratedBtc(
     return {
       ...s,
       generatedBtc: sumGeneratedBtc(accountEntries),
-      todayEarnings: accountEntries.find((entry) => entry.entry_day === today)?.btc_generated ?? 0,
+      todayEarnings: accountEntries.find((entry) => entry.entry_day === today)?.fpps_btc_generated ?? 0,
     };
   });
 }
 
-/** Total BTC across the daily entries, or null when the account has none. */
+/** Total FPPS-generated BTC across the daily entries, or null when the account has none. */
 export function sumGeneratedBtc(entries: GeneratedBtcEntry[]): number | null {
   if (entries.length === 0) return null;
-  return entries.reduce((total, e) => total + e.btc_generated, 0);
+  return entries.reduce((total, e) => total + e.fpps_btc_generated, 0);
 }
 
 export interface SubaccountsPageStats {

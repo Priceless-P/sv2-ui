@@ -12,10 +12,7 @@ import { useActiveAccountId } from './useActiveAccountId';
 const CLOUD_POLL_MS = 5 * 60 * 1000;
 
 /**
- * The account's daily generated-BTC entries (GET /api/generated_btc). The endpoint
- * returns daily FPPS and projected PPLNS amounts. The Average-hashrate
- * and Active-workers stat cards come from the shared workers roster
- * (`useAccountAllWorkers`), not from this query.
+ * The account's daily generated-BTC entries (GET /api/generated_btc).
  */
 export function useGeneratedBtc(enabled = true) {
   const { session } = useAuth();

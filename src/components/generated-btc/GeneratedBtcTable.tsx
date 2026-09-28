@@ -14,7 +14,7 @@ export interface GeneratedBtcEmpty {
   onClear: () => void;
 }
 
-/** One generated or projected BTC amount from a validated earnings row. */
+/** One generated FPPS BTC amount from a validated earnings row. */
 function BtcAmount({ amount, unitClass }: { amount: number; unitClass: string }) {
   return (
     <>
@@ -59,20 +59,15 @@ function GeneratedBtcCard({ entry, showAccount }: { entry: GeneratedBtcEntry; sh
         <Field label="FPPS hashrate">{formatHashrate(entry.hashrate)}</Field>
       </div>
       <div className="flex min-h-[47px] items-center gap-6">
-        <Field label="PPLNS hashrate">{formatHashrate(entry.pplns_hashrate)}</Field>
-        <Field label="FPPS generated"><BtcAmount amount={entry.fpps_btc_generated} unitClass="text-xs text-body-alt" /></Field>
-        <Field label="PPLNS projected"><BtcAmount amount={entry.pplns_btc_generated} unitClass="text-xs text-body-alt" /></Field>
-      </div>
-      <div className="flex min-h-[47px] items-center gap-6">
-        <Field label="Generated + projected BTC">
-          <BtcAmount amount={entry.btc_generated} unitClass="text-xs leading-4 text-body-alt" />
+        <Field label="Generated BTC">
+          <BtcAmount amount={entry.fpps_btc_generated} unitClass="text-xs leading-4 text-body-alt" />
         </Field>
       </div>
     </div>
   );
 }
 
-/** Daily FPPS earnings, PPLNS projections, and their separate hashrate readings. */
+/** Daily FPPS hashrate and generated BTC. */
 export function GeneratedBtcTable({
   entries,
   empty,
@@ -122,21 +117,13 @@ export function GeneratedBtcTable({
                   <InfoHint text={DAILY_HASHRATE_HINT} />
                 </span>
               </th>
-              <th className="px-6 py-4 text-left font-normal">PPLNS hashrate <InfoHint text="Daily rate from recorded accepted-share work. Unavailable rates display as zero." /></th>
-              <th className="px-6 py-4 text-left font-normal">FPPS generated</th>
-              <th className="px-6 py-4 text-left font-normal">PPLNS projected</th>
-              <th className="px-6 py-4 text-left font-normal">
-                <span className="inline-flex items-center gap-2">
-                  Total BTC
-                  <InfoHint text="FPPS generated BTC plus future PPLNS projected BTC. Projections can change and exclude already earned block rewards; this is not a settled balance." />
-                </span>
-              </th>
+              <th className="px-6 py-4 text-left font-normal">Generated BTC</th>
             </tr>
           </thead>
           <tbody>
             {entries.length === 0 && empty && (
               <tr>
-                <td colSpan={(showAccount ? 7 : 6) + (selectable ? 1 : 0)}>
+                <td colSpan={(showAccount ? 4 : 3) + (selectable ? 1 : 0)}>
                   <EmptyRow empty={empty} />
                 </td>
               </tr>
@@ -155,11 +142,8 @@ export function GeneratedBtcTable({
                 <td className="px-6 py-4 text-foreground">{formatGeneratedDate(e.entry_day)}</td>
                 {showAccount && <td className="px-6 py-4 text-foreground">{e.account ?? '--'}</td>}
                 <td className="px-6 py-4 text-foreground">{formatHashrate(e.hashrate)}</td>
-                <td className="px-6 py-4 text-foreground">{formatHashrate(e.pplns_hashrate)}</td>
-                <td className="px-6 py-4 text-foreground"><BtcAmount amount={e.fpps_btc_generated} unitClass="text-xs text-body-alt" /></td>
-                <td className="px-6 py-4 text-foreground"><BtcAmount amount={e.pplns_btc_generated} unitClass="text-xs text-body-alt" /></td>
                 <td className="px-6 py-4 text-foreground">
-                  <BtcAmount amount={e.btc_generated} unitClass="text-xs leading-4 text-body-alt" />
+                  <BtcAmount amount={e.fpps_btc_generated} unitClass="text-xs leading-4 text-body-alt" />
                 </td>
               </tr>
             ))}
