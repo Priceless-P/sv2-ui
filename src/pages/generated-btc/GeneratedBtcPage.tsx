@@ -44,10 +44,8 @@ function downloadCsv(content: string): void {
 }
 
 /**
- * The Generated BTC page: the account's daily generated-BTC entries with summary
- * cards, a date filter, pagination, and CSV export. Only the Date/Average-hashrate/
- * Generated-BTC columns are backed by the API; the Mode + Estimated-payout columns
- * and the worker-name search have no backing endpoint and are not shown.
+ * The Generated BTC page: the account's daily FPPS hashrate and generated BTC with
+ * summary cards, a date filter, pagination, and CSV export.
  */
 export function GeneratedBtcPage() {
   const { aggregated } = useAggregatedModeContext();

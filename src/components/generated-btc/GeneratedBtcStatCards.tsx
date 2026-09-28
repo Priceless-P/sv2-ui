@@ -26,7 +26,7 @@ function Card({ title, sub, hint, children }: { title: string; sub: string; hint
   );
 }
 
-/** Generated BTC (total) / Average hashrate / Highest earning day, all over the rows shown. */
+/** FPPS generated BTC / average FPPS hashrate / highest FPPS earning day. */
 export function GeneratedBtcStatCards({
   generated,
   averageHashrate,
@@ -41,7 +41,7 @@ export function GeneratedBtcStatCards({
 
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-      <Card title="Generated BTC" sub="FPPS generated + PPLNS projected">
+      <Card title="Generated BTC" sub="FPPS generated across the days listed">
         <Reading value={formatBtc(generated)} unit="BTC" unitSize="lg" />
       </Card>
 
@@ -54,7 +54,7 @@ export function GeneratedBtcStatCards({
         sub={highestDay ? formatGeneratedDate(highestDay.entry_day) : 'No earnings recorded yet'}
       >
         {highestDay ? (
-          <Reading value={formatBtc(highestDay.btc_generated)} unit="BTC" unitSize="lg" />
+          <Reading value={formatBtc(highestDay.fpps_btc_generated)} unit="BTC" unitSize="lg" />
         ) : (
           <Reading value="--" />
         )}

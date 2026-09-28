@@ -6,7 +6,6 @@ import {
   formatPplnsDifficulty,
   formatPplnsWorkDay,
   searchPplnsDailyWork,
-  totalDailyWorkNetSats,
 } from '@/lib/pplnsProjection';
 import { formatBtcFromSats } from '@/lib/payoutsTable';
 import { cn } from '@/lib/utils';
@@ -18,6 +17,7 @@ import {
   isGbtcDraftActive,
   type GbtcFilterDraft,
 } from '@/components/generated-btc/GeneratedBtcFilter';
+import { PplnsProjectionStatCards } from './PplnsProjectionStatCards';
 
 function StateMessage({ title, body }: { title: string; body: string }) {
   return (
@@ -191,9 +191,6 @@ function ProjectionToolbar({
 }
 
 function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyWork[]; empty?: TableEmpty }) {
-  const totalNetSats = totalDailyWorkNetSats(dailyWork);
-  const showTotal = dailyWork.length > 0 || empty === undefined;
-
   return (
     <>
       <div className="hidden overflow-x-auto sm:block">
@@ -232,18 +229,6 @@ function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyW
               </tr>
             ))}
           </tbody>
-          {showTotal && (
-            <tfoot>
-              <tr>
-                <td colSpan={3} className="px-6 py-4 text-right font-semibold text-foreground">
-                  Grand total
-                </td>
-                <td className="whitespace-nowrap px-6 py-4 font-semibold text-foreground">
-                  <BtcAmount sats={totalNetSats} />
-                </td>
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
 
@@ -252,20 +237,18 @@ function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyW
         {dailyWork.map((day) => (
           <DailyWorkCard key={day.work_day} day={day} />
         ))}
-        {showTotal && (
-          <div className="flex items-center justify-between px-3 py-4 text-sm text-foreground">
-            <span className="font-semibold">Grand total</span>
-            <span className="font-semibold">
-              <BtcAmount sats={totalNetSats} />
-            </span>
-          </div>
-        )}
       </div>
     </>
   );
 }
 
-function ProjectionBody({ dailyWork }: { dailyWork: PplnsProjectionDailyWork[] }) {
+function ProjectionBody({
+  dailyWork,
+  showStats,
+}: {
+  dailyWork: PplnsProjectionDailyWork[];
+  showStats: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<GbtcFilterDraft>(EMPTY_GBTC_FILTER_DRAFT);
   const visible = useMemo(() => {
@@ -296,15 +279,18 @@ function ProjectionBody({ dailyWork }: { dailyWork: PplnsProjectionDailyWork[] }
           : undefined;
 
   return (
-    <div className="rounded-xl border border-border bg-card">
-      <ProjectionToolbar
-        query={query}
-        onQuery={setQuery}
-        filter={filter}
-        onApplyFilter={setFilter}
-        onResetFilter={resetFilter}
-      />
-      <DailyWorkTable dailyWork={visible} empty={empty} />
+    <div className="space-y-6">
+      {showStats && <PplnsProjectionStatCards dailyWork={dailyWork} />}
+      <div className="rounded-xl border border-border bg-card">
+        <ProjectionToolbar
+          query={query}
+          onQuery={setQuery}
+          filter={filter}
+          onApplyFilter={setFilter}
+          onResetFilter={resetFilter}
+        />
+        <DailyWorkTable dailyWork={visible} empty={empty} />
+      </div>
     </div>
   );
 }
@@ -313,13 +299,27 @@ export function PplnsProjectionPanel({
   projection,
   isLoading,
   isError,
+  showStats = false,
 }: {
   /** `null` means the cache holds no projection for the latest boundary yet. */
   projection: PplnsProjection | null | undefined;
   isLoading: boolean;
   isError: boolean;
+  showStats?: boolean;
 }) {
-  if (isLoading) return <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />;
+  if (isLoading) {
+    if (!showStats) return <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />;
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index} className="h-36 animate-pulse border-[0.5px] border-border bg-muted" />
+          ))}
+        </div>
+        <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />
+      </div>
+    );
+  }
   if (isError) {
     return (
       <StateMessage
@@ -336,5 +336,5 @@ export function PplnsProjectionPanel({
       />
     );
   }
-  return projection ? <ProjectionBody dailyWork={projection.daily_work} /> : null;
+  return projection ? <ProjectionBody dailyWork={projection.daily_work} showStats={showStats} /> : null;
 }
