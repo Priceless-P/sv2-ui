@@ -54,6 +54,30 @@ export function totalDailyWorkNetSats(dailyWork: PplnsProjectionDailyWork[]): nu
   return dailyWork.reduce((sum, day) => sum + day.total_net_sats, 0);
 }
 
+export interface PplnsProjectionStats {
+  totalNetSats: number;
+  projectedNetSats: number;
+  retainedDifficulty: number;
+  workDays: number;
+}
+
+export function derivePplnsProjectionStats(dailyWork: PplnsProjectionDailyWork[]): PplnsProjectionStats {
+  return dailyWork.reduce<PplnsProjectionStats>(
+    (stats, day) => ({
+      totalNetSats: stats.totalNetSats + day.total_net_sats,
+      projectedNetSats: stats.projectedNetSats + day.projected_net_sats,
+      retainedDifficulty: stats.retainedDifficulty + day.retained_difficulty,
+      workDays: stats.workDays + 1,
+    }),
+    {
+      totalNetSats: 0,
+      projectedNetSats: 0,
+      retainedDifficulty: 0,
+      workDays: 0,
+    },
+  );
+}
+
 export function formatPplnsDifficulty(difficulty: number): string {
   if (difficulty >= 1e18) return `${roundTo(3, difficulty / 1e18)} E`;
   if (difficulty >= 1e15) return `${roundTo(3, difficulty / 1e15)} P`;

@@ -24,9 +24,9 @@ export function formatGeneratedDate(entryDay: string): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${d.getUTCFullYear()}`;
 }
 
-/** Sum of generated FPPS BTC and projected PPLNS BTC across the entries; 0 when empty. */
+/** Sum of generated FPPS BTC across the entries; 0 when empty. */
 export function sumGenerated(entries: GeneratedBtcEntry[]): number {
-  return entries.reduce((total, e) => total + e.btc_generated, 0);
+  return entries.reduce((total, e) => total + e.fpps_btc_generated, 0);
 }
 
 /**
@@ -38,7 +38,7 @@ export function sumGenerated(entries: GeneratedBtcEntry[]): number {
 export function todayGeneratedBtc(entries: GeneratedBtcEntry[], nowMs: number): number {
   const today = new Date(nowMs).toISOString().slice(0, 10);
   const entry = entries.find((e) => e.entry_day === today);
-  return entry?.btc_generated ?? 0;
+  return entry?.fpps_btc_generated ?? 0;
 }
 
 /**
@@ -54,7 +54,7 @@ export function averageEntryHashrate(entries: GeneratedBtcEntry[]): number {
 export function highestEarningDay(entries: GeneratedBtcEntry[]): GeneratedBtcEntry | null {
   let best: GeneratedBtcEntry | null = null;
   for (const entry of entries) {
-    if (best === null || entry.btc_generated > best.btc_generated) best = entry;
+    if (best === null || entry.fpps_btc_generated > best.fpps_btc_generated) best = entry;
   }
   return best;
 }
@@ -105,7 +105,7 @@ export function formatBtc(n: number): string {
   return n.toFixed(BTC_DISPLAY_DP).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-const CSV_HEADER = 'entry_day,hashrate,pplns_hashrate,fpps_btc_generated,pplns_btc_generated,btc_generated';
+const CSV_HEADER = 'entry_day,hashrate,fpps_btc_generated';
 
 function csvCell(value: string): string {
   // Guard against spreadsheet formula injection, then quote when the value holds a
@@ -127,10 +127,7 @@ export function generatedBtcToCsv(entries: GeneratedBtcEntry[]): string {
   const rows = entries.map((e) => [
     e.entry_day,
     String(e.hashrate),
-    String(e.pplns_hashrate),
     String(e.fpps_btc_generated),
-    String(e.pplns_btc_generated),
-    String(e.btc_generated),
   ].map(csvCell));
   return [CSV_HEADER, ...rows.map((r) => r.join(','))].join('\n');
 }

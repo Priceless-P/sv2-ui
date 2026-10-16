@@ -50,7 +50,7 @@ export function MultiwatcherAccountCard({
               <span className="ml-1 text-base font-normal text-body-alt">BTC</span>
             </p>
           )}
-          <p className="mt-1 text-xs text-body-alt">FPPS generated plus projected PPLNS BTC</p>
+          <p className="mt-1 text-xs text-body-alt">FPPS generated across the available days</p>
         </div>
       )}
     </div>
