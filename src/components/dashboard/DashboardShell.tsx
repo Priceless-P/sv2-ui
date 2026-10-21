@@ -41,23 +41,48 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 }
 
 function DashboardShellInner({ children }: { children: ReactNode }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(readCollapsed);
   const [location, navigate] = useLocation();
   const { aggregated } = useAggregatedModeContext();
-  // The banner only shows when the mode is genuinely available: on it is stored, but
-  // a miner with no subaccounts (or one who has none anymore) should never see it.
   const { hasSubaccounts } = useHasSubaccounts();
-  const showBanner = aggregated && hasSubaccounts;
-
-  useEffect(() => writeCollapsed(collapsed), [collapsed]);
 
   useEffect(() => {
     if (aggregated && isAggregatedRestrictedRoute(location)) navigate('/home', { replace: true });
   }, [aggregated, location, navigate]);
 
+  return (
+    <DashboardFrame
+      navigationKey={location}
+      banner={aggregated && hasSubaccounts ? <AggregatedBanner /> : undefined}
+      sidebar={(props) => <Sidebar {...props} />}
+      topBar={(onMenuClick) => <TopBar onMenuClick={onMenuClick} />}
+    >
+      {children}
+    </DashboardFrame>
+  );
+}
+
+export interface SidebarFrameControls {
+  collapsed: boolean;
+  drawer: boolean;
+  onToggleCollapse: () => void;
+  onNavigate: () => void;
+}
+
+/** Shared responsive frame; credential-specific entry points supply navigation and content. */
+export function DashboardFrame({ children, navigationKey, banner, sidebar, topBar }: {
+  children: ReactNode;
+  navigationKey: string;
+  banner?: ReactNode;
+  sidebar: (controls: SidebarFrameControls) => ReactNode;
+  topBar: (onMenuClick: () => void) => ReactNode;
+}) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  useEffect(() => writeCollapsed(collapsed), [collapsed]);
+
   // Close the drawer when navigating or pressing Escape.
-  useEffect(() => setDrawerOpen(false), [location]);
+  useEffect(() => setDrawerOpen(false), [navigationKey]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setDrawerOpen(false);
@@ -68,10 +93,10 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
 
   return (
     <div className="dmnd-app flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
-      {showBanner && <AggregatedBanner />}
+      {banner}
       <div className="flex min-h-0 w-full flex-1 overflow-hidden">
         <aside className="hidden lg:block">
-          <Sidebar collapsed={collapsed} onToggleCollapse={() => setCollapsed((c) => !c)} />
+          {sidebar({ collapsed, drawer: false, onToggleCollapse: () => setCollapsed((c) => !c), onNavigate: () => setDrawerOpen(false) })}
         </aside>
 
         {/* Mobile drawer: kept mounted so it can slide rather than pop. */}
@@ -87,12 +112,12 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
               drawerOpen ? 'translate-x-0' : '-translate-x-full',
             )}
           >
-            <Sidebar drawer onNavigate={() => setDrawerOpen(false)} />
+            {sidebar({ collapsed: false, drawer: true, onToggleCollapse: () => setDrawerOpen(false), onNavigate: () => setDrawerOpen(false) })}
           </div>
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <TopBar onMenuClick={() => setDrawerOpen(true)} />
+          {topBar(() => setDrawerOpen(true))}
           <main className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1600px] px-2 py-4 sm:px-3 lg:px-4 lg:py-5">
               {children}

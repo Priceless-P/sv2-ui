@@ -1,29 +1,30 @@
-import { useMemo, useState } from 'react';
-import { LiExport } from 'solar-icon-react/li';
-import { usePayouts, useAggregatedPayouts } from '@/hooks/usePayouts';
-import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
-import { useSubaccountList } from '@/hooks/useSubaccounts';
-import {
-  searchPayouts,
-  filterPayouts,
-  filterPayoutsByAccount,
-  payoutsToCsv,
-  sinceForPreset,
-  sortPayoutsByAmount,
-  payoutsInRange,
-  payoutRowId,
-  MAIN_ACCOUNT_LABEL,
-  type DateRange,
-} from '@/lib/payoutsTable';
-import { subaccountName } from '@/lib/subaccountsTable';
-import { paginate } from '@/lib/workersTable';
-import { useToastControls } from '@/components/ui/toast';
-import { PayoutsToolbar } from '@/components/payouts/PayoutsToolbar';
-import { PayoutsTable } from '@/components/payouts/PayoutsTable';
 import { PayoutsEmptyState } from '@/components/payouts/PayoutsEmptyState';
 import { PayoutsExportModal } from '@/components/payouts/PayoutsExportModal';
-import { EMPTY_PAYOUT_FILTER_DRAFT, isPayoutDraftActive, type PayoutFilterDraft } from '@/components/payouts/PayoutsFilter';
+import { EMPTY_PAYOUT_FILTER_DRAFT, isPayoutDraftActive, PayoutsFilter, type PayoutFilterDraft } from '@/components/payouts/PayoutsFilter';
+import { PayoutsTable } from '@/components/payouts/PayoutsTable';
+import { TableToolbar } from '@/components/ui/TableToolbar';
+import { useToastControls } from '@/components/ui/toast';
 import { WorkersPagination } from '@/components/workers/WorkersPagination';
+import {
+  filterPayouts,
+  filterPayoutsByAccount,
+  payoutRowId,
+  payoutsInRange,
+  payoutsToCsv,
+  searchPayouts,
+  sinceForPreset,
+  sortPayoutsByAmount,
+  type DateRange,
+  type Payout,
+} from '@/lib/payoutsTable';
+import { paginate } from '@/lib/workersTable';
+import { useMemo, useState } from 'react';
+import { LiExport } from 'solar-icon-react/li';
+import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
+import { useAggregatedPayouts, usePayouts } from '@/hooks/usePayouts';
+import { useSubaccountList } from '@/hooks/useSubaccounts';
+import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
+import { subaccountName } from '@/lib/subaccountsTable';
 
 const PAGE_SIZE = 10;
 
@@ -40,24 +41,14 @@ function downloadCsv(content: string): void {
 }
 
 /** The Payouts page: on-chain payout history with search, filter, pagination, and CSV export. */
-export function PayoutsPage() {
-  const { aggregated } = useAggregatedModeContext();
-  const single = usePayouts(!aggregated);
-  // Aggregated mode reads payouts across every account, tagged with their owner; the
-  // two queries have separate cache entries so toggling never serves the wrong set.
-  const agg = useAggregatedPayouts(aggregated);
-  const { data, isLoading, isError, refetch } = aggregated ? agg : single;
-  const payouts = useMemo(() => data ?? [], [data]);
-
-  // The Account facet (aggregated mode only) offers the main account plus every
-  // subaccount; an empty selection keeps them all. These names must match the row
-  // tags from useAggregatedPayouts exactly, so both derive from the same shared list.
-  const { data: subs } = useSubaccountList();
-  const accountNames = useMemo(
-    () => (aggregated ? [MAIN_ACCOUNT_LABEL, ...(subs ?? []).map(subaccountName)] : undefined),
-    [aggregated, subs],
-  );
-
+export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, accounts: accountNames, canExport = false }: {
+  payouts: Payout[];
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => unknown;
+  accounts?: string[];
+  canExport?: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<PayoutFilterDraft>(EMPTY_PAYOUT_FILTER_DRAFT);
   const [page, setPage] = useState(1);
@@ -133,11 +124,11 @@ export function PayoutsPage() {
         ? { title: 'No payouts match this filter', hint: 'Adjust or clear your filters.', clearLabel: 'Clear filters', onClear: resetFilter }
         : hasQuery
           ? {
-              title: 'No payouts found',
-              hint: 'Try a different transaction ID or clear your search.',
-              clearLabel: 'Clear search',
-              onClear: () => changeQuery(''),
-            }
+            title: 'No payouts found',
+            hint: 'Try a different transaction ID or clear your search.',
+            clearLabel: 'Clear search',
+            onClear: () => changeQuery(''),
+          }
           : undefined;
 
   return (
@@ -147,7 +138,7 @@ export function PayoutsPage() {
           <h2 className="font-heading text-2xl font-semibold leading-9 tracking-[-1px] text-heading">Payouts</h2>
           <p className="mt-1 text-sm text-body-alt">View your payout history and on-chain transactions.</p>
         </div>
-        {hasData && (
+        {canExport && hasData && (
           <div className="relative">
             <button
               type="button"
@@ -183,18 +174,26 @@ export function PayoutsPage() {
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card">
-          <PayoutsToolbar
+          <TableToolbar
+            title="Payouts"
             query={query}
             onQuery={changeQuery}
-            filter={filter}
-            onApplyFilter={applyFilter}
-            onResetFilter={resetFilter}
-            accounts={accountNames}
+            searchPlaceholder="Search transaction ID"
+            searchLabel="Search payouts by transaction ID"
+            filterActive={filterActive}
+            renderFilter={(onClose) => <PayoutsFilter
+              applied={filter}
+              onApply={applyFilter}
+              onReset={resetFilter}
+              onClose={onClose}
+              accounts={accountNames}
+            />}
           />
           <PayoutsTable
             payouts={pageData.items}
             empty={tableEmpty}
-            showAccount={aggregated}
+            showAccount={accountNames !== undefined}
+            selectable={canExport}
             selected={selected}
             allSelected={allSelected}
             someSelected={someSelected}
@@ -208,4 +207,26 @@ export function PayoutsPage() {
       )}
     </div>
   );
+}
+
+/** Signed-in adapter; public watcher routes mount PayoutsContent instead. */
+export function PayoutsPage() {
+  const { aggregated } = useAggregatedModeContext();
+  const single = usePayouts(!aggregated);
+  // Aggregated mode reads payouts across every account, tagged with their owner; the
+  // two queries have separate cache entries so toggling never serves the wrong set.
+  const agg = useAggregatedPayouts(aggregated);
+  const { data, isLoading, isError, refetch } = aggregated ? agg : single;
+  const payouts = useMemo(() => data ?? [], [data]);
+
+  // The Account facet (aggregated mode only) offers the main account plus every
+  // subaccount; an empty selection keeps them all. These names must match the row
+  // tags from useAggregatedPayouts exactly, so both derive from the same shared list.
+  const { data: subs } = useSubaccountList();
+  const accountNames = useMemo(
+    () => (aggregated ? [MAIN_ACCOUNT_LABEL, ...(subs ?? []).map(subaccountName)] : undefined),
+    [aggregated, subs],
+  );
+
+  return <PayoutsContent payouts={payouts} isLoading={isLoading} isError={isError} onRetry={refetch} accounts={accountNames} canExport />;
 }

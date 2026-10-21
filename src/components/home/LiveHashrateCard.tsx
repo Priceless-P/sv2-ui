@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { LiAltArrowDown, LiAltArrowUp } from 'solar-icon-react/li';
+import type { HashrateSnapshot } from '@/api/types';
 import { useAccountHashrate, useAccountHashrateHistory } from '@/hooks/useAccountData';
 import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import { InfoHint } from '@/components/ui/InfoHint';
@@ -80,7 +81,7 @@ function formatChange(change: number): string {
  * by the active payout-scheme readings in a stable left/right split.
  */
 export function LiveHashrateCard() {
-  const { data, isLoading } = useAccountHashrate();
+  const { data, isLoading, isError } = useAccountHashrate();
   const now = Date.now();
   const comparisonWindow = hashrateComparisonWindow(data?.observed_at, now);
   // This narrow custom window returns only raw two-minute snapshots, so the shared
@@ -90,12 +91,33 @@ export function LiveHashrateCard() {
     comparisonWindow,
     comparisonWindow !== null,
   );
+  const change = hashrateChangeFrom24HoursAgo(data?.total_hashrate ?? 0, data?.observed_at, comparisonHistory ?? [], now);
+
+  return <LiveHashrateCardView data={data} isLoading={isLoading} isError={isError} change={change} />;
+}
+
+/**
+ * Presentational live-hashrate card shared by authenticated and token-only views.
+ * Keeping the data source outside this component prevents the public watcher page
+ * from ever invoking an authenticated account hook while preserving one UI.
+ */
+export function LiveHashrateCardView({
+  data,
+  isLoading,
+  isError = false,
+  change = null,
+}: {
+  data?: HashrateSnapshot | null;
+  isLoading: boolean;
+  isError?: boolean;
+  change?: number | null;
+}) {
+  const now = Date.now();
   const total = data?.total_hashrate ?? 0;
   const pplns = data?.pplns_hashrate ?? 0;
   const fpps = data?.fpps_hashrate ?? 0;
   const lastUpdated = lastUpdatedLabel(data?.observed_at, now);
   const totalScale = pickHashrateScale([total]);
-  const change = hashrateChangeFrom24HoursAgo(total, data?.observed_at, comparisonHistory ?? [], now);
   const rising = change !== null && change >= 0;
   const ChangeIcon = rising ? LiAltArrowUp : LiAltArrowDown;
   const hasSchemes = pplns > 0 || fpps > 0;
@@ -110,7 +132,9 @@ export function LiveHashrateCard() {
         {total > 0 && lastUpdated && <span className="text-sm leading-5 text-body-alt">{lastUpdated}</span>}
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <p className="mt-2 text-sm text-body-alt">Hashrate data is unavailable right now.</p>
+      ) : isLoading ? (
         <div className="mt-2 h-24 animate-pulse bg-muted" />
       ) : total > 0 ? (
         <div className="mt-2 flex flex-1 flex-col justify-end">

@@ -29,7 +29,7 @@ export function TooltipPill({
     <Tooltip.Provider delayDuration={0}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
-        <Tooltip.Portal container={overlayContainer()}>
+        <Tooltip.Portal container={typeof document === 'undefined' ? undefined : overlayContainer()}>
           <Tooltip.Content
             side={side}
             align="center"

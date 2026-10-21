@@ -1,39 +1,50 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { LiAddCircle, LiDownloadMinimalistic } from 'solar-icon-react/li';
 import type { Worker } from '@/api/types';
+import { Reading } from '@/components/ui/Reading';
+import { StatCard } from '@/components/ui/StatCard';
+import { TableToolbar } from '@/components/ui/TableToolbar';
+import { useToast, useToastControls } from '@/components/ui/toast';
+import { WorkerBars } from '@/components/ui/WorkerBars';
+import { ConnectWorkersDrawer } from '@/components/workers/ConnectWorkersDrawer';
+import { WorkerDetailsPanel } from '@/components/workers/WorkerDetailsPanel';
+import { WorkersEmptyState } from '@/components/workers/WorkersEmptyState';
+import { WorkersFilter } from '@/components/workers/WorkersFilter';
+import { WorkersNoResults } from '@/components/workers/WorkersNoResults';
+import { WorkersPagination } from '@/components/workers/WorkersPagination';
+import { WorkersTable } from '@/components/workers/WorkersTable';
+import { ACTIVE_WORKERS_HINT, OFFLINE_WORKER_HINT, WORKER_REJECTION_HINT, WORKER_ROSTER_HINT } from '@/lib/metricWindows';
 import { cn, exportFilename } from '@/lib/utils';
-import { useAccountAllWorkers } from '@/hooks/useAccountData';
-import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
-import { useAggregatedData } from '@/hooks/useAggregatedData';
+import type { WorkersPageStats } from '@/lib/workersTable';
 import {
+  applyWorkerFilter,
   deriveWorkersPageStats,
-  tagWorkersBySubaccount,
-  workerRowId,
+  EMPTY_WORKER_FILTER,
   filterByTab,
+  filterWorkersByMode,
+  isWorkerFilterActive,
+  paginate,
   searchWorkers,
   sortWorkers,
-  paginate,
+  workerRowId,
   workersToCsv,
-  applyWorkerFilter,
-  filterWorkersByMode,
-  EMPTY_WORKER_FILTER,
   type SortDir,
+  type WorkerExportMode,
   type WorkerFilter,
   type WorkerSortKey,
   type WorkersTab,
-  type WorkerExportMode,
 } from '@/lib/workersTable';
-import { WorkersStatCards } from '@/components/workers/WorkersStatCards';
-import { WorkersToolbar } from '@/components/workers/WorkersToolbar';
-import { WorkersTable } from '@/components/workers/WorkersTable';
-import { WorkersPagination } from '@/components/workers/WorkersPagination';
-import { WorkersEmptyState } from '@/components/workers/WorkersEmptyState';
-import { WorkersNoResults } from '@/components/workers/WorkersNoResults';
-import { ConnectWorkersDrawer } from '@/components/workers/ConnectWorkersDrawer';
-import { WorkerDetailsPanel } from '@/components/workers/WorkerDetailsPanel';
-import { useToast, useToastControls } from '@/components/ui/toast';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { LiAddCircle, LiDownloadMinimalistic } from 'solar-icon-react/li';
+import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
+import { useAccountAllWorkers } from '@/hooks/useAccountData';
+import { useAggregatedData } from '@/hooks/useAggregatedData';
+import { tagWorkersBySubaccount } from '@/lib/workersTable';
 
 const PAGE_SIZE = 10;
+const WORKER_TABS: { key: WorkersTab; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'online', label: 'Online' },
+  { key: 'offline', label: 'Offline' },
+];
 
 const EXPORT_MODES: { value: WorkerExportMode; label: string }[] = [
   { value: 'all', label: 'All workers' },
@@ -143,21 +154,15 @@ function downloadCsv(content: string, filename: string): void {
 }
 
 /** The Workers page: roster table with status tabs, search, sort, pagination, and CSV export. */
-export function WorkersPage() {
-  const { aggregated } = useAggregatedModeContext();
-  // Full roster from /api/workers/all (no date range); tabs/search/sort/paginate
-  // run client-side over the account-scoped response.
-  const singleAccount = useAccountAllWorkers(!aggregated);
-  // In aggregated mode the table spans every subaccount, so the rows come from each
-  // account's roster tagged with its owner rather than this account's own workers.
-  const agg = useAggregatedData(aggregated);
-  const workers = useMemo(() => {
-    if (!aggregated) return singleAccount.data ?? [];
-    // Every account, main included: its own workers are part of the combined roster,
-    // not a separate thing shown elsewhere.
-    return tagWorkersBySubaccount(agg.accounts.map((a) => ({ sub: a.name, subaccountId: a.id, workers: a.workers })));
-  }, [aggregated, singleAccount.data, agg.accounts]);
-
+export function WorkersContent({ workers, isLoading: loading, isError: failed, onRetry: retry, accounts, canConnect = false, canExport: allowExport = false }: {
+  workers: Worker[];
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => unknown;
+  accounts?: string[];
+  canConnect?: boolean;
+  canExport?: boolean;
+}) {
   const [tab, setTab] = useState<WorkersTab>('all');
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<WorkerFilter>(EMPTY_WORKER_FILTER);
@@ -250,15 +255,9 @@ export function WorkersPage() {
     setPage(1);
   };
 
-  // In aggregated mode the roll-up query owns the page's loading and error states, so a
-  // failed subaccount fetch is reported rather than rendering a partial roster.
-  const loading = aggregated ? agg.isLoading : singleAccount.isLoading;
-  const failed = aggregated ? agg.isError : singleAccount.isError;
-  const retry = aggregated ? agg.refetch : singleAccount.refetch;
-
   // A failed fetch must not masquerade as "no workers" (the empty state invites
   // miners to connect hardware they may already have running).
-  const canExport = !loading && !failed && workers.length > 0;
+  const canExport = allowExport && !loading && !failed && workers.length > 0;
 
   return (
     <div className="space-y-4">
@@ -268,14 +267,14 @@ export function WorkersPage() {
           <p className="mt-1 text-sm text-body-alt">Monitor connected machines, share activity, and worker health.</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
+          {canConnect && <button
             type="button"
             onClick={() => setConnectOpen(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             Connect worker <LiAddCircle className="h-4 w-4" />
-          </button>
-          <div className="relative">
+          </button>}
+          {allowExport && <div className="relative">
             <button
               type="button"
               onClick={() => setExportOpen((o) => !o)}
@@ -292,7 +291,7 @@ export function WorkersPage() {
                 onExport={(mode) => void runExport(mode)}
               />
             )}
-          </div>
+          </div>}
         </div>
       </header>
 
@@ -318,26 +317,38 @@ export function WorkersPage() {
           </button>
         </div>
       ) : workers.length === 0 ? (
-        <WorkersEmptyState />
+        <WorkersEmptyState canConnect={canConnect} />
       ) : (
         <>
           <WorkersStatCards stats={stats} />
           <div className="rounded-xl border border-border bg-card">
-            <WorkersToolbar
-              tab={tab}
-              onTab={changeTab}
-              counts={counts}
+            <TableToolbar
+              title="Workers"
               query={query}
               onQuery={changeQuery}
-              filter={filter}
-              onApplyFilter={applyFilter}
-              onResetFilter={resetFilter}
-              accounts={aggregated ? agg.accounts.map((a) => a.name) : undefined}
+              searchPlaceholder="Search workers"
+              filterActive={isWorkerFilterActive(filter)}
+              variant="tabs"
+              renderFilter={(onClose) => <WorkersFilter
+                applied={filter}
+                onApply={applyFilter}
+                onReset={resetFilter}
+                onClose={onClose}
+                accounts={accounts}
+              />}
+              tabs={<div className="flex items-center gap-3">
+                {WORKER_TABS.map((item) => <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => changeTab(item.key)}
+                  className={cn('inline-flex items-center gap-1 rounded-sm border-[0.5px] border-border px-3 py-1 text-sm font-medium leading-5 transition-colors', tab === item.key ? 'bg-[#262626] text-on-solid' : 'bg-card text-body-alt hover:text-foreground')}
+                >
+                  {item.label}
+                  <span className={cn('rounded-full border-[0.5px] border-border px-1 text-xs leading-4', tab === item.key ? 'bg-card text-foreground' : 'bg-btn-secondary text-foreground')}>{counts[item.key]}</span>
+                </button>)}
+              </div>}
             />
             {sorted.length === 0 ? (
-              // Workers exist but the active search or filter matches none. Show the
-              // search variant whenever a query is present, otherwise the filter variant
-              // (the tab and advanced Filter both narrow, so either can empty the list).
               <WorkersNoResults
                 mode={query.trim() ? 'search' : 'filter'}
                 onClear={() => {
@@ -348,15 +359,15 @@ export function WorkersPage() {
             ) : (
               <>
                 <WorkersTable
-                  showAccount={aggregated}
+                  showAccount={accounts !== undefined}
                   workers={pageData.items}
                   sort={sort}
                   onSort={changeSort}
-                  selected={selected}
+                  selected={allowExport ? selected : undefined}
                   allSelected={allSelected}
                   someSelected={someSelected}
-                  onToggleAll={toggleAll}
-                  onToggleOne={toggleOne}
+                  onToggleAll={allowExport ? toggleAll : undefined}
+                  onToggleOne={allowExport ? toggleOne : undefined}
                   onOpenDetails={setDetailsWorker}
                 />
                 <WorkersPagination page={pageData.page} totalPages={pageData.totalPages} onPage={setPage} />
@@ -366,10 +377,78 @@ export function WorkersPage() {
         </>
       )}
 
-      {connectOpen && <ConnectWorkersDrawer onClose={() => setConnectOpen(false)} />}
+      {canConnect && connectOpen && <ConnectWorkersDrawer onClose={() => setConnectOpen(false)} />}
       {detailsWorker && (
         <WorkerDetailsPanel worker={detailsWorker} onClose={() => setDetailsWorker(null)} />
       )}
     </div>
   );
+}
+
+/** Total / Active / Offline / Rejection-rate cards above the workers table. */
+function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
+  const hasWorkers = stats.total > 0;
+  const rated = stats.rejectionRate !== null;
+  const rejection = rated ? (stats.rejectionRate! * 100).toFixed(1) : '--';
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <StatCard variant="workers" title="Total workers" hint={WORKER_ROSTER_HINT} caption="Seen during the last 24 hours">
+        <Reading value={stats.total} />
+      </StatCard>
+
+      <StatCard variant="workers"
+        title="Active workers"
+        hint={ACTIVE_WORKERS_HINT}
+        captionTone={hasWorkers ? 'strong' : 'muted'}
+        caption={
+          <span className="flex flex-col gap-2">
+            {hasWorkers && <WorkerBars active={stats.active} total={stats.total} />}
+            <span>
+              {stats.active} active &middot; {stats.offline} offline
+            </span>
+          </span>
+        }
+      >
+        <Reading value={stats.active} />
+      </StatCard>
+
+      <StatCard variant="workers"
+        title="Offline"
+        hint={OFFLINE_WORKER_HINT}
+        captionTone={hasWorkers ? 'strong' : 'muted'}
+        caption={stats.offline > 0 ? 'Inactive in the last 10 minutes' : 'All workers are active'}
+      >
+        <Reading value={stats.offline} />
+      </StatCard>
+
+      <StatCard variant="workers"
+        title="Rejection rate"
+        hint={WORKER_REJECTION_HINT}
+        captionTone={rated ? 'strong' : 'muted'}
+        caption="Last 10 minutes across all workers"
+      >
+        <Reading value={rejection} unit={rated ? '%' : undefined} />
+      </StatCard>
+    </div>
+  );
+}
+
+/** Signed-in adapter; public watcher routes mount WorkersContent instead. */
+export function WorkersPage() {
+  const { aggregated } = useAggregatedModeContext();
+  // Full roster from /api/workers/all (no date range); tabs/search/sort/paginate
+  // run client-side over the account-scoped response.
+  const singleAccount = useAccountAllWorkers(!aggregated);
+  // In aggregated mode the table spans every subaccount, so the rows come from each
+  // account's roster tagged with its owner rather than this account's own workers.
+  const agg = useAggregatedData(aggregated);
+  const workers = useMemo(() => {
+    if (!aggregated) return singleAccount.data ?? [];
+    // Every account, main included: its own workers are part of the combined roster,
+    // not a separate thing shown elsewhere.
+    return tagWorkersBySubaccount(agg.accounts.map((a) => ({ sub: a.name, subaccountId: a.id, workers: a.workers })));
+  }, [aggregated, singleAccount.data, agg.accounts]);
+
+  return <WorkersContent workers={workers} isLoading={aggregated ? agg.isLoading : singleAccount.isLoading} isError={aggregated ? agg.isError : singleAccount.isError} onRetry={aggregated ? agg.refetch : singleAccount.refetch} accounts={aggregated ? agg.accounts.map((a) => a.name) : undefined} canConnect canExport />;
 }

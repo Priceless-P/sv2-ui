@@ -39,7 +39,7 @@ export function RevokeWatcherLinkConfirm({
       <div
         role="dialog"
         aria-label="Revoke watcher link"
-        className="relative flex w-full max-w-[472px] flex-col rounded-bl-xl border-b border-l border-border bg-popover p-6 shadow-xl"
+        className="relative flex w-full max-w-[472px] flex-col rounded-bl-xl border-b border-l border-border bg-popover p-4 shadow-xl"
       >
         <button
           type="button"

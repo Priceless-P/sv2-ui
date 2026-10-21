@@ -23,7 +23,7 @@ import { BitcoinCircleIcon } from './icons/BitcoinCircleIcon';
 
 type IconComp = ComponentType<{ className?: string }>;
 
-const TRUST_CENTER_URL = 'https://app.eu.vanta.com/dmnd.work/trust/4u48n4nf8yiwi9swpqjsf';
+const TRUST_CENTER_URL = 'https://www.dmnd.work/trust-center/index.html';
 
 export const PPLNS_PROJECTION_ROUTE = '/pplns-projection';
 

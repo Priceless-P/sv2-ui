@@ -163,8 +163,21 @@ test('searchGeneratedBtc matches the account name case-insensitively; a blank qu
   ];
   assert.deepEqual(searchGeneratedBtc(rows, 'alpha').map((e) => e.entry_day), ['2026-07-09']);
   assert.equal(searchGeneratedBtc(rows, '').length, 2);
-  // a row with no account (single-account mode) never matches a non-empty query
+  // A row with no account cannot match an account name.
   assert.equal(searchGeneratedBtc([entry({ account: undefined })], 'main').length, 0);
+});
+
+test('searchGeneratedBtc searches visible dates, hashrate and BTC amounts in single-account mode', () => {
+  const rows = [
+    entry({ entry_day: '2026-07-08', hashrate: 100e12, fpps_btc_generated: 0.0123 }),
+    entry({ entry_day: '2026-06-21', hashrate: 50e12, fpps_btc_generated: 0.0045 }),
+  ];
+  for (const query of ['2026-07-08', '8 Jul, 2026', '100.00 TH/s', '0.0123', '  JUL  ']) {
+    assert.deepEqual(searchGeneratedBtc(rows, query), [rows[0]]);
+  }
+  assert.deepEqual(searchGeneratedBtc(rows, '0.0045 BTC'), [rows[1]]);
+  assert.deepEqual(searchGeneratedBtc(rows, 'no match'), []);
+  assert.equal(searchGeneratedBtc(rows, '  '), rows);
 });
 
 // The GeneratedBtcFilter type is exercised through the calls above.

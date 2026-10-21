@@ -37,7 +37,7 @@ function AccountRow({
   onSelect,
 }: {
   name: string;
-  subtitle: string;
+  subtitle?: string;
   color: { bg: string; border: string };
   disabled: boolean;
   onSelect: () => void;
@@ -52,7 +52,7 @@ function AccountRow({
       <Avatar label={name.slice(0, 1).toUpperCase()} color={color} />
       <span className="min-w-0">
         <span className="block truncate text-sm text-foreground">{name}</span>
-        <span className="block text-xs text-body-alt">{subtitle}</span>
+        {subtitle && <span className="block text-xs text-body-alt">{subtitle}</span>}
       </span>
     </button>
   );
@@ -74,7 +74,7 @@ export function AccountSwitcher({ collapsed = false }: { collapsed?: boolean }) 
   // the subaccounts are still loading.
   const rows = useMemo(() => subs ?? [], [subs]);
   const current = rows.find((s) => s.id === viewingAccountId);
-  const mainLabel = session?.email ?? 'Account';
+  const mainLabel = 'Main account';
 
   // The list offers every account except the one already in view; the main account
   // only appears while a subaccount is being viewed.
@@ -90,16 +90,16 @@ export function AccountSwitcher({ collapsed = false }: { collapsed?: boolean }) 
         color: SUB_COLORS[i % SUB_COLORS.length],
       }));
     const all = viewingAccountId
-      ? [{ id: null, token: '', name: mainLabel, subtitle: 'Main account', color: MAIN_COLOR }, ...subOptions]
+      ? [{ id: null, token: '', name: mainLabel, subtitle: undefined, color: MAIN_COLOR }, ...subOptions]
       : subOptions;
-    return q ? all.filter((o) => o.name.toLowerCase().includes(q)) : all;
+    return q ? all.filter((o) => `${o.name} ${o.subtitle ?? ''}`.toLowerCase().includes(q)) : all;
   }, [rows, viewingAccountId, query, mainLabel]);
 
   // Nothing to switch between until the account has subaccounts.
   if (rows.length === 0) return null;
 
   const triggerName = current ? subaccountName(current) : mainLabel;
-  const triggerSubtitle = current ? 'Subaccount' : 'Main account';
+  const triggerSubtitle = current ? 'Subaccount' : undefined;
   const triggerColor = current
     ? SUB_COLORS[Math.max(0, rows.findIndex((s) => s.id === current.id)) % SUB_COLORS.length]
     : MAIN_COLOR;
@@ -124,7 +124,7 @@ export function AccountSwitcher({ collapsed = false }: { collapsed?: boolean }) 
             <>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground">{triggerName}</span>
-                <span className="block text-xs text-body-alt">{triggerSubtitle}</span>
+                {triggerSubtitle && <span className="block text-xs text-body-alt">{triggerSubtitle}</span>}
               </span>
               <LiAltArrowDown className="h-4 w-4 shrink-0 text-placeholder" />
             </>

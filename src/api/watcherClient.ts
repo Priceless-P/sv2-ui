@@ -1,6 +1,6 @@
 import { decodeGeneratedBtc } from './generatedBtc';
 import { requireArray } from './response';
-import { API_BASE } from './client';
+import { API_BASE, getAllWorkers } from './client';
 import { fetchHashrateHistory } from './hashrateHistory';
 import { API_ERROR_MESSAGES } from './errorMessages';
 import { decodePplnsProjection, pplnsProjectionMatchesAccount } from './pplnsProjection';
@@ -10,8 +10,10 @@ import type {
   HashrateSnapshot,
   PayoutRecord,
   PplnsProjection,
+  SubaccountShareStats,
   SubaccountFees,
   WorkersResponse,
+  Worker,
 } from './types';
 
 class WatcherRequestError extends Error {
@@ -26,11 +28,12 @@ class WatcherRequestError extends Error {
 
 /** Public monitoring reads use a dedicated bearer key and never a dashboard session. */
 export interface WatcherClient {
-  getWorkers(signal?: AbortSignal): Promise<WorkersResponse>;
+  getAllWorkers(signal?: AbortSignal): Promise<Worker[]>;
   getHashrate(signal?: AbortSignal): Promise<HashrateSnapshot>;
   getHashrateHistory(from: string, to: string, signal?: AbortSignal): Promise<HashratePoint[]>;
   getGeneratedBtc(accountId: string, signal?: AbortSignal): Promise<GeneratedBtcEntry[]>;
   getPayouts(accountId: string, signal?: AbortSignal): Promise<PayoutRecord[]>;
+  getShareStats(signal?: AbortSignal): Promise<SubaccountShareStats>;
   getFees(signal?: AbortSignal): Promise<SubaccountFees>;
   /** Null when the cache holds no projection for the latest PPLNS boundary yet. */
   getPplnsProjection(accountId: string, signal?: AbortSignal): Promise<PplnsProjection | null>;
@@ -62,22 +65,8 @@ export function createWatcherClient(token: string, options: WatcherClientOptions
   }
 
   return {
-    async getWorkers(signal) {
-      const workers: WorkersResponse['workers'] = [];
-      const seen = new Set<string>();
-      let cursor: string | null = null;
-
-      for (;;) {
-        const params: Record<string, string> = { limit: '1000' };
-        if (cursor) params.cursor = cursor;
-        const page = await get<WorkersResponse>('/api/workers/all', params, signal);
-        workers.push(...page.workers);
-        if (!page.next_cursor || page.workers.length === 0 || seen.has(page.next_cursor)) break;
-        seen.add(page.next_cursor);
-        cursor = page.next_cursor;
-      }
-
-      return { workers, next_cursor: null };
+    getAllWorkers(signal) {
+      return getAllWorkers((params) => get<WorkersResponse>('/api/workers/all', params, signal));
     },
     getHashrate(signal) {
       return get<HashrateSnapshot>('/api/user/hashrate', {}, signal);
@@ -116,9 +105,11 @@ export function createWatcherClient(token: string, options: WatcherClientOptions
       return payouts;
     },
     getFees(signal) {
-      // Current pool + broker fee rates for the linked account. The spec returns the
-      // rates as fractions (0.02 = 2%); display helpers convert them to percent.
+      // Current pool + broker fee rates for the linked account, already in percent.
       return get<SubaccountFees>('/api/user/fees', {}, signal);
+    },
+    getShareStats(signal) {
+      return get<SubaccountShareStats>('/api/user/share_stats', {}, signal);
     },
     async getPplnsProjection(accountId, signal) {
       try {

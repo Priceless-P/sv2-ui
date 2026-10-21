@@ -123,29 +123,30 @@ export function WorkersTable({
   workers: Worker[];
   sort: SortState;
   onSort: (key: WorkerSortKey) => void;
-  selected: Set<string>;
+  selected?: Set<string>;
   allSelected: boolean;
   someSelected: boolean;
-  onToggleAll: () => void;
-  onToggleOne: (name: string) => void;
+  onToggleAll?: () => void;
+  onToggleOne?: (name: string) => void;
   onOpenDetails: (worker: Worker) => void;
   /** Aggregated mode adds the owning account, since rows then span subaccounts. */
   showAccount?: boolean;
 }) {
+  const selectable = onToggleAll !== undefined && onToggleOne !== undefined;
   return (
     <>
       <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[820px] border-collapse text-sm leading-5">
           <thead>
             <tr className="border-b-[0.5px] border-border bg-muted text-sm leading-5 text-body-alt">
-              <th className="w-10 px-4 py-3">
+              {selectable && <th className="w-10 px-4 py-3">
                 <CellCheckbox
                   checked={allSelected}
                   indeterminate={someSelected && !allSelected}
                   onChange={onToggleAll}
                   label="Select all workers"
                 />
-              </th>
+              </th>}
               <SortHeader label="Worker" sortKey="name" sort={sort} onSort={onSort} />
               {showAccount && <th className="px-4 py-3 text-left font-normal">Account</th>}
               <SortHeader label="Hashrate" sortKey="hashrate" sort={sort} onSort={onSort} hint={WORKER_METRICS_HINT} />
@@ -167,7 +168,7 @@ export function WorkersTable({
           <tbody>
             {workers.length === 0 && (
               <tr>
-                <td colSpan={showAccount ? 8 : 7} className="px-4 py-10 text-center text-sm text-body-alt">
+                <td colSpan={6 + Number(showAccount) + Number(selectable)} className="px-4 py-10 text-center text-sm text-body-alt">
                   No workers match your search.
                 </td>
               </tr>
@@ -178,13 +179,13 @@ export function WorkersTable({
               const rowId = workerRowId(w);
               return (
                 <tr key={rowId} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3">
+                  {selectable && <td className="px-4 py-3">
                     <CellCheckbox
-                      checked={selected.has(rowId)}
+                      checked={selected?.has(rowId) ?? false}
                       onChange={() => onToggleOne(rowId)}
                       label={`Select ${w.name}`}
                     />
-                  </td>
+                  </td>}
                   <td className="px-4 py-3 font-medium text-foreground">{w.name}</td>
                   {showAccount && (
                     <td className="px-4 py-3 text-body-alt">{(w as TaggedWorker).subaccount ?? '--'}</td>

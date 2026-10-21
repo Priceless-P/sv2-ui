@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import type { GeneratedBtcEntry } from '@/api/types';
-import { CellCheckbox } from '@/components/ui/CellCheckbox';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { formatHashrate } from '@/lib/utils';
 import { formatGeneratedDate, formatBtc, generatedBtcRowId } from '@/lib/generatedBtcTable';
@@ -72,43 +71,18 @@ export function GeneratedBtcTable({
   entries,
   empty,
   showAccount = false,
-  selected,
-  allSelected = false,
-  someSelected = false,
-  onToggleAll,
-  onToggleOne,
 }: {
   entries: GeneratedBtcEntry[];
   empty?: GeneratedBtcEmpty;
   /** Aggregated mode adds the owning account, since rows then span accounts. */
   showAccount?: boolean;
-  /**
-   * Row selection, which scopes the CSV export. Omitted by the read-only watcher view,
-   * which has no export and so must not show a control that does nothing.
-   */
-  selected?: Set<string>;
-  allSelected?: boolean;
-  someSelected?: boolean;
-  onToggleAll?: () => void;
-  onToggleOne?: (id: string) => void;
 }) {
-  const selectable = onToggleAll !== undefined && onToggleOne !== undefined;
   return (
     <>
       <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[560px] border-collapse text-sm">
           <thead>
             <tr className="border-b-[0.5px] border-border bg-muted text-sm leading-5 text-body-alt">
-              {selectable && (
-                <th className="w-14 px-0 py-3">
-                  <CellCheckbox
-                    checked={allSelected}
-                    indeterminate={someSelected && !allSelected}
-                    onChange={onToggleAll}
-                    label="Select all days"
-                  />
-                </th>
-              )}
               <th className="px-4 py-3 text-left font-normal">Date</th>
               {showAccount && <th className="px-4 py-3 text-left font-normal">Account</th>}
               <th className="px-4 py-3 text-left font-normal">
@@ -123,22 +97,13 @@ export function GeneratedBtcTable({
           <tbody>
             {entries.length === 0 && empty && (
               <tr>
-                <td colSpan={(showAccount ? 4 : 3) + (selectable ? 1 : 0)}>
+                <td colSpan={showAccount ? 4 : 3}>
                   <EmptyRow empty={empty} />
                 </td>
               </tr>
             )}
             {entries.map((e) => (
               <tr key={generatedBtcRowId(e)} className="border-b-[0.5px] border-border last:border-0">
-                {selectable && (
-                  <td className="w-14 px-0 py-3">
-                    <CellCheckbox
-                      checked={selected?.has(generatedBtcRowId(e)) ?? false}
-                      onChange={() => onToggleOne(generatedBtcRowId(e))}
-                      label={`Select ${formatGeneratedDate(e.entry_day)}`}
-                    />
-                  </td>
-                )}
                 <td className="px-4 py-3 text-foreground">{formatGeneratedDate(e.entry_day)}</td>
                 {showAccount && <td className="px-4 py-3 text-foreground">{e.account ?? '--'}</td>}
                 <td className="px-4 py-3 text-foreground">{formatHashrate(e.hashrate)}</td>

@@ -1,33 +1,39 @@
-import { useMemo, useState } from 'react';
-import { LiUploadMinimalistic } from 'solar-icon-react/li';
-import { useGeneratedBtc, useAggregatedGeneratedBtc } from '@/hooks/useGeneratedBtc';
-import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
-import { useSubaccountList } from '@/hooks/useSubaccounts';
-import { subaccountName } from '@/lib/subaccountsTable';
-import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
-import {
-  sortGeneratedByDateDesc,
-  filterGeneratedBtc,
-  filterGeneratedBtcByAccount,
-  searchGeneratedBtc,
-  sumGenerated,
-  averageEntryHashrate,
-  highestEarningDay,
-  generatedBtcToCsv,
-  generatedBtcRowId,
-} from '@/lib/generatedBtcTable';
-import { paginate } from '@/lib/workersTable';
-import { GeneratedBtcStatCards } from '@/components/generated-btc/GeneratedBtcStatCards';
-import { GeneratedBtcToolbar } from '@/components/generated-btc/GeneratedBtcToolbar';
-import { GeneratedBtcTable } from '@/components/generated-btc/GeneratedBtcTable';
+import type { GeneratedBtcEntry } from '@/api/types';
 import { GeneratedBtcEmptyState } from '@/components/generated-btc/GeneratedBtcEmptyState';
 import {
   EMPTY_GBTC_FILTER_DRAFT,
   gbtcDraftToFilter,
+  GeneratedBtcFilter,
   isGbtcDraftActive,
   type GbtcFilterDraft,
 } from '@/components/generated-btc/GeneratedBtcFilter';
+import { GeneratedBtcTable } from '@/components/generated-btc/GeneratedBtcTable';
+import { Reading } from '@/components/ui/Reading';
+import { StatCard } from '@/components/ui/StatCard';
+import { TableToolbar } from '@/components/ui/TableToolbar';
 import { WorkersPagination } from '@/components/workers/WorkersPagination';
+import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
+import {
+  averageEntryHashrate,
+  filterGeneratedBtc,
+  filterGeneratedBtcByAccount,
+  formatBtc,
+  formatGeneratedDate,
+  generatedBtcToCsv,
+  highestEarningDay,
+  searchGeneratedBtc,
+  sortGeneratedByDateDesc,
+  sumGenerated,
+} from '@/lib/generatedBtcTable';
+import { GENERATED_AVG_HASHRATE_HINT } from '@/lib/metricWindows';
+import { paginate } from '@/lib/workersTable';
+import { useMemo, useState } from 'react';
+import { LiUploadMinimalistic } from 'solar-icon-react/li';
+import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
+import { useAggregatedGeneratedBtc, useGeneratedBtc } from '@/hooks/useGeneratedBtc';
+import { useSubaccountList } from '@/hooks/useSubaccounts';
+import { MAIN_ACCOUNT_LABEL } from '@/lib/payoutsTable';
+import { subaccountName } from '@/lib/subaccountsTable';
 
 const PAGE_SIZE = 10;
 
@@ -47,26 +53,15 @@ function downloadCsv(content: string): void {
  * The Generated BTC page: the account's daily FPPS hashrate and generated BTC with
  * summary cards, a date filter, pagination, and CSV export.
  */
-export function GeneratedBtcPage() {
-  const { aggregated } = useAggregatedModeContext();
-  const single = useGeneratedBtc(!aggregated);
-  // Aggregated mode reads generated-BTC entries across every account, tagged with
-  // their owner; the two queries have separate cache entries so toggling never serves
-  // the wrong set (same pattern as Payouts/Workers).
-  const agg = useAggregatedGeneratedBtc(aggregated);
-  const selectedQuery = aggregated ? agg : single;
-  const { data } = selectedQuery;
-  const entries = useMemo(() => data ?? [], [data]);
-
-  // The Account facet (aggregated mode only) offers the main account plus every
-  // subaccount; an empty selection keeps them all. These names must match the row tags
-  // from useAggregatedGeneratedBtc exactly, so both derive from the same shared list.
-  const { data: subs } = useSubaccountList();
-  const accountNames = useMemo(
-    () => (aggregated ? [MAIN_ACCOUNT_LABEL, ...(subs ?? []).map(subaccountName)] : undefined),
-    [aggregated, subs],
-  );
-
+export function GeneratedBtcContent({ entries, isLoading, isError, onRetry: refetch, accounts: accountNames, canConnect = false, canExport = false }: {
+  entries: GeneratedBtcEntry[];
+  isLoading: boolean;
+  isError: boolean;
+  onRetry: () => unknown;
+  accounts?: string[];
+  canConnect?: boolean;
+  canExport?: boolean;
+}) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<GbtcFilterDraft>(EMPTY_GBTC_FILTER_DRAFT);
   const [page, setPage] = useState(1);
@@ -82,20 +77,6 @@ export function GeneratedBtcPage() {
   }, [sorted, filter, query]);
   const pageData = paginate(visible, page, PAGE_SIZE);
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const allSelected = visible.length > 0 && visible.every((e) => selected.has(generatedBtcRowId(e)));
-  const someSelected = visible.some((e) => selected.has(generatedBtcRowId(e)));
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visible.map(generatedBtcRowId)));
-  const toggleOne = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-  // Checked rows are an explicit pick, so they scope the export; with none checked the
-  // whole filtered set is exported, matching the other tables.
-  const exportRows = someSelected ? visible.filter((e) => selected.has(generatedBtcRowId(e))) : visible;
-
   const totals = useMemo(
     () => ({
       generated: sumGenerated(entries),
@@ -104,10 +85,6 @@ export function GeneratedBtcPage() {
     }),
     [entries],
   );
- 
-  const isLoading = selectedQuery.isLoading;
-  const isError = selectedQuery.isError;
-  const refetch = selectedQuery.refetch;
 
   const changeQuery = (next: string) => {
     setQuery(next);
@@ -130,18 +107,18 @@ export function GeneratedBtcPage() {
       ? undefined
       : filterActive
         ? {
-            title: 'No generated BTC matches this filter',
-            hint: 'Adjust or clear your filters.',
-            clearLabel: 'Clear filters',
-            onClear: resetFilter,
-          }
+          title: 'No generated BTC matches this filter',
+          hint: 'Adjust or clear your filters.',
+          clearLabel: 'Clear filters',
+          onClear: resetFilter,
+        }
         : hasQuery
           ? {
-              title: 'No generated BTC found',
-              hint: 'Try a different subaccount name or clear your search.',
-              clearLabel: 'Clear search',
-              onClear: () => changeQuery(''),
-            }
+            title: 'No generated BTC found',
+            hint: 'Try a different date, hashrate, amount, or account name, or clear your search.',
+            clearLabel: 'Clear search',
+            onClear: () => changeQuery(''),
+          }
           : undefined;
 
   return (
@@ -151,10 +128,10 @@ export function GeneratedBtcPage() {
           <h2 className="font-heading text-2xl font-semibold leading-9 tracking-[-1px] text-heading">Generated BTC</h2>
           <p className="mt-1 text-sm text-body-alt">Track your mining rewards and earnings over time.</p>
         </div>
-        {hasData && (
+        {canExport && hasData && (
           <button
             type="button"
-            onClick={() => downloadCsv(generatedBtcToCsv(exportRows))}
+            onClick={() => downloadCsv(generatedBtcToCsv(visible))}
             className="inline-flex items-center gap-1.5 rounded-full bg-[hsl(var(--btn))] px-5 py-2 text-sm font-medium text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90"
           >
             <LiUploadMinimalistic className="h-4 w-4" /> Export CSV
@@ -178,7 +155,7 @@ export function GeneratedBtcPage() {
         </div>
       ) : entries.length === 0 ? (
         <div className="border-t border-border">
-          <GeneratedBtcEmptyState />
+          <GeneratedBtcEmptyState canConnect={canConnect} />
         </div>
       ) : (
         <>
@@ -188,23 +165,25 @@ export function GeneratedBtcPage() {
             highestDay={totals.highestDay}
           />
           <div>
-            <GeneratedBtcToolbar
-              filter={filter}
-              onApplyFilter={applyFilter}
-              onResetFilter={resetFilter}
+            <TableToolbar
+              title="Generated BTC"
               query={query}
               onQuery={changeQuery}
-              accounts={accountNames}
+              searchPlaceholder="Search generated BTC"
+              filterActive={filterActive}
+              variant="framed"
+              renderFilter={(onClose) => <GeneratedBtcFilter
+                applied={filter}
+                onApply={applyFilter}
+                onReset={resetFilter}
+                onClose={onClose}
+                accounts={accountNames}
+              />}
             />
             <GeneratedBtcTable
               entries={pageData.items}
               empty={tableEmpty}
-              showAccount={aggregated}
-              selected={selected}
-              allSelected={allSelected}
-              someSelected={someSelected}
-              onToggleAll={toggleAll}
-              onToggleOne={toggleOne}
+              showAccount={accountNames !== undefined}
             />
             {visible.length > 0 && (
               <WorkersPagination page={pageData.page} totalPages={pageData.totalPages} onPage={setPage} />
@@ -214,4 +193,65 @@ export function GeneratedBtcPage() {
       )}
     </div>
   );
+}
+
+/** FPPS generated BTC / average FPPS hashrate / highest FPPS earning day. */
+function GeneratedBtcStatCards({
+  generated,
+  averageHashrate,
+  highestDay,
+}: {
+  generated: number;
+  averageHashrate: number;
+  highestDay: GeneratedBtcEntry | null;
+}) {
+  // One unit for the hashrate figure, matching how every other hashrate reading is set.
+  const scale = pickHashrateScale([averageHashrate]);
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <StatCard variant="generated" title="Generated BTC" caption="Generated under FPPS across the listed days">
+        <Reading value={formatBtc(generated)} unit="BTC" unitSize="lg" />
+      </StatCard>
+
+      <StatCard variant="generated" title="Average FPPS hashrate" caption="Across the listed days" hint={GENERATED_AVG_HASHRATE_HINT}>
+        <Reading value={formatAxisValue(averageHashrate, scale.divisor)} unit={scale.unit} unitSize="lg" />
+      </StatCard>
+
+      <StatCard variant="generated"
+        title="Highest earning day"
+        caption={highestDay ? formatGeneratedDate(highestDay.entry_day) : 'No earnings recorded yet'}
+      >
+        {highestDay ? (
+          <Reading value={formatBtc(highestDay.fpps_btc_generated)} unit="BTC" unitSize="lg" />
+        ) : (
+          <Reading value="--" />
+        )}
+      </StatCard>
+    </div>
+  );
+}
+
+/** Signed-in adapter; public watcher routes mount GeneratedBtcContent instead. */
+export function GeneratedBtcPage() {
+  const { aggregated } = useAggregatedModeContext();
+  const single = useGeneratedBtc(!aggregated);
+  // Aggregated mode reads generated-BTC entries across every account, tagged with
+  // their owner; the two queries have separate cache entries so toggling never serves
+  // the wrong set (same pattern as Payouts/Workers).
+  const agg = useAggregatedGeneratedBtc(aggregated);
+  const selectedQuery = aggregated ? agg : single;
+  const { data } = selectedQuery;
+  const entries = useMemo(() => data ?? [], [data]);
+
+  // The Account facet (aggregated mode only) offers the main account plus every
+  // subaccount; an empty selection keeps them all. These names must match the row tags
+  // from useAggregatedGeneratedBtc exactly, so both derive from the same shared list.
+  const { data: subs } = useSubaccountList();
+  const accountNames = useMemo(
+    () => (aggregated ? [MAIN_ACCOUNT_LABEL, ...(subs ?? []).map(subaccountName)] : undefined),
+    [aggregated, subs],
+  );
+
+  return <GeneratedBtcContent entries={entries} isLoading={selectedQuery.isLoading} isError={selectedQuery.isError} onRetry={selectedQuery.refetch} accounts={accountNames} canConnect canExport />;
 }

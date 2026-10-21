@@ -4,7 +4,7 @@ import { ConnectionDetails } from './ConnectionDetails';
 import { ConnectWorkersDrawer } from './ConnectWorkersDrawer';
 
 /** New-user state: no workers yet, so show the connection details to get started. */
-export function WorkersEmptyState() {
+export function WorkersEmptyState({ canConnect = true }: { canConnect?: boolean }) {
   const [guideOpen, setGuideOpen] = useState(false);
 
   return (
@@ -12,16 +12,17 @@ export function WorkersEmptyState() {
       <div className="flex flex-col items-center text-center">
         <p className="text-xl font-semibold leading-8 text-heading">No workers connected</p>
         <p className="max-w-lg text-sm leading-5 text-body-alt">
-          Use the connection details below in your mining hardware. Once a worker starts submitting shares, it will
-          appear here.
+          {canConnect
+            ? 'Use the connection details below in your mining hardware. Once a worker starts submitting shares, it will appear here.'
+            : 'Workers will appear here once they start submitting shares.'}
         </p>
       </div>
 
-      <div className="mx-auto mt-6 max-w-[686px] rounded-[32px] p-8">
+      {canConnect && <div className="mx-auto mt-6 max-w-[686px] rounded-[32px] p-8">
         <ConnectionDetails />
-      </div>
+      </div>}
 
-      <div className="mt-4 flex justify-center">
+      {canConnect && <div className="mt-4 flex justify-center">
         <button
           type="button"
           onClick={() => setGuideOpen(true)}
@@ -29,9 +30,9 @@ export function WorkersEmptyState() {
         >
           See setup guide <LiAltArrowRight className="h-3.5 w-3.5" />
         </button>
-      </div>
+      </div>}
 
-      {guideOpen && <ConnectWorkersDrawer onClose={() => setGuideOpen(false)} />}
+      {canConnect && guideOpen && <ConnectWorkersDrawer onClose={() => setGuideOpen(false)} />}
     </div>
   );
 }

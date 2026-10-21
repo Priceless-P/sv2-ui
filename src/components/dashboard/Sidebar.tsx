@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'wouter';
 import { LiLogout3, LiSidebarMinimalistic, LiAltArrowUp, LiAltArrowDown } from 'solar-icon-react/li';
 import { cn } from '@/lib/utils';
@@ -95,16 +95,18 @@ function NavDropdown({
   );
 }
 
-function NavRow({
+export function SidebarNavItem({
   item,
   active,
   collapsed,
   onNavigate,
+  onSelect,
 }: {
   item: NavItem;
   active: boolean;
   collapsed?: boolean;
   onNavigate?: () => void;
+  onSelect?: () => void;
 }) {
   // The active nav icon is the filled (bold-duotone) glyph; custom icons
   // without a duotone variant fall back to their single form.
@@ -135,6 +137,14 @@ function NavRow({
       {!collapsed && <span className="flex-1">{item.label}</span>}
     </span>
   );
+  if (onSelect) {
+    const button = (
+      <button type="button" onClick={onSelect} aria-current={active ? 'page' : undefined} aria-label={item.label} className="block w-full text-left">
+        {row}
+      </button>
+    );
+    return collapsed ? <TooltipPill label={item.label} side="right" emphasis>{button}</TooltipPill> : button;
+  }
   if (item.external) {
     const link = (
       <a href={item.href} target="_blank" rel="noopener noreferrer" className="block">
@@ -183,7 +193,7 @@ export function Sidebar({
   onNavigate?: () => void;
 }) {
   const [location] = useLocation();
-  const { session, signOut, viewingAccountId } = useAuth();
+  const { signOut, viewingAccountId } = useAuth();
   const { hasSubaccounts } = useHasSubaccounts();
   const { aggregated, setAggregated } = useAggregatedModeContext();
   // Aggregating only makes sense while viewing the main account; a subaccount has no
@@ -196,6 +206,76 @@ export function Sidebar({
 
   const hasPplnsWork = hasPayablePplnsWork(pplnsProjection);
 
+  return (
+    <SidebarView collapsed={collapsed} drawer={drawer} onToggleCollapse={onToggleCollapse} account={
+      <>
+        {/* With subaccounts the account block becomes the switcher; without them there is
+          nothing to switch to, so it stays a plain identity row. */}
+        {hasSubaccounts ? (
+          <AccountSwitcher collapsed={collapsed} />
+        ) : (
+          <AccountIdentityRow name="Main account" collapsed={collapsed} />
+        )}
+
+        {/* The design puts the aggregated toggle in the drawer on mobile; the top bar
+          carries it on desktop, where there is room for the label. */}
+        {showToggle && !collapsed && (
+          <div className="mx-3 mb-3 flex items-center justify-between gap-2 px-2.5 lg:hidden">
+            <span className="text-sm text-foreground">Aggregated dashboard</span>
+            <Switch
+              checked={aggregated}
+              onCheckedChange={setAggregated}
+              aria-label="Aggregated dashboard"
+              className="data-[state=checked]:bg-success"
+            />
+          </div>
+        )}
+      </>
+    }>
+      <SidebarNavigation
+        collapsed={collapsed}
+        groups={NAV_GROUPS.map((group) => ({
+          ...group, items: group.items.filter((item) =>
+            (canViewSubaccounts || !isSubaccountRestrictedRoute(item.href)) &&
+            (!aggregated || !isAggregatedRestrictedRoute(item.href)) &&
+            (item.href !== PPLNS_PROJECTION_ROUTE || hasPplnsWork)
+          )
+        }))}
+        renderItem={(item) => item.children ? (
+          <NavDropdown item={item} location={location} collapsed={collapsed} onNavigate={onNavigate} />
+        ) : (
+          <SidebarNavItem item={item} active={location === item.href} collapsed={collapsed} onNavigate={onNavigate} />
+        )}
+      />
+
+      <div className="space-y-0.5 border-t border-border px-3 py-3">
+        <SidebarNavItem item={SETTINGS_ITEM} active={location === SETTINGS_ITEM.href} collapsed={collapsed} onNavigate={onNavigate} />
+        <button
+          type="button"
+          onClick={() => signOut()}
+          title={collapsed ? 'Logout' : undefined}
+          className={cn(
+            'flex w-full items-center rounded-lg text-sm text-body-alt transition-colors hover:bg-muted hover:text-foreground',
+            collapsed ? 'justify-center px-0 py-2' : 'gap-2.5 px-3 py-2',
+          )}
+        >
+          <LiLogout3 className="h-[18px] w-[18px] shrink-0" />
+          {!collapsed && 'Logout'}
+        </button>
+      </div>
+
+    </SidebarView>
+  );
+}
+
+/** Brand, collapse control and spacing shared by all dashboard navigation. No account queries. */
+export function SidebarView({ collapsed = false, drawer = false, onToggleCollapse, account, children }: {
+  collapsed?: boolean;
+  drawer?: boolean;
+  onToggleCollapse?: () => void;
+  account: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div
       className={cn(
@@ -218,101 +298,45 @@ export function Sidebar({
         )}
       </div>
 
-      {/* With subaccounts the account block becomes the switcher; without them there is
-          nothing to switch to, so it stays a plain identity row. */}
-      {hasSubaccounts ? (
-        <AccountSwitcher collapsed={collapsed} />
-      ) : (
-        <div
-          title={collapsed ? (session?.email ?? 'Account') : undefined}
-          className={cn(
-            'mx-3 mb-3 flex items-center rounded-lg text-left',
-            collapsed ? 'justify-center px-0 py-2' : 'gap-2.5 px-2.5 py-2',
-          )}
-        >
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#2b7fff] text-[11px] font-semibold text-white">
-            {accountInitials(session?.email)}
-          </span>
-          {!collapsed && (
-            <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-              {session?.email ?? 'Account'}
-            </span>
-          )}
-        </div>
-      )}
 
-      {/* The design puts the aggregated toggle in the drawer on mobile; the top bar
-          carries it on desktop, where there is room for the label. */}
-      {showToggle && !collapsed && (
-        <div className="mx-3 mb-3 flex items-center justify-between gap-2 px-2.5 lg:hidden">
-          <span className="text-sm text-foreground">Aggregated dashboard</span>
-          <Switch
-            checked={aggregated}
-            onCheckedChange={setAggregated}
-            aria-label="Aggregated dashboard"
-            className="data-[state=checked]:bg-success"
-          />
-        </div>
-      )}
-
-      <nav className="flex-1 overflow-y-auto px-3 pb-2">
-        {NAV_GROUPS.map((group) => {
-          const items = group.items.filter(
-            (item) =>
-              (canViewSubaccounts || !isSubaccountRestrictedRoute(item.href)) &&
-              (!aggregated || !isAggregatedRestrictedRoute(item.href)) &&
-              (item.href !== PPLNS_PROJECTION_ROUTE || hasPplnsWork),
-          );
-          // A group whose every entry is restricted would otherwise leave a bare heading.
-          if (items.length === 0) return null;
-          return (
-            <div key={group.label} className="mb-5">
-              {!collapsed && (
-                <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-placeholder">
-                  {group.label}
-                </p>
-              )}
-              <div className="space-y-0.5">
-                {items.map((item) =>
-                  item.children ? (
-                    <NavDropdown
-                      key={item.href}
-                      item={item}
-                      location={location}
-                      collapsed={collapsed}
-                      onNavigate={onNavigate}
-                    />
-                  ) : (
-                    <NavRow
-                      key={item.href}
-                      item={item}
-                      active={location === item.href}
-                      collapsed={collapsed}
-                      onNavigate={onNavigate}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </nav>
-
-      <div className="space-y-0.5 border-t border-border px-3 py-3">
-        <NavRow item={SETTINGS_ITEM} active={location === SETTINGS_ITEM.href} collapsed={collapsed} onNavigate={onNavigate} />
-        <button
-          type="button"
-          onClick={() => signOut()}
-          title={collapsed ? 'Logout' : undefined}
-          className={cn(
-            'flex w-full items-center rounded-lg text-sm text-body-alt transition-colors hover:bg-muted hover:text-foreground',
-            collapsed ? 'justify-center px-0 py-2' : 'gap-2.5 px-3 py-2',
-          )}
-        >
-          <LiLogout3 className="h-[18px] w-[18px] shrink-0" />
-          {!collapsed && 'Logout'}
-        </button>
-      </div>
+      {account}
+      {children}
     </div>
   );
+}
+
+/** Account identity without account switching or authenticated data access. */
+export function AccountIdentityRow({ name, subtitle, collapsed = false, subaccount = false }: {
+  name: string;
+  subtitle?: string;
+  collapsed?: boolean;
+  subaccount?: boolean;
+}) {
+  return (
+    <div title={subtitle ? `${name} — ${subtitle}` : name} className={cn('mx-3 mb-3 flex items-center rounded-lg text-left', collapsed ? 'justify-center px-0 py-2' : 'gap-2.5 px-2.5 py-2')}>
+      <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white', subaccount ? 'bg-[#d946ef]' : 'bg-[#2b7fff]')}>
+        {subaccount ? name.slice(0, 1).toUpperCase() : accountInitials(name)}
+      </span>
+      {!collapsed && <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium text-foreground">{name}</span>
+        {subtitle && <span className="truncate text-xs text-body-alt" title={subtitle}>{subtitle}</span>}
+      </span>}
+    </div>
+  );
+}
+
+/** One grouped navigation layout for both sessions and restricted tokens. */
+export function SidebarNavigation({ groups, collapsed, renderItem }: {
+  groups: { label: string; items: NavItem[] }[];
+  collapsed?: boolean;
+  renderItem: (item: NavItem) => ReactNode;
+}) {
+  return <nav className="flex-1 overflow-y-auto px-3 pb-2">
+    {groups.filter((group) => group.items.length > 0).map((group) => (
+      <div key={group.label} className="mb-5">
+        {!collapsed && <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-placeholder">{group.label}</p>}
+        <div className="space-y-0.5">{group.items.map((item) => <div key={item.href}>{renderItem(item)}</div>)}</div>
+      </div>
+    ))}
+  </nav>;
 }

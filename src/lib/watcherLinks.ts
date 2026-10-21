@@ -68,10 +68,50 @@ export function accountLabel(
   return match ? match.sub_account : null;
 }
 
-/** The shareable link: the watcher opens this and reads only what the token allows. */
-export function watcherLinkUrl(origin: string, userId: string, token: string | null): string {
+export interface WatcherAccountIdentity {
+  name: string;
+  kind: 'main' | 'subaccount';
+}
+
+/** Main-account links use a generic label; subaccount links retain their name. */
+export function watcherAccountIdentity(
+  userId: string,
+  sessionAccountId: string | null,
+  subaccounts: Subaccount[],
+): WatcherAccountIdentity | null {
+  if (sessionAccountId !== null && userId === sessionAccountId) {
+    return { name: 'Main account', kind: 'main' };
+  }
+  const sub = subaccounts.find((s) => s.id === userId);
+  return sub ? { name: sub.sub_account.trim() || 'Subaccount', kind: 'subaccount' } : null;
+}
+
+/** The fragment is an owner-supplied display label, never proof of identity or access. */
+export function readWatcherAccountIdentity(hash: string, userId: string): WatcherAccountIdentity | null {
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  if (params.get('accountId') !== userId) return null;
+  const name = params.get('accountName')?.trim();
+  const kind = params.get('accountType');
+  if (!name || name.length > 256 || /\p{Cc}/u.test(name)) return null;
+  return kind === 'main' || kind === 'subaccount' ? { name, kind } : null;
+}
+
+/** Display metadata stays in the fragment; only the token determines API access. */
+export function watcherLinkUrl(
+  origin: string,
+  userId: string,
+  token: string | null,
+  identity?: WatcherAccountIdentity | null,
+): string {
   if (!token) return '';
-  return `${origin.replace(/\/+$/, '')}/login/watcher/${userId}/${token}`;
+  const url = `${origin.replace(/\/+$/, '')}/login/watcher/${userId}/${token}`;
+  if (!identity) return url;
+  const fragment = new URLSearchParams({
+    accountId: userId,
+    accountName: identity.kind === 'main' ? 'Main account' : identity.name,
+    accountType: identity.kind,
+  });
+  return `${url}#${fragment}`;
 }
 
 /** The route params from `/login/watcher/:userId/:token`; null when either is blank. */
@@ -140,10 +180,10 @@ export function formatLastUpdated(observed: string | undefined, now: number): st
 }
 
 /**
- * A fractional API fee converted to a display percentage, to two decimals.
+ * An API fee already expressed as a percentage, formatted to two decimals.
  */
 export function formatFeePercent(rate: number): string {
-  return (Number.isFinite(rate) ? rate * 100 : 0).toFixed(2);
+  return (Number.isFinite(rate) ? rate : 0).toFixed(2);
 }
 
 /**

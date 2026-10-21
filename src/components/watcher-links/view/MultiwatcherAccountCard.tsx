@@ -1,6 +1,6 @@
 import { useWatcherHashrate, useWatcherGeneratedBtc } from '@/hooks/useWatcherView';
 import { formatBtc, sumGenerated } from '@/lib/generatedBtcTable';
-import { WatcherHashratePanel } from './WatcherHashratePanel';
+import { LiveHashrateCardView } from '@/components/home/LiveHashrateCard';
 
 /** True when a query failed because the token does not grant that scope (or is invalid). */
 function isUnauthorized(error: unknown): boolean {
@@ -33,8 +33,8 @@ export function MultiwatcherAccountCard({
   return (
     <div className="space-y-4">
       {hashrateOk && (
-        <WatcherHashratePanel
-          snapshot={hashrate.data ?? null}
+        <LiveHashrateCardView
+          data={hashrate.data}
           isLoading={hashrate.isLoading}
           isError={hashrate.isError && !isUnauthorized(hashrate.error)}
         />
@@ -50,7 +50,7 @@ export function MultiwatcherAccountCard({
               <span className="ml-1 text-base font-normal text-body-alt">BTC</span>
             </p>
           )}
-          <p className="mt-1 text-xs text-body-alt">FPPS generated across the available days</p>
+          <p className="mt-1 text-xs text-body-alt">Generated under FPPS across the available days</p>
         </div>
       )}
     </div>
