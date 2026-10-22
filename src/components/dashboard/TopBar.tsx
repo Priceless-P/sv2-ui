@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { LiHamburgerMenu, LiQuestionCircle, LiAltArrowDown, LiSettingsMinimalistic, LiLogout3 } from 'solar-icon-react/li';
 import { ThemeToggle } from '@/components/auth/ThemeToggle';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/auth';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
-import { useHasSubaccounts } from '@/hooks/useSubaccounts';
+import { useSubaccountList } from '@/hooks/useSubaccounts';
+import { subaccountName } from '@/lib/subaccountsTable';
 import { accountInitials, mainAccountName } from './accountInitials';
 
 /**
@@ -15,6 +16,7 @@ import { accountInitials, mainAccountName } from './accountInitials';
  * their backend lands; the avatar menu wires the existing Settings and Logout.
  */
 export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
+  const [location] = useLocation();
   const { session, signOut, viewingAccountId } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
@@ -37,11 +39,17 @@ export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
   // The aggregated toggle only makes sense with more than one account to combine, so
   // it appears once the miner has subaccounts, and hides while viewing a single
   // switched-in subaccount (a subaccount has no subaccounts of its own to aggregate).
-  const { hasSubaccounts } = useHasSubaccounts();
+  const { data: subaccounts } = useSubaccountList();
+  const hasSubaccounts = (subaccounts?.length ?? 0) > 0;
+  const selected = subaccounts?.find((account) => account.id === viewingAccountId);
+  const scope = viewingAccountId ? `Subaccount: ${selected ? subaccountName(selected) : viewingAccountId}`
+    : aggregated ? 'All accounts' : 'Main account';
   const showToggle = hasSubaccounts && viewingAccountId === null;
+  const payoutsPage = location === '/payouts';
+  const refreshSubject = payoutsPage ? 'Payouts' : location === '/subaccounts' ? 'Visible rows' : 'Live data';
 
   return (
-    <TopBarView onMenuClick={onMenuClick} actions={<>
+    <TopBarView scope={scope} refreshIntervalMinutes={payoutsPage ? 10 : 5} refreshSubject={refreshSubject} onMenuClick={onMenuClick} actions={<>
       {/* Desktop places the toggle in the top bar; on mobile it lives in the sidebar
             drawer (below the account block), where the design puts it since the mobile
             top bar has no room. */}
@@ -135,9 +143,12 @@ export function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
 }
 
 /** Shared dashboard header. Session controls are supplied only by authenticated callers. */
-export function TopBarView({ title, subtitle, onMenuClick, actions, children }: {
+export function TopBarView({ title, subtitle, scope, refreshIntervalMinutes = 5, refreshSubject = 'Live data', onMenuClick, actions, children }: {
   title?: string;
   subtitle?: string;
+  scope?: string;
+  refreshIntervalMinutes?: number;
+  refreshSubject?: string;
   onMenuClick: () => void;
   actions?: ReactNode;
   children?: ReactNode;
@@ -147,10 +158,16 @@ export function TopBarView({ title, subtitle, onMenuClick, actions, children }: 
       <button type="button" onClick={onMenuClick} aria-label="Open navigation" className="flex h-9 w-9 items-center justify-center rounded-lg text-body-alt transition-colors hover:bg-muted hover:text-foreground lg:hidden">
         <LiHamburgerMenu className="h-5 w-5" />
       </button>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
+        {scope && <p aria-label="Viewing account" title={scope === 'All accounts' ? 'Main account and all subaccounts' : scope}
+          className="truncate text-xs font-medium text-foreground sm:text-sm">{scope}</p>}
         {title && <h1 className="truncate text-base font-semibold text-heading">{title}</h1>}
         {subtitle && <p className="truncate text-xs text-body-alt lg:hidden" title={subtitle}>{subtitle}</p>}
       </div>
+        <p aria-label="Refresh interval" className="min-w-0 shrink truncate text-[10px] text-body-alt sm:text-xs"
+          title="Live mining data refreshes every 5 minutes; payouts every 10 minutes. Account settings update when changed. Subaccounts refreshes the visible rows only.">
+          <span className="hidden sm:inline">{refreshSubject} </span>refreshes every {refreshIntervalMinutes} min
+        </p>
       <div className="ml-auto flex items-center gap-2">
         {actions}
         <ThemeToggle />

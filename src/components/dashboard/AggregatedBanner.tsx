@@ -14,10 +14,10 @@ export function AggregatedBanner() {
         <div className="flex min-w-0 flex-col">
           <p className="text-sm font-bold leading-5 text-foreground">Viewing Aggregated Dashboard</p>
           <p className="text-xs leading-4 text-foreground sm:hidden">
-            You&apos;re viewing combined data across all subaccounts.
+            You&apos;re viewing combined data for the main account and all subaccounts.
           </p>
           <p className="hidden text-sm leading-5 text-foreground sm:block">
-            You&apos;re viewing combined workers, earnings, and mining performance across all subaccounts.
+            You&apos;re viewing combined workers, earnings, and mining performance for the main account and all subaccounts.
           </p>
         </div>
       </div>

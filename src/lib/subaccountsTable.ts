@@ -255,7 +255,7 @@ const CSV_HEADER = [
   'Name',
   'Hashrate',
   'Rejection rate',
-  'Today FPPS earnings (BTC, UTC)',
+  "Today's generated BTC (FPPS, UTC)",
 ];
 
 

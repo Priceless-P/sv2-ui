@@ -8,7 +8,7 @@ import { sumHashrateSeries } from '@/lib/aggregatedHashrate';
 import { useSubaccountList, ACCOUNT_POLL_MS } from './useSubaccounts';
 import { useActiveAccountId } from './useActiveAccountId';
 import { msUntilNextTick } from '@/lib/utils';
-import { accountPayoutQueryOptions } from '@/lib/payoutsTable';
+import { accountPayoutQueryOptions, latestPayout, payoutFromApi } from '@/lib/payoutsTable';
 
 // The UI checks account data every five minutes.
 const CLOUD_POLL_MS = 5 * 60 * 1000;
@@ -29,6 +29,27 @@ export function useAccountHashrate(enabled = true) {
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+}
+
+/** A summary supplies today's FPPS generation, share counts and rates in one read. */
+export function accountSummaryQueryOptions(client: DmndClient, ownerId: string | null, accountId: string | null) {
+  return {
+    queryKey: ['account', 'subaccount-summary', ownerId, accountId],
+    queryFn: ({ signal }: { signal: AbortSignal }) => client.getSubaccountSummary(accountId!, { signal, accountId: ownerId! }),
+    staleTime: CLOUD_POLL_MS,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
+    refetchOnWindowFocus: false,
+    retry: false,
+  } as const;
+}
+
+export function useAccountSummary(enabled = true) {
+  const { session } = useAuth();
+  const accountId = useActiveAccountId();
+  return useQuery({
+    ...accountSummaryQueryOptions(getUser(), session?.accountId ?? null, accountId),
+    enabled: enabled && !!session && !!accountId,
   });
 }
 
@@ -188,19 +209,16 @@ export function activeBitcoinAddress(profile: DmndSession | undefined): string |
 }
 
 /**
- * Confirmed payouts for today's UTC date. Single mode uses the exact account endpoint;
+ * Latest confirmed payout transaction. Single mode uses the exact account endpoint;
  * aggregated mode reads the complete account tree once, avoiding duplicate shared-address outputs.
  */
-export function useTodayEarnings(enabled = true, aggregated = false) {
+export function useLatestPayout(enabled = true, aggregated = false) {
   const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const accountId = useActiveAccountId();
-  const today = new Date().toISOString().slice(0, 10);
   return useQuery({
     ...accountPayoutQueryOptions(getUser(), ownerAccountId, accountId, aggregated),
-    select: (records) => records
-      .filter((record) => new Date(record.confirmed_at * 1000).toISOString().slice(0, 10) === today)
-      .reduce((sum, record) => sum + record.amount_sats, 0) / 1e8,
+    select: (records) => latestPayout(records.map(payoutFromApi)),
     enabled: enabled && !!session && !!accountId,
   });
 }

@@ -199,7 +199,7 @@ export function CreateSubaccountModal({
                 </button>
                 <div className="flex-1">
                   <PrimaryButton onClick={() => onOpenCreated?.(name.trim())} disabled={!onOpenCreated}>
-                    Open subaccount
+                    Switch to account
                   </PrimaryButton>
                 </div>
               </div>

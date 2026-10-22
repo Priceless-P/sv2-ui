@@ -2,6 +2,7 @@ import type { DmndClient, PayoutRecord } from '@/api/types';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  latestPayout,
   loadTodayPayouts,
   payoutFromApi,
   sortPayoutsByDateDesc,
@@ -305,4 +306,15 @@ test('today payouts use one tree request in aggregate mode and an exact account 
   calls.length = 0;
   assert.equal(await loadTodayPayouts(client, { ...options, aggregated: false }), 30 / 1e8);
   assert.deepEqual(calls, [['selected', { from: options.today, to: options.today }, 'owner']]);
+});
+
+
+test('latest payout uses the latest transaction regardless of day or row order and combines its scoped outputs', () => {
+  assert.equal(latestPayout([]), null);
+  assert.deepEqual(latestPayout([
+    { txid: 'new', date: 200, amountSats: 10 },
+    { txid: 'old', date: 100, amountSats: 99 },
+    { txid: 'other', date: 200, amountSats: 50 },
+    { txid: 'new', date: 200, amountSats: 20 },
+  ]), { date: 200, amountSats: 30 });
 });

@@ -295,7 +295,7 @@ test('subaccountsToCsv exports today FPPS earnings instead of lifetime BTC', () 
     enriched({ name: 'Alpha', active: 2, hashrate: 1000, rejection: 0.01, generatedBtc: 0.5, todayEarnings: 0.25 }),
   ]);
   const [header, first] = csv.split('\n');
-  assert.equal(header, 'Name,Hashrate,Rejection rate,"Today FPPS earnings (BTC, UTC)"');
+  assert.equal(header, "Name,Hashrate,Rejection rate,\"Today's generated BTC (FPPS, UTC)\"");
   assert.equal(first, 'Alpha,1.00 KH/s,1.00%,0.25');
 });
 
@@ -311,9 +311,9 @@ test('sumGeneratedBtc totals only FPPS from untagged entries and reports null wh
 
 test('aggregate home earnings display supplied confirmed payouts rather than accrued generated earnings', () => {
   const aggregated = { totalWorkers: 0, activeWorkers: 0, offlineWorkers: 0, combinedHashrate: 0, todayEarnings: 9, rejectionRate: null };
-  const html = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated, earnings: 0.01 }));
+  const html = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated, payout: { amountSats: 1_000_000, date: Date.UTC(2026, 9, 20) / 1000 } }));
   assert.match(html, />0\.01<\/span>/);
-  assert.match(html, /Paid out today across all accounts \(UTC\)/);
+  assert.match(html, /Paid Tuesday 20 October 2026 \(UTC\)/);
   assert.doesNotMatch(html, /Generated today|>9<\/span>/);
   const unknown = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated }));
   assert.doesNotMatch(unknown, />9<\/span>/);
