@@ -2,7 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { CreateSubaccountInput } from '@/api/types';
-import { enrichSubaccount, type EnrichedSubaccount } from '@/lib/subaccountsTable';
+import { type EnrichedSubaccount } from '@/lib/subaccountsTable';
+import { loadSubaccountRows } from '@/lib/accountQueries';
 import { useActiveAccountId } from './useActiveAccountId';
 import { msUntilNextTick } from '@/lib/utils';
 
@@ -11,42 +12,20 @@ const CLOUD_POLL_MS = 5 * 60 * 1000;
 
 /**
  * The account's subaccounts, each enriched with its summary (rejection + today's
- * earnings in one response) and worker roster (active/offline counts, which the
- * summary does not carry). A failed sub-call rejects the whole query so the page
- * shows its error state, rather than silently reporting 0 workers or 0 earnings for
- * a row whose data could not be read (a misleading figure on money data).
+ * earnings in one response). Worker rosters are opt-in for aggregate Home; the
+ * Subaccounts page does not request or display worker counts.
  */
-export function useSubaccounts(enabled = true) {
+export function useSubaccounts(enabled = true, includeWorkers = false, refreshIntervalMs = CLOUD_POLL_MS) {
   const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const queryClient = useQueryClient();
   return useQuery({
-    queryKey: ['account', 'subaccounts', ownerAccountId],
+    queryKey: ['account', 'subaccounts', ownerAccountId, { includeWorkers }],
     queryFn: async ({ signal }): Promise<EnrichedSubaccount[]> => {
-      const client = getUser();
-      const requestOptions = { signal, accountId: ownerAccountId ?? undefined };
-      // Share the lightweight list cache used by the account switcher, aggregate
-      // chart, and filters instead of issuing a second identical list request.
-      const list = await queryClient.fetchQuery({
-        queryKey: ['account', 'subaccounts', 'list', ownerAccountId],
-        queryFn: ({ signal: listSignal }) => client.getSubaccounts({
-          signal: listSignal,
-          accountId: ownerAccountId ?? undefined,
-        }),
-        staleTime: CLOUD_POLL_MS,
-      });
-      return Promise.all(
-        list.map(async (row) => {
-          const [summary, workersRes] = await Promise.all([
-            client.getSubaccountSummary(row.id, requestOptions),
-            client.getSubaccountWorkers(row.id, requestOptions),
-          ]);
-          return enrichSubaccount(row, summary, workersRes.workers);
-        }),
-      );
+      return loadSubaccountRows(queryClient, getUser(), ownerAccountId!, includeWorkers, signal);
     },
     enabled: !!session && enabled,
-    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
+    refetchInterval: () => msUntilNextTick(refreshIntervalMs),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,

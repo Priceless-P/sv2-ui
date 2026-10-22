@@ -1,11 +1,62 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { createUser } from '@/api/client';
 import { createWatcherClient, WatcherRequestError } from '@/api/watcherClient';
 import type { DmndClient } from '@/api/types';
+import { loadSubaccountRows, loadSubaccountWorkerGroups } from '../accountQueries';
 import { brokerMinersQueryOptions, clearBrokerQueries } from '../brokerQueries';
 import { refreshHashrateHistory } from '../incrementalHistory';
 import { watcherQueryPolicy } from '../watcherQueries';
+
+test('aggregate refresh reloads snapshots at the next polling boundary and reuses them within that boundary', async (t) => {
+  let now = Date.parse('2026-10-21T12:04:00Z');
+  t.mock.method(Date, 'now', () => now);
+  let summaryReads = 0;
+  const client = createUser({ fetchImpl: async (url) => {
+    const path = new URL(String(url)).pathname;
+    const body = path.endsWith('/sub_account')
+      ? [{ id: 'a', sub_account: 'A', token: 'a', fpps_token: null, hashrate: '999', bitcoin_addresses: {} }]
+      : { hashrate: { total_hashrate: ++summaryReads }, share_stats: { accepted: 1, rejected: 0 }, today_generated_btc: 0 };
+    return new Response(JSON.stringify(body));
+  } });
+  const cache = new QueryClient();
+  const signal = new AbortController().signal;
+  try {
+    await loadSubaccountRows(cache, client, 'owner', false, signal);
+    now += 30_000;
+    await loadSubaccountRows(cache, client, 'owner', false, signal);
+    assert.equal(summaryReads, 1, 'a second consumer reuses the current snapshot');
+    now = Date.parse('2026-10-21T12:05:01Z');
+    await loadSubaccountRows(cache, client, 'owner', false, signal);
+    assert.equal(summaryReads, 2, 'the next shared tick must not retain the previous snapshot');
+  } finally { cache.clear(); }
+});
+
+test('Subaccounts requests summaries without workers, then aggregate views reuse cached resources', async () => {
+  const calls: string[] = [];
+  const client = createUser({ fetchImpl: async (url) => {
+    const path = new URL(String(url)).pathname;
+    calls.push(path);
+    const body = path.endsWith('/sub_account')
+      ? ['a', 'b'].map((id) => ({ id, sub_account: id, token: id, fpps_token: null, hashrate: '0', bitcoin_addresses: {} }))
+      : path.endsWith('/summary') ? { hashrate: {}, share_stats: { accepted: 1, rejected: 0 }, today_generated_btc: 1 }
+        : { workers: [], next_cursor: null };
+    return new Response(JSON.stringify(body));
+  } });
+  const cache = new QueryClient();
+  const signal = new AbortController().signal;
+  try {
+    const rows = await loadSubaccountRows(cache, client, 'owner', false, signal);
+    assert.equal(rows.length, 2);
+    assert.equal(calls.length, 3, 'one list and two summaries');
+    assert.ok(calls.every((path) => !path.endsWith('/workers')));
+    await loadSubaccountRows(cache, client, 'owner', true, signal);
+    assert.equal(calls.length, 5, 'only the missing two rosters are loaded');
+    await loadSubaccountWorkerGroups(cache, client, 'owner', rows.map((row) => ({ id: row.id } as never)), signal);
+    assert.equal(calls.length, 5, 'Workers reuses both rosters without earnings or summary reads');
+  } finally { cache.clear(); }
+});
 
 test('broker identities cannot share rows and logout removes an in-flight response', async () => {
   const cache = new QueryClient();

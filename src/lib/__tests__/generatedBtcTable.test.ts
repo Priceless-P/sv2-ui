@@ -4,6 +4,7 @@ import test from 'node:test';
 import type { GeneratedBtcEntry } from '@/api/types';
 import {
   sumGenerated,
+  hasFppsActivity,
   sortGeneratedByDateDesc,
   formatGeneratedDate,
   entryDayMs,
@@ -36,14 +37,21 @@ test('sumGenerated adds only FPPS-generated BTC; 0 when empty', () => {
   assert.equal(sumGenerated([]), 0);
 });
 
+test('the FPPS view excludes PPLNS-only days while retaining FPPS work or earnings', () => {
+  assert.equal(hasFppsActivity(entry({ hashrate: 0, fpps_btc_generated: 0, pplns_hashrate: 100e12, pplns_btc_generated: 1, btc_generated: 1 })), false);
+  assert.equal(hasFppsActivity(entry({ hashrate: 0, fpps_btc_generated: 0, btc_generated: 0 })), false);
+  assert.equal(hasFppsActivity(entry({ hashrate: 100e12, fpps_btc_generated: 0 })), true);
+  assert.equal(hasFppsActivity(entry({ hashrate: 0, fpps_btc_generated: 0.001 })), true);
+});
+
 test('sortGeneratedByDateDesc orders newest entry_day first', () => {
   const out = sortGeneratedByDateDesc([entry({ entry_day: '2026-06-21' }), entry({ entry_day: '2026-07-08' })]);
   assert.deepEqual(out.map((e) => e.entry_day), ['2026-07-08', '2026-06-21']);
 });
 
-test('formatGeneratedDate renders "21 Jun, 2026" in UTC', () => {
-  assert.equal(formatGeneratedDate('2026-06-21'), '21 Jun, 2026');
-  assert.equal(formatGeneratedDate('2026-07-08'), '8 Jul, 2026');
+test('formatGeneratedDate renders the same long UTC date as PPLNS Projection', () => {
+  assert.equal(formatGeneratedDate('2026-06-21'), 'Sunday 21 June 2026');
+  assert.equal(formatGeneratedDate('2026-07-08'), 'Wednesday 8 July 2026');
 });
 
 test('entryDayMs is the UTC midnight ms of the day; NaN for an unparseable date', () => {
@@ -172,7 +180,7 @@ test('searchGeneratedBtc searches visible dates, hashrate and BTC amounts in sin
     entry({ entry_day: '2026-07-08', hashrate: 100e12, fpps_btc_generated: 0.0123 }),
     entry({ entry_day: '2026-06-21', hashrate: 50e12, fpps_btc_generated: 0.0045 }),
   ];
-  for (const query of ['2026-07-08', '8 Jul, 2026', '100.00 TH/s', '0.0123', '  JUL  ']) {
+  for (const query of ['2026-07-08', 'Wednesday 8 July 2026', '100.00 TH/s', '0.0123', '  JUL  ']) {
     assert.deepEqual(searchGeneratedBtc(rows, query), [rows[0]]);
   }
   assert.deepEqual(searchGeneratedBtc(rows, '0.0045 BTC'), [rows[1]]);

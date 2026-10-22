@@ -86,6 +86,15 @@ function summary(over: Partial<SubaccountSummary> = {}): SubaccountSummary {
   };
 }
 
+test('subaccount live totals use the same persisted snapshot as chart history, including zero', () => {
+  const snapshot = { account_id: '1', observed_at: '2026-10-21T12:00:00Z', pplns_hashrate: 10, fpps_hashrate: 20, total_hashrate: 30 };
+  const legacy = row({ hashrate: '900' });
+  const live = enrichSubaccount(legacy, summary({ hashrate: snapshot }), []);
+  assert.equal(live.hashrate, snapshot.total_hashrate);
+  assert.equal(live.hashrate, live.pplns + live.fpps);
+  assert.equal(enrichSubaccount(legacy, summary({ hashrate: { ...snapshot, total_hashrate: 0, pplns_hashrate: 0, fpps_hashrate: 0 } }), []).hashrate, 0);
+});
+
 test('enrichSubaccount combines the row with workers and the summary (rejection + earnings)', () => {
   const workers = [
     worker({ name: 'a', is_connected: true }),
@@ -93,7 +102,7 @@ test('enrichSubaccount combines the row with workers and the summary (rejection 
   ];
   const e = enrichSubaccount(
     row({ id: '7', sub_account: 'Farm', hashrate: '50' }),
-    summary({ share_stats: { ...STATS, accepted: 99, rejected: 1 }, today_generated_btc: 0.002 }),
+    summary({ hashrate: { account_id: '7', observed_at: null, pplns_hashrate: 50, fpps_hashrate: 0, total_hashrate: 50 }, share_stats: { ...STATS, accepted: 99, rejected: 1 }, today_generated_btc: 0.002 }),
     workers,
   );
   assert.deepEqual(
@@ -121,15 +130,29 @@ test('enrichSubaccount defaults rejection to null and earnings to 0 when the sum
   assert.equal(e.active, 0);
 });
 
-test('deriveSubaccountsPageStats sums active workers, hashrate, and earnings', () => {
+test('deriveSubaccountsPageStats sums hashrate and earnings without worker counts', () => {
   const stats = deriveSubaccountsPageStats([
     enriched({ active: 30, hashrate: 100, todayEarnings: 0.001 }),
     enriched({ active: 1, hashrate: 25, todayEarnings: 0.0004 }),
   ]);
   assert.equal(stats.total, 2);
-  assert.equal(stats.activeWorkers, 31);
   assert.equal(stats.combinedHashrate, 125);
   assert.ok(Math.abs(stats.todayEarnings - 0.0014) < 1e-9);
+});
+
+test('summary rejection rate weights subaccounts by submitted shares', () => {
+  const stats = deriveSubaccountsPageStats([
+    enriched({ accepted: 990, rejected: 10, rejection: 0.01 }),
+    enriched({ accepted: 0, rejected: 10, rejection: 1 }),
+    enriched({ accepted: 0, rejected: 0, rejection: null }),
+  ]);
+  assert.equal(stats.averageRejectionRate, 20 / 1010);
+});
+
+test('summary rejection rate distinguishes no shares from zero rejections', () => {
+  assert.equal(deriveSubaccountsPageStats([]).averageRejectionRate, null);
+  assert.equal(deriveSubaccountsPageStats([enriched()]).averageRejectionRate, null);
+  assert.equal(deriveSubaccountsPageStats([enriched({ accepted: 100 })]).averageRejectionRate, 0);
 });
 
 test('searchSubaccounts matches every displayed field; blank passes all', () => {
@@ -154,7 +177,7 @@ test('searchSubaccounts matches every displayed field; blank passes all', () => 
   assert.equal(searchSubaccounts(rows, 'fpps-secret').length, 1);
   assert.equal(searchSubaccounts(rows, '125.00 MH/s').length, 1);
   assert.equal(searchSubaccounts(rows, '1.2%').length, 1);
-  assert.equal(searchSubaccounts(rows, '0.4 BTC').length, 1);
+  assert.equal(searchSubaccounts(rows, '0.4 BTC').length, 0);
   assert.equal(searchSubaccounts(rows, '0.02 BTC').length, 1);
   assert.equal(searchSubaccounts(rows, '  ').length, 2);
 });
@@ -213,13 +236,13 @@ test('applySubaccountFilter: rejection buckets with inclusive 1%-3% edges; null 
 
 test('applySubaccountFilter: sort by hashrate and earnings, both directions', () => {
   const rows = [
-    enriched({ id: 'a', hashrate: 50, todayEarnings: 0.003 }),
-    enriched({ id: 'b', hashrate: 200, todayEarnings: 0.001 }),
+    enriched({ id: 'a', hashrate: 50, generatedBtc: 0.003, todayEarnings: 0.001 }),
+    enriched({ id: 'b', hashrate: 200, generatedBtc: 0.001, todayEarnings: 0.003 }),
   ];
   assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'hashrate_desc' })).map((s) => s.id), ['b', 'a']);
   assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'hashrate_asc' })).map((s) => s.id), ['a', 'b']);
-  assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'earnings_desc' })).map((s) => s.id), ['a', 'b']);
-  assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'earnings_asc' })).map((s) => s.id), ['b', 'a']);
+  assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'earnings_desc' })).map((s) => s.id), ['b', 'a']);
+  assert.deepEqual(applySubaccountFilter(rows, f({ sortBy: 'earnings_asc' })).map((s) => s.id), ['a', 'b']);
 });
 
 test('applySubaccountFilter: rejection and sorting combine', () => {
@@ -264,19 +287,18 @@ test('withGeneratedBtc ignores entries belonging to another account', () => {
   assert.equal(out[0].generatedBtc, 0.1);
 });
 
-test('subaccountsToCsv exports the columns the table shows, including generated BTC', () => {
+test('subaccountsToCsv exports today FPPS earnings instead of lifetime BTC', () => {
   const csv = subaccountsToCsv([
     enriched({ name: 'Alpha', active: 2, hashrate: 1000, rejection: 0.01, generatedBtc: 0.5, todayEarnings: 0.25 }),
   ]);
   const [header, first] = csv.split('\n');
-  assert.equal(header, 'Name,Active workers,Hashrate,Rejection rate,Generated BTC,Today\'s earnings (BTC)');
-  assert.equal(first, 'Alpha,2,1.00 KH/s,1.00%,0.5,0.25');
+  assert.equal(header, 'Name,Hashrate,Rejection rate,"Today FPPS earnings (BTC, UTC)"');
+  assert.equal(first, 'Alpha,1.00 KH/s,1.00%,0.25');
 });
 
-test('subaccountsToCsv writes an unknown generated-BTC total as --, formula-guarded', () => {
+test('subaccountsToCsv does not depend on lifetime history availability', () => {
   const csv = subaccountsToCsv([enriched({ name: 'Alpha', generatedBtc: null })]);
-  // The leading dash is quote-prefixed so a spreadsheet cannot read the cell as a formula.
-  assert.equal(csv.split('\n')[1].split(',')[4], "'--");
+  assert.equal(csv.split('\n')[1].split(',')[3], '0');
 });
 
 test('sumGeneratedBtc totals only FPPS from untagged entries and reports null when there are none', () => {

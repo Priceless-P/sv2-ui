@@ -119,6 +119,21 @@ test('deriveWorkersPageStats counts active and offline workers', () => {
   assert.equal(s.offline, 2);
 });
 
+test('worker summary combines both schemes for the fleet ten-minute hashrate', () => {
+  const stats = deriveWorkersPageStats([
+    worker({ hashrate: 2e12, fpps_hashrate: 3e12 }),
+    fppsWorker({ fpps_hashrate: 4e12 }),
+    worker({ hashrate: null, is_connected: false }),
+  ]);
+  assert.equal(stats.hashrate10m, 9e12);
+});
+
+test('worker summary distinguishes missing hashrate telemetry from a measured zero', () => {
+  assert.equal(deriveWorkersPageStats([]).hashrate10m, null);
+  assert.equal(deriveWorkersPageStats([worker({ hashrate: null })]).hashrate10m, null);
+  assert.equal(deriveWorkersPageStats([worker({ hashrate: 0 })]).hashrate10m, 0);
+});
+
 test('filterByTab splits on connection', () => {
   const roster = [worker({ is_connected: true }), worker({ is_connected: false, connected_at: hrsAgo(30) })];
   assert.equal(filterByTab(roster, 'all').length, 2);

@@ -1,8 +1,10 @@
+import { formatUtcDay } from './utcDate';
+import { csvCell } from './csvDownload';
+import type { Payout } from './payoutsTable';
 import type { GeneratedBtcEntry } from '@/api/types';
 import { BTC_DISPLAY_DP, formatHashrate } from '@/lib/utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** UTC-midnight ms of a moment (drops the time-of-day). */
 function utcMidnight(ms: number): number {
@@ -16,12 +18,12 @@ export function entryDayMs(entry: GeneratedBtcEntry): number {
   return Number.isNaN(ms) ? NaN : utcMidnight(ms);
 }
 
-/** Format a `YYYY-MM-DD` day as "21 Jun, 2026" (UTC); passes the raw string through if unparseable. */
-export function formatGeneratedDate(entryDay: string): string {
-  const ms = Date.parse(entryDay);
-  if (Number.isNaN(ms)) return entryDay;
-  const d = new Date(ms);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${d.getUTCFullYear()}`;
+/** Same long UTC date used by PPLNS Projection. */
+export const formatGeneratedDate = formatUtcDay;
+
+/** The FPPS view excludes days belonging only to PPLNS, without dropping earned FPPS BTC. */
+export function hasFppsActivity(entry: GeneratedBtcEntry): boolean {
+  return entry.hashrate > 0 || entry.fpps_btc_generated > 0;
 }
 
 /** Sum of generated FPPS BTC across the entries; 0 when empty. */
@@ -107,20 +109,14 @@ export function formatBtc(n: number): string {
 
 const CSV_HEADER = 'entry_day,hashrate,fpps_btc_generated';
 
-function csvCell(value: string): string {
-  // Guard against spreadsheet formula injection, then quote when the value holds a
-  // comma, quote, or newline (same rule as the other CSVs; kept local).
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
-}
 
 /**
  * A stable identity for one generated-BTC row, used as its React key.
  * In aggregated mode the same calendar
  * day appears once per account, so the day alone is not unique.
  */
-export function generatedBtcRowId(e: { entry_day: string; account?: string }): string {
-  return `${e.entry_day}-${e.account ?? ''}`;
+export function generatedBtcRowId(e: { entry_day: string; account?: string; accountId?: string }): string {
+  return `${e.entry_day}-${e.accountId ?? e.account ?? ''}`;
 }
 
 export function generatedBtcToCsv(entries: GeneratedBtcEntry[]): string {
@@ -143,7 +139,7 @@ export function dedupeGeneratedBtc(entries: GeneratedBtcEntry[]): GeneratedBtcEn
   const seen = new Set<string>();
   const out: GeneratedBtcEntry[] = [];
   for (const e of entries) {
-    const key = `${e.entry_day} ${e.account ?? ''}`;
+    const key = generatedBtcRowId(e);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(e);
@@ -168,4 +164,50 @@ export function searchGeneratedBtc(entries: GeneratedBtcEntry[], query: string):
     formatHashrate(e.hashrate),
     `${formatBtc(e.fpps_btc_generated)} BTC`,
   ].some((value) => value.toLowerCase().includes(q)));
+}
+
+/** Sum accounts within each UTC day before computing fleet averages and highest-day earnings. */
+export function combinedDailyEarnings(entries: GeneratedBtcEntry[]): GeneratedBtcEntry[] {
+  const days = new Map<string, GeneratedBtcEntry>();
+  for (const entry of entries) {
+    const previous = days.get(entry.entry_day);
+    days.set(entry.entry_day, {
+      entry_day: entry.entry_day,
+      hashrate: (previous?.hashrate ?? 0) + entry.hashrate,
+      pplns_hashrate: (previous?.pplns_hashrate ?? 0) + entry.pplns_hashrate,
+      fpps_btc_generated: (previous?.fpps_btc_generated ?? 0) + entry.fpps_btc_generated,
+      pplns_btc_generated: (previous?.pplns_btc_generated ?? 0) + entry.pplns_btc_generated,
+      btc_generated: (previous?.btc_generated ?? 0) + entry.btc_generated,
+    });
+  }
+  return [...days.values()];
+}
+
+export const MINIMUM_PAYOUT_SATS = 500_000;
+
+/** Port of Types.Payout.unpaidBalance from user-dashboard's show-minimum-payout-progress branch. */
+export function payoutProgress(entries: GeneratedBtcEntry[], payouts: Payout[], nowMs = Date.now()) {
+  const today = new Date(nowMs).toISOString().slice(0, 10);
+  const start = new Date(nowMs - 29 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const ledger = new Map<string, number>();
+  const add = (day: string, sats: number) => ledger.set(day, (ledger.get(day) ?? 0) + sats);
+  for (const entry of entries) {
+    if (entry.entry_day >= start && entry.entry_day <= today) {
+      add(entry.entry_day, Math.round(entry.fpps_btc_generated * 1e8));
+    }
+  }
+  for (const payout of payouts) {
+    if (payout.mode === 'fpps') {
+      add(new Date(payout.date * 1000).toISOString().slice(0, 10), -payout.amountSats);
+    }
+  }
+  let balanceSats = 0;
+  for (const day of [...ledger.keys()].sort()) {
+    balanceSats = Math.max(0, balanceSats + ledger.get(day)!);
+  }
+  return {
+    balanceSats,
+    remainingSats: Math.max(0, MINIMUM_PAYOUT_SATS - balanceSats),
+    percent: Math.min(100, balanceSats / MINIMUM_PAYOUT_SATS * 100),
+  };
 }

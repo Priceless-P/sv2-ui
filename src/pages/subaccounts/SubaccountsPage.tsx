@@ -1,8 +1,8 @@
+import { downloadCsv } from '@/lib/csvDownload';
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { LiExport } from 'solar-icon-react/li';
 import { useSubaccounts, useSubaccountList, usePermissions } from '@/hooks/useSubaccounts';
-import { useAggregatedGeneratedBtc } from '@/hooks/useGeneratedBtc';
 import { useAccountSwitcher } from '@/hooks/useAccountSwitcher';
 import { useToastControls } from '@/components/ui/toast';
 import {
@@ -11,7 +11,6 @@ import {
   applySubaccountFilter,
   isSubaccountFilterActive,
   subaccountsToCsv,
-  withGeneratedBtc,
   EMPTY_SUBACCOUNT_FILTER,
   type EnrichedSubaccount,
   type SubaccountFilter,
@@ -27,34 +26,17 @@ import { CreateSubaccountModal } from '@/components/subaccounts/CreateSubaccount
 
 const PAGE_SIZE = 10;
 
-function downloadCsv(content: string, filename: string): void {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 /** The Subaccounts page: stat cards + table with search, sort, pagination, CSV, and create. */
 export function SubaccountsPage() {
-  const { data, isLoading, isError, refetch } = useSubaccounts();
+  const { data, isLoading, isError, refetch } = useSubaccounts(true, false, 15 * 60 * 1000);
   const { data: permissions } = usePermissions();
-  const {
-    data: generatedEntries,
-    isLoading: generatedLoading,
-    isError: generatedError,
-    refetch: refetchGenerated,
-  } = useAggregatedGeneratedBtc();
   const { data: rawSubaccounts, refetch: refetchList } = useSubaccountList();
   const { switchToSubaccount, switching } = useAccountSwitcher();
   const { toast, dismiss } = useToastControls();
   const subaccounts = useMemo(
-    () => withGeneratedBtc(data ?? [], generatedEntries ?? []),
-    [data, generatedEntries],
+    () => data ?? [],
+    [data],
   );
 
   const [query, setQuery] = useState('');
@@ -129,8 +111,8 @@ export function SubaccountsPage() {
   const canCreate = permissions?.create_sub_account ?? false;
   // Header actions only make sense once there's a populated table to act on; the
   // empty and error states carry their own primary button instead.
-  const loading = isLoading || generatedLoading;
-  const failed = isError || generatedError;
+  const loading = isLoading;
+  const failed = isError;
   const hasData = !loading && !failed && subaccounts.length > 0;
 
   // Any change to search or filter can shrink the result set, so jump back to page 1
@@ -226,7 +208,7 @@ export function SubaccountsPage() {
           <p className="mt-1 text-sm text-body-alt">Something went wrong fetching your subaccounts.</p>
           <button
             type="button"
-            onClick={() => void Promise.all([refetch(), refetchGenerated()])}
+            onClick={() => void refetch()}
             className="mt-4 inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             Try again
