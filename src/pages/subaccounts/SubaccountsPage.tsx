@@ -1,7 +1,7 @@
 import { downloadCsv } from '@/lib/utils';
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
-import { SelectionActions } from '@/components/ui/SelectionActions';
+import { SelectionActions } from '@/components/ui/TableToolbar';
 import { LiExport } from 'solar-icon-react/li';
 import { useSubaccounts, useSubaccountList, usePermissions } from '@/hooks/useSubaccounts';
 import { useAccountSwitcher } from '@/hooks/useAccountSwitcher';

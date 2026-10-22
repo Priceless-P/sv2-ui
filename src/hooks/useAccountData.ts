@@ -228,3 +228,48 @@ export function workerPresenceQueryOptions(cache: QueryClient, client: DmndClien
     refetchOnWindowFocus: false,
   };
 }
+
+export const BLOG_URL = 'https://blog.dmnd.work/';
+
+// Public, read-only Ghost Content API key published by the blog's own theme.
+// This is not a Ghost Admin API key or a dashboard credential.
+const CONTENT_API = 'https://dmnd.ghost.io/ghost/api/content/posts/';
+const CONTENT_KEY = '123895ea550e80b78a314ed590';
+
+export interface LatestBlogPost {
+  title: string;
+  url: string;
+  image: string | null;
+}
+
+/** One attempt per login, shared by login prefetch and Help. */
+export function latestBlogQueryOptions(accountId: string, loginExpiresAt: number) {
+  return {
+    queryKey: ['blog', 'latest-post', accountId, loginExpiresAt],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchLatestBlogPost(signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnMount: false,
+    retryOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  } as const;
+}
+
+export async function fetchLatestBlogPost(signal?: AbortSignal, fetchImpl = fetch): Promise<LatestBlogPost | null> {
+  const url = new URL(CONTENT_API);
+  url.search = new URLSearchParams({
+    key: CONTENT_KEY, limit: '1', order: 'published_at desc', fields: 'title,url,feature_image',
+  }).toString();
+  const response = await fetchImpl(url, { signal, credentials: 'omit' });
+  if (!response.ok) throw new Error('Unable to load the latest blog post.');
+  const data = await response.json();
+  const post = data.posts?.[0];
+  if (!post) return null;
+  if (typeof post.title !== 'string' || typeof post.url !== 'string' || new URL(post.url).origin !== new URL(BLOG_URL).origin) {
+    throw new Error('Invalid blog post.');
+  }
+  const image = typeof post.feature_image === 'string' && post.feature_image.startsWith('https://') ? post.feature_image : null;
+  return { title: post.title, url: post.url, image };
+}

@@ -20,8 +20,8 @@ import {
 } from '@/components/generated-btc/GeneratedBtcFilter';
 import { PplnsProjectionStatCards } from './PplnsProjectionStatCards';
 import { CellCheckbox } from '@/components/ui/CellCheckbox';
-import { SelectionActions } from '@/components/ui/SelectionActions';
-import { downloadCsv } from '@/lib/csvDownload';
+import { SelectionActions } from '@/components/ui/TableToolbar';
+import { downloadCsv } from '@/lib/utils';
 
 function StateMessage({ title, body }: { title: string; body: string }) {
   return (

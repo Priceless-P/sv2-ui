@@ -9,7 +9,6 @@ import { SubaccountsPage } from '@/pages/subaccounts/SubaccountsPage';
 import { GeneratedBtcPage } from '@/pages/generated-btc/GeneratedBtcPage';
 import { PayoutsPage } from '@/pages/payouts/PayoutsPage';
 import { SettingsPage } from '@/pages/settings/SettingsPage';
-import { HelpPage } from '@/pages/help/HelpPage';
 import { BuildYourBlockPage } from '@/pages/build-your-block/BuildYourBlockPage';
 import { JobDeclarationPage } from '@/pages/build-your-block/JobDeclarationPage';
 import { PrioritizeTransactionsPage } from '@/pages/build-your-block/PrioritizeTransactionsPage';
@@ -77,7 +76,7 @@ function AppRoutes() {
       </Route>
       <Route path="/help">
         <DashboardShell>
-          <HelpPage />
+          <SettingsPage />
         </DashboardShell>
       </Route>
       <Route path="/build-your-block">

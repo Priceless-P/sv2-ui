@@ -8,7 +8,7 @@ import { useAccountScope } from '@/hooks/useAccountScope';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AggregatedBanner } from './AggregatedBanner';
-import { ConnectionAccountProvider } from '@/hooks/ConnectionAccountProvider';
+import { ConnectionAccountProvider } from '@/components/workers/ConnectionDetails';
 import { useAuth } from '@/auth';
 
 // Persist the desktop sidebar's collapsed state so it survives reloads. Wrapped

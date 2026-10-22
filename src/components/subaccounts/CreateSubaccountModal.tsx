@@ -268,7 +268,7 @@ export function CreateSubaccountModal({
                   <div className="flex flex-col gap-2">
                     <p className="text-base font-bold leading-6 text-foreground">Double check address</p>
                     <p className="text-sm leading-5 text-foreground">
-                      Bitcoin payments sent to the wrong address cannot be recovered by anyone, including DMND Pool.
+                      Payments sent to the wrong address cannot be recovered by anyone, including DMND Pool.
                     </p>
                   </div>
                 </div>

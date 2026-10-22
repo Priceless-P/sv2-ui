@@ -1,11 +1,13 @@
 /**
- * Two-letter avatar initials derived from an account email. Uses the part
- * before the @, splitting on common separators so "ada.lovelace@x.io" -> "AL"
- * and "satoshi@x.io" -> "SA". Falls back to "?" when there's nothing to use.
+ * Two-letter initials from a company/account name, with email support for broker callers.
  */
-export function accountInitials(email: string | undefined): string {
-  const local = (email ?? '').split('@')[0] ?? '';
-  const parts = local.split(/[.\-_]+/).filter(Boolean);
+export function accountInitials(name: string | undefined): string {
+  const local = (name ?? '').split('@')[0]?.trim() ?? '';
+  const parts = local.split(/[\s.\-_]+/).filter(Boolean);
   const letters = parts.length >= 2 ? parts[0][0] + parts[1][0] : local.slice(0, 2);
   return (letters || '?').toUpperCase();
+}
+
+export function mainAccountName(companyName: string | null | undefined): string {
+  return companyName?.trim() || 'Main account';
 }

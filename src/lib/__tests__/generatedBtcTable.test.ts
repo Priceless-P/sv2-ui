@@ -1,6 +1,6 @@
 import type { Payout } from '@/lib/payoutsTable';
 import { payoutProgress } from '@/lib/generatedBtcTable';
-import { PayoutProgressCard } from '@/components/generated-btc/PayoutProgressCard';
+import { PayoutProgressCard } from '@/pages/generated-btc/GeneratedBtcPage';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import assert from 'node:assert/strict';

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { GripVertical } from 'lucide-react';
 import { LiTuning4, LiRouting2 } from 'solar-icon-react/li';
 import { DashboardHomeView } from '@/components/home/DashboardHomeView';
@@ -154,6 +154,32 @@ export function DashboardHome() {
   // state (which would still be null).
   const dragRef = useRef<WidgetId | null>(null);
   const overRef = useRef<WidgetId | null>(null);
+  const customizationRef = useRef<HTMLDivElement>(null);
+  const leaveCustomization = useCallback(() => {
+    setCustomizing(false);
+    setPanelOpen(false);
+    dragRef.current = null;
+    overRef.current = null;
+    setDragId(null);
+    setOverId(null);
+  }, []);
+
+  useEffect(() => {
+    if (!customizing) return;
+    const onClick = (event: MouseEvent) => {
+      if (customizationRef.current?.contains(event.target as Node) || dragRef.current) return;
+      leaveCustomization();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') leaveCustomization();
+    };
+    document.addEventListener('click', onClick);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('click', onClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [customizing, leaveCustomization]);
 
   const clearDrag = () => {
     dragRef.current = null;
@@ -190,7 +216,6 @@ export function DashboardHome() {
   };
 
   // The widgets to render, in the saved order, hidden ones removed.
-
   // Walk the visible widgets in order. Hashrate and Connect share a 3:2 row ONLY when
   // they end up adjacent (in either order); if the user reorders a widget between
   // them, each falls back to full width. Everything else renders full width in place.
@@ -233,22 +258,6 @@ export function DashboardHome() {
 
   return (
     <>
-      {customizing && (
-        <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
-          <button
-            type="button"
-            onClick={() => {
-              setCustomizing(false);
-              setPanelOpen(false);
-            }}
-            className="rounded-full bg-[hsl(var(--btn))] px-5 py-2 text-sm font-medium text-[hsl(var(--btn-foreground))] shadow-lg"
-          >
-            Leave customization mode
-          </button>
-        </div>
-      )}
-
-
       <DashboardHomeView actions={
         <div className="relative flex shrink-0 items-center gap-2">
           {!aggregated && (
@@ -257,12 +266,16 @@ export function DashboardHome() {
               Take tour
             </button>
           )}
+          <div ref={customizationRef} className="relative">
           <button
             type="button"
             data-tour="customize"
             onClick={() => {
-              setCustomizing(true);
-              setPanelOpen((o) => !o || !customizing);
+              if (customizing) leaveCustomization();
+              else {
+                setCustomizing(true);
+                setPanelOpen(true);
+              }
             }}
             aria-expanded={panelOpen}
             className={HEADER_BUTTON}
@@ -270,7 +283,8 @@ export function DashboardHome() {
             <LiTuning4 className="h-3.5 w-3.5" />
             Customize dashboard
           </button>
-          {panelOpen && <CustomizeDashboardPanel mode={mode} layout={layout} onToggle={toggle} onReset={reset} />}
+          {panelOpen && <CustomizeDashboardPanel mode={mode} layout={layout} onToggle={toggle} onReset={reset} onClose={leaveCustomization} />}
+          </div>
         </div>
 
       } notice={<KybNotice />} footer={<><GettingStartedCard />{tourOpen && <ProductTour onClose={() => setTourOpen(false)} />}</>}>

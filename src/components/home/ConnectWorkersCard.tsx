@@ -2,7 +2,7 @@ import { LiAltArrowRight } from 'solar-icon-react/li';
 import { useState } from 'react';
 import { ConnectionDetails } from '@/components/workers/ConnectionDetails';
 import { ConnectWorkersDrawer } from '@/components/workers/ConnectWorkersDrawer';
-import { useConnectionAccount } from '@/hooks/ConnectionAccountProvider';
+import { useConnectionAccount } from '@/components/workers/ConnectionDetails';
 
 /** The credentials a miner points hardware at: pool URL, username, and the two
  * scheme passwords (PPLNS = account token, FPPS = fpps token). */

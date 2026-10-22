@@ -5,8 +5,8 @@ import type { WatcherLink } from '@/api/types';
 import { useWatcherLinks, useCreateWatcherLink, useRevokeWatcherLink } from '@/hooks/useWatcherLinks';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { searchWatcherLinks, applyWatcherFilter, watcherLinksToCsv } from '@/lib/watcherLinks';
-import { downloadCsv } from '@/lib/csvDownload';
-import { SelectionActions } from '@/components/ui/SelectionActions';
+import { downloadCsv } from '@/lib/utils';
+import { SelectionActions } from '@/components/ui/TableToolbar';
 import {
   EMPTY_WATCHER_DRAFT,
   isWatcherDraftActive,
@@ -21,7 +21,7 @@ import { CreateWatcherLinkPanel } from '@/components/watcher-links/CreateWatcher
 import { WatcherLinkDetailsPanel } from '@/components/watcher-links/WatcherLinkDetailsPanel';
 import { AggregateWatcherLinksPanel } from '@/components/watcher-links/AggregateWatcherLinksPanel';
 import { WorkersPagination } from '@/components/workers/WorkersPagination';
-import { WatcherPermissionsGuide } from '@/components/watcher-links/WatcherPermissionsGuide';
+import { ALL_WATCHER_SCOPES, SCOPE_DESCRIPTIONS, scopeLabel } from '@/lib/watcherLinks';
 
 const PAGE_SIZE = 10;
 
@@ -240,5 +240,22 @@ export function WatcherLinksPage() {
         />
       )}
     </div>
+  );
+}
+
+export function WatcherPermissionsGuide() {
+  return (
+    <section aria-labelledby="watcher-permissions-heading" className="rounded-xl border border-border bg-card p-4 lg:p-5">
+      <h3 id="watcher-permissions-heading" className="text-sm font-semibold text-foreground">Permissions guide</h3>
+      <p className="mt-1 text-sm leading-5 text-body-alt">Watcher links provide read-only access to the permissions selected when they are created.</p>
+      <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {ALL_WATCHER_SCOPES.map((scope) => (
+          <div key={scope}>
+            <dt className="text-sm font-medium text-foreground">{scopeLabel(scope)}</dt>
+            <dd className="mt-1 text-sm leading-5 text-body-alt">{SCOPE_DESCRIPTIONS[scope]}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

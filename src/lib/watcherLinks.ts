@@ -1,6 +1,6 @@
 import type { Subaccount, SubaccountFees, WatcherLink, WatcherScope } from '@/api/types';
 import { truncateMiddle } from '@/lib/payoutsTable';
-import { csvCell } from './csvDownload';
+import { csvCell } from './utils';
 
 /** Export link metadata without writing access tokens or token-bearing URLs into a report. */
 export function watcherLinksToCsv(links: WatcherLink[], sessionAccountId: string | null, subaccounts: Subaccount[]): string {

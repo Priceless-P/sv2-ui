@@ -24,7 +24,7 @@ import { PplnsProjectionPanel } from '@/components/pplns-projection/PplnsProject
 import { DashboardFrame } from '@/components/dashboard/DashboardShell';
 import { SidebarView, SidebarNavItem, SidebarNavigation, AccountIdentityRow } from '@/components/dashboard/Sidebar';
 import { TopBarView } from '@/components/dashboard/TopBar';
-import { NAV_GROUPS, titleForPath } from '@/components/dashboard/nav';
+import { NAV_GROUPS } from '@/components/dashboard/nav';
 import { DashboardHomeView } from '@/components/home/DashboardHomeView';
 import { LiveHashrateCardView } from '@/components/home/LiveHashrateCard';
 import { MiningPerformanceChartView } from '@/components/home/MiningPerformanceChart';
@@ -185,7 +185,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
           />
         </SidebarView>
       )}
-      topBar={(onMenuClick) => <TopBarView title={titleForPath(activePath)} subtitle={accountIdentity?.kind === 'subaccount' ? name : undefined} onMenuClick={onMenuClick} actions={
+      topBar={(onMenuClick) => <TopBarView subtitle={accountIdentity?.kind === 'subaccount' ? name : undefined} onMenuClick={onMenuClick} actions={
         <span className="hidden items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs text-body-alt sm:inline-flex"><BdEye className="h-4 w-4 text-warning" />Read-only watcher</span>
       } />}
     >

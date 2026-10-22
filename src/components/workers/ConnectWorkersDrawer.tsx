@@ -1,13 +1,13 @@
 import * as Popover from '@radix-ui/react-popover';
 import { Copy, Download, ChevronDown } from 'lucide-react';
-import { CONNECTION_SAFETY_WARNING, connectionDetailsToText, downloadConnectionDetails } from '@/lib/connectionAccounts';
+import { CONNECTION_SAFETY_WARNING, connectionDetailsToText, downloadConnectionDetails } from '@/components/workers/ConnectionDetails';
 import { useToast } from '@/components/ui/toast';
 
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { LiCopy, LiCheckCircle, LiCloseCircle, LiShieldWarning, LiQuestionCircle } from 'solar-icon-react/li';
 import { overlayContainer } from '@/lib/utils';
-import { useConnectionAccount } from '@/hooks/ConnectionAccountProvider';
+import { useConnectionAccount } from '@/components/workers/ConnectionDetails';
 import { ConnectionAccountControl } from './ConnectionDetails';
 import { POOL_URL, POOL_USERNAME_HINT } from '@/lib/poolConnection';
 

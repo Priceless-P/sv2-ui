@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import { LiAltArrowDown, LiRoundedMagnifer } from 'solar-icon-react/li';
 import { cn, overlayContainer } from '@/lib/utils';
-import { useAuth } from '@/auth';
 import { useAccountSwitcher } from '@/hooks/useAccountSwitcher';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { subaccountName } from '@/lib/subaccountsTable';
@@ -49,7 +48,7 @@ function AccountRow({
       disabled={disabled}
       className="flex w-full items-center gap-1 rounded-lg px-2 py-1 text-left transition-colors hover:bg-muted disabled:opacity-60"
     >
-      <Avatar label={name.slice(0, 1).toUpperCase()} color={color} />
+      <Avatar label={subtitle === 'Subaccount' ? accountInitials(name) : 'M'} color={color} />
       <span className="min-w-0">
         <span className="block truncate text-sm text-foreground">{name}</span>
         {subtitle && <span className="block text-xs text-body-alt">{subtitle}</span>}
@@ -64,7 +63,6 @@ function AccountRow({
  * main account, which is how a miner gets back.
  */
 export function AccountSwitcher({ collapsed = false }: { collapsed?: boolean }) {
-  const { session } = useAuth();
   const { data: subs } = useSubaccountList();
   const { viewingAccountId, switching, error, switchToSubaccount, switchToMain } = useAccountSwitcher();
   const [open, setOpen] = useState(false);
@@ -117,7 +115,7 @@ export function AccountSwitcher({ collapsed = false }: { collapsed?: boolean }) 
           )}
         >
           <Avatar
-            label={current ? triggerName.slice(0, 1).toUpperCase() : accountInitials(session?.email).slice(0, 1)}
+            label={current ? accountInitials(triggerName) : 'M'}
             color={triggerColor}
           />
           {!collapsed && (

@@ -1,27 +1,32 @@
-import { useState } from 'react';
+import { Link, useLocation, useSearch } from 'wouter';
 import { cn } from '@/lib/utils';
 import { AccountTab } from '@/components/settings/AccountTab';
 import { SecurityTab } from '@/components/settings/SecurityTab';
 import { PreferencesTab } from '@/components/settings/PreferencesTab';
-import { AboutTab } from '@/components/settings/AboutTab';
+import { HelpPage } from '@/pages/help/HelpPage';
 
-type SettingsTab = 'account' | 'security' | 'preferences' | 'about';
+type SettingsTab = 'account' | 'security' | 'preferences' | 'help';
 
 const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'account', label: 'Account' },
   { id: 'security', label: 'Security' },
   { id: 'preferences', label: 'Preferences' },
-  { id: 'about', label: 'About' },
+  { id: 'help', label: 'Help' },
 ];
 
 /**
  * The account Settings page: a tabbed shell over Account, Security, Preferences and
- * About. The tab rail is a vertical left column on desktop and a horizontal scroller
+ * Help. All sections share the Settings layout. The tab rail is a vertical left
+ * column on desktop and a horizontal scroller
  * on mobile. Each tab is a self-contained section so its data and mutations stay
  * isolated from the others.
  */
 export function SettingsPage() {
-  const [tab, setTab] = useState<SettingsTab>('account');
+  const [location] = useLocation();
+  const search = useSearch();
+  const requestedTab = new URLSearchParams(search).get('tab');
+  const tab: SettingsTab = location === '/help' ? 'help'
+    : requestedTab === 'security' || requestedTab === 'preferences' ? requestedTab : 'account';
 
   return (
     <div className="space-y-4">
@@ -36,29 +41,32 @@ export function SettingsPage() {
           aria-label="Settings sections"
           className="flex h-9 gap-2 rounded-[8px] bg-muted p-0.5 sm:h-auto sm:w-[117px] sm:shrink-0 sm:flex-col sm:bg-transparent sm:p-0"
         >
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              aria-current={tab === t.id ? 'page' : undefined}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                'h-8 flex-1 whitespace-nowrap rounded-[8px] px-3 py-1.5 text-center text-sm leading-5 transition-colors sm:flex-none sm:text-left',
-                tab === t.id
-                  ? 'bg-background font-medium text-foreground shadow-[0_20px_30px_-5px_rgba(0,0,0,0.05),0_8px_20px_-6px_rgba(0,0,0,0.05)] sm:bg-muted sm:shadow-none'
-                  : 'text-body-alt hover:text-foreground',
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map((t) => {
+            const className = cn(
+              'h-8 flex-1 whitespace-nowrap rounded-[8px] px-3 py-1.5 text-center text-sm leading-5 transition-colors sm:flex-none sm:text-left',
+              tab === t.id
+                ? 'bg-background font-medium text-foreground shadow-[0_20px_30px_-5px_rgba(0,0,0,0.05),0_8px_20px_-6px_rgba(0,0,0,0.05)] sm:bg-muted sm:shadow-none'
+                : 'text-body-alt hover:text-foreground',
+            );
+            const href = t.id === 'help' ? '/help' : t.id === 'account' ? '/account' : `/account?tab=${t.id}`;
+            return (
+              <Link
+                key={t.id}
+                href={href}
+                aria-current={tab === t.id ? 'page' : undefined}
+                className={className}
+              >
+                {t.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <section className="min-w-0 flex-1">
           {tab === 'account' && <AccountTab />}
           {tab === 'security' && <SecurityTab />}
           {tab === 'preferences' && <PreferencesTab />}
-          {tab === 'about' && <AboutTab />}
+          {tab === 'help' && <HelpPage />}
         </section>
       </div>
     </div>
