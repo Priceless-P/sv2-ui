@@ -51,6 +51,7 @@ export interface DmndSession {
   company_name: string | null;
   company_primary_location: string | null;
   kyb_status: 'NotStarted' | 'InReview' | 'Approved' | 'Rejected';
+  /** Null means 2FA is enabled; a string is the pending enrollment secret. */
   two_factor_secret: string | null;
   bitcoin_addresses: Record<string, boolean>;
   language?: string;
@@ -276,6 +277,7 @@ export interface DmndClient {
   /** Validates the session cookie (used on app startup to restore a session). */
   checkAuth(req?: RequestOptions): Promise<DmndSession>;
   forgotPassword(email: string, req?: RequestOptions): Promise<void>;
+  updatePassword(currentPassword: string, newPassword: string, twoFaCode?: string, req?: RequestOptions): Promise<void>;
   resetPassword(
     email: string,
     code: string,

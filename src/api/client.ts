@@ -239,7 +239,10 @@ async function request<T>(
         );
         const rejectedSession =
           invalidSession ||
-          (response.status === 401 && !(spec.stepUp && isAuthenticatorCodeError(error)));
+          (response.status === 401 && !(spec.stepUp && isAuthenticatorCodeError(error)) &&
+            // This endpoint also uses 401 for a wrong current password. The
+            // authenticated session is still valid and the form must stay open.
+            !(spec.path === '/api/user/update_password' && serverMessage === 'Invalid email or password'));
         if (rejectedSession && !spec.suppressAuthRejection && !req.suppressAuthRejection && !spec.omitAccountId && requestAccountId) {
           reportAuthRejection({ accountId: requestAccountId });
         }
@@ -400,6 +403,12 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
     },
     forgotPassword(email, req) {
       return request<void>({ method: 'POST', path: '/api/forgot_password', body: { email } }, opts, req);
+    },
+    updatePassword(currentPassword, newPassword, twoFaCode, req) {
+      return request<void>({
+        method: 'PUT', path: '/api/user/update_password', maxAttempts: 1, stepUp: true,
+        body: { current_password: currentPassword, new_password: newPassword, ...(twoFaCode ? { two_fa_token: twoFaCode } : {}) },
+      }, opts, req);
     },
     resetPassword(email, code, twoFaCode, newPassword, req) {
       // Recovery fields: `code` comes from the email link, the

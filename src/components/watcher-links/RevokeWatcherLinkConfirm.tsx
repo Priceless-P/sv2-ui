@@ -3,6 +3,8 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { useState } from 'react';
 import { LiCloseCircle, LiShieldWarning } from 'solar-icon-react/li';
 import { BdShieldWarning } from 'solar-icon-react/bd';
+import { useAccountProfile } from '@/hooks/useAccountData';
+import { isAuthenticatorCodeError } from '@/api';
 
 /**
  * The revoke confirmation. Revoking cannot be undone, so it is a deliberate second
@@ -20,14 +22,19 @@ export function RevokeWatcherLinkConfirm({
   const [totpToken, setTotpToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const profile = useAccountProfile();
+  const [challenged, setChallenged] = useState(false);
+  const twoFaEnabled = challenged || profile.data?.two_factor_secret === null;
+  const canConfirm = profile.isSuccess && !busy && (!twoFaEnabled || totpToken.length === 6);
 
   const confirm = async () => {
-    if (busy) return;
+    if (!canConfirm) return;
     setBusy(true);
     setError(null);
     try {
-      await onConfirm(totpToken);
+      await onConfirm(twoFaEnabled ? totpToken : undefined);
     } catch (e) {
+      if (isAuthenticatorCodeError(e)) setChallenged(true);
       setError(authErrorMessage(e, 'Enter the current 6-digit authenticator code to revoke this link.'));
       setBusy(false);
     }
@@ -63,10 +70,12 @@ export function RevokeWatcherLinkConfirm({
             <span className="text-sm text-body-alt">This action cannot be undone.</span>
           </div>
 
-          <div className="mt-4 space-y-2 text-left">
-            <p className="text-sm text-body-alt">Authenticator code (if required for your session)</p>
+          {twoFaEnabled && <div className="mt-4 space-y-2 text-left">
+            <p className="text-sm text-body-alt">Authenticator code</p>
             <OtpField value={totpToken} onChange={setTotpToken} disabled={busy} ariaLabel="Current authenticator code" />
-          </div>
+          </div>}
+          {profile.isLoading && <p className="mt-3 text-sm text-body-alt">Checking 2FA status...</p>}
+          {profile.isError && <p className="mt-3 text-sm text-destructive">Unable to check 2FA status. <button type="button" className="underline" onClick={() => void profile.refetch()}>Retry</button></p>}
           {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
           <div className="mt-6 flex w-full items-center gap-3">
@@ -79,7 +88,7 @@ export function RevokeWatcherLinkConfirm({
             </button>
             <button
               type="button"
-              disabled={busy || (totpToken.length > 0 && totpToken.length !== 6)}
+              disabled={!canConfirm}
               onClick={() => void confirm()}
               className="h-11 flex-[2] rounded-[32px] bg-destructive-strong px-6 text-base leading-6 text-destructive-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >

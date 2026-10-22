@@ -8,6 +8,10 @@ import { isAuthenticatorCodeError } from '@/api';
 import { useToast } from '@/components/ui/toast';
 import { getUser } from '@/api';
 import { getBitcoinAddressError } from '@/lib/utils';
+import { useAccountProfile } from '@/hooks/useAccountData';
+import { Link } from 'wouter';
+import { useActiveAccountId } from '@/hooks/useActiveAccountId';
+import { useAccountScope } from '@/hooks/useAccountScope';
 
 type Step = 'address' | 'code';
 
@@ -25,6 +29,10 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const profile = useAccountProfile();
+  const accountId = useActiveAccountId();
+  const { canEditBitcoinAddress } = useAccountScope();
+  const twoFaEnabled = profile.data?.two_factor_secret === null;
 
   const addressError = address ? getBitcoinAddressError(address, 'mainnet') : null;
   const addressValid = !!address && !addressError;
@@ -39,10 +47,10 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
   };
 
   const save = async () => {
-    if (code.length !== 6 || submitting || !addressValid) return;
+    if (!accountId || !canEditBitcoinAddress || !profile.isSuccess || !twoFaEnabled || code.length !== 6 || submitting || !addressValid) return;
     setSubmitting(true);
     try {
-      await getUser().setBitcoinAddress(address, code);
+      await getUser().setBitcoinAddress(address, code, { accountId });
       toast({ type: 'success', message: 'Bitcoin address saved' });
       onSaved();
       onClose();
@@ -84,7 +92,10 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
         </div>
 
         <div className="flex flex-col gap-5 px-6 pb-6">
-          {step === 'address' ? (
+          {profile.isLoading && <p className="text-sm text-body-alt">Checking 2FA status...</p>}
+          {profile.isError && <p className="text-sm text-destructive">Unable to check 2FA status. <button type="button" className="underline" onClick={() => void profile.refetch()}>Retry</button></p>}
+          {profile.isSuccess && !twoFaEnabled && <p className="text-sm text-body-alt">Enable 2FA before changing your payout address. <Link href="/account?tab=security" onClick={onClose} className="underline">Open settings</Link></p>}
+          {step === 'address' || !twoFaEnabled ? (
             <>
               <div className="space-y-1">
                 <FieldLabel htmlFor="new-btc-address">Bitcoin address</FieldLabel>
@@ -114,14 +125,14 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
                 <div>
                   <p className="text-sm font-semibold text-foreground">Double check address</p>
                   <p className="mt-0.5 text-xs text-body-alt">
-                    Bitcoin payments sent to the wrong address cannot be recovered by anyone, including DMND Pool.
+                    Payments sent to the wrong address cannot be recovered by anyone, including DMND Pool.
                   </p>
                 </div>
               </div>
 
               <button
                 type="button"
-                disabled={!addressValid}
+                disabled={!addressValid || !canEditBitcoinAddress || !profile.isSuccess || !twoFaEnabled}
                 onClick={() => setStep('code')}
                 className="inline-flex h-11 w-full items-center justify-center rounded-[32px] border border-black/20 bg-[hsl(var(--btn))] px-6 text-base leading-6 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90 disabled:opacity-40"
               >
