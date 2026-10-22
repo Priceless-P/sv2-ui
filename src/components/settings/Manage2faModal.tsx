@@ -6,7 +6,8 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
 import { useAuth } from '@/auth';
 import { buildOtpAuthUri } from '@/auth/otpauth';
-import { getUser } from '@/api';
+import { getUser, isAuthenticatorCodeError } from '@/api';
+import { useAccountProfile } from '@/hooks/useAccountData';
 
 type Phase = 'menu' | 'loading' | 'setup' | 'error';
 
@@ -28,12 +29,17 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
   const [code, setCode] = useState('');
   const [error, setError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const profile = useAccountProfile();
+  const [challenged, setChallenged] = useState(false);
+  const twoFaEnabled = challenged || profile.data?.two_factor_secret === null;
+  const currentCodeReady = profile.isSuccess && (!twoFaEnabled || currentCode.length === 6);
 
   const startReset = async () => {
+    if (!currentCodeReady || phase === 'loading') return;
     setResetError(null);
     setPhase('loading');
     try {
-      const account = await getUser().newTwoFactor({ totpToken: currentCode });
+      const account = await getUser().newTwoFactor({ totpToken: twoFaEnabled ? currentCode : undefined });
       if (account.two_factor_secret == null) {
         // The reset endpoint should always return a secret; if it doesn't, fail
         // visibly rather than showing an empty QR.
@@ -43,6 +49,7 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
       setSecret(account.two_factor_secret);
       setPhase('setup');
     } catch (e) {
+      if (isAuthenticatorCodeError(e)) setChallenged(true);
       setResetError(authErrorMessage(e, 'Enter the current authenticator code to reset 2FA.'));
       setPhase('menu');
     }
@@ -54,10 +61,10 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
   );
 
   const submit = async () => {
-    if (code.length !== 6 || submitting) return;
+    if (code.length !== 6 || submitting || !currentCodeReady) return;
     setSubmitting(true);
     try {
-      await getUser().activate2fa(code, { totpToken: currentCode });
+      await getUser().activate2fa(code, { totpToken: twoFaEnabled ? currentCode : undefined });
       toast({ type: 'success', message: 'Two-factor authentication updated' });
       onChanged();
       onClose();
@@ -98,11 +105,13 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
         </div>
 
         <div className="flex flex-col gap-5 px-6 pb-6">
-          <div className="space-y-2">
-            <p className="text-sm text-body-alt">Current authenticator code (if required for your session)</p>
+          {twoFaEnabled && <div className="space-y-2">
+            <p className="text-sm text-body-alt">Current authenticator code</p>
             <OtpField value={currentCode} onChange={setCurrentCode} disabled={submitting || phase === 'loading'} ariaLabel="Current authenticator code" />
             {phase === 'setup' && <p className="text-xs text-body-alt">Refresh this code from your existing authenticator before confirming the new one.</p>}
-          </div>
+          </div>}
+          {profile.isLoading && <p className="text-sm text-body-alt">Checking 2FA status...</p>}
+          {profile.isError && <p className="text-sm text-destructive">Unable to check 2FA status. <button type="button" className="underline" onClick={() => void profile.refetch()}>Retry</button></p>}
           {resetError && <p className="text-sm text-destructive">{resetError}</p>}
           {(phase === 'menu' || phase === 'loading') && (
             <>
@@ -113,7 +122,7 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
                 </span>
                 <button
                   type="button"
-                  disabled={phase === 'loading' || (currentCode.length > 0 && currentCode.length !== 6)}
+                  disabled={phase === 'loading' || !currentCodeReady}
                   onClick={() => void startReset()}
                   className="inline-flex h-9 shrink-0 items-center rounded-[32px] border-[0.5px] border-black/20 bg-btn-secondary px-5 text-sm leading-5 text-foreground transition-opacity hover:opacity-80 disabled:opacity-40"
                 >
@@ -175,7 +184,7 @@ export function Manage2faModal({ onClose, onChanged }: { onClose: () => void; on
 
               <button
                 type="button"
-                disabled={code.length !== 6 || submitting || (currentCode.length > 0 && currentCode.length !== 6)}
+                disabled={code.length !== 6 || submitting || !currentCodeReady}
                 onClick={() => void submit()}
                 className="inline-flex h-11 w-full items-center justify-center rounded-[32px] border border-black/20 bg-[hsl(var(--btn))] px-6 text-base leading-6 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90 disabled:opacity-40"
               >

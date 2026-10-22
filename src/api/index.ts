@@ -19,6 +19,7 @@ export {
   setDmndClient,
   setDmndAccountId,
   subscribeToDmndAuthRejections,
+  subscribeToBrokerAuthRejections,
 } from './client';
 export type { DmndAuthRejection, DmndClientOptions } from './client';
 export { API_ERROR_MESSAGES } from './errorMessages';

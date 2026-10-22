@@ -16,6 +16,8 @@ import {
 import { OtpField } from '@/components/ui/input-otp';
 import { authErrorMessage } from '@/components/auth/authError';
 import { WatcherLinkCreated } from './WatcherLinkCreated';
+import { useAccountProfile } from '@/hooks/useAccountData';
+import { isAuthenticatorCodeError } from '@/api';
 
 interface AccountOption {
   userId: string;
@@ -135,6 +137,9 @@ export function CreateWatcherLinkPanel({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedWatcherLink | null>(null);
+  const profile = useAccountProfile();
+  const [challenged, setChallenged] = useState(false);
+  const twoFaEnabled = challenged || profile.data?.two_factor_secret === null;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -146,7 +151,7 @@ export function CreateWatcherLinkPanel({
 
   const options = accountOptions(sessionAccountId, subaccounts);
   const scopes = preset === 'custom' ? customScopes : preset ? presetScopes(preset) : [];
-  const canSubmit = account !== null && scopes.length > 0 && (totpToken.length === 0 || totpToken.length === 6) && !submitting;
+  const canSubmit = profile.isSuccess && account !== null && scopes.length > 0 && (!twoFaEnabled || totpToken.length === 6) && !submitting;
 
   const toggleScope = (s: WatcherScope) =>
     setCustomScopes((cur) => (cur.includes(s) ? cur.filter((x) => x !== s) : [...cur, s]));
@@ -156,9 +161,10 @@ export function CreateWatcherLinkPanel({
     setSubmitting(true);
     setError(null);
     try {
-      const link = await onCreate({ targetUserId: account.userId, scopes, totpToken });
+      const link = await onCreate({ targetUserId: account.userId, scopes, totpToken: twoFaEnabled ? totpToken : undefined });
       setCreated(link);
     } catch (e) {
+      if (isAuthenticatorCodeError(e)) setChallenged(true);
       setError(authErrorMessage(e, 'Enter the current 6-digit authenticator code to create this link.'));
     } finally {
       setSubmitting(false);
@@ -285,10 +291,12 @@ export function CreateWatcherLinkPanel({
                 </Field>
               )}
 
-              <div className="space-y-2">
-                <p className="text-sm text-body-alt">Authenticator code (if required for your session)</p>
+              {twoFaEnabled && <div className="space-y-2">
+                <p className="text-sm text-body-alt">Authenticator code</p>
                 <OtpField value={totpToken} onChange={setTotpToken} disabled={submitting} ariaLabel="Current authenticator code" />
-              </div>
+              </div>}
+              {profile.isLoading && <p className="text-sm text-body-alt">Checking 2FA status...</p>}
+              {profile.isError && <p className="text-sm text-destructive">Unable to check 2FA status. <button type="button" className="underline" onClick={() => void profile.refetch()}>Retry</button></p>}
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>
 

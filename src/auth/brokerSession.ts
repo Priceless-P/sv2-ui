@@ -65,7 +65,7 @@ function isValidBrokerSession(v: unknown): v is BrokerSession {
     s.brokerId.length > 0 &&
     typeof s.email === 'string' &&
     typeof s.referenceCode === 'string' &&
-    typeof s.expiresAt === 'number' &&
-    typeof s.idleExpiresAt === 'number'
+    typeof s.expiresAt === 'number' && Number.isFinite(s.expiresAt) &&
+    typeof s.idleExpiresAt === 'number' && Number.isFinite(s.idleExpiresAt)
   );
 }

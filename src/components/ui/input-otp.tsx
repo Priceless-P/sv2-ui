@@ -6,6 +6,7 @@ interface OtpFieldProps {
   onChange: (value: string) => void;
   onComplete?: (value: string) => void;
   disabled?: boolean;
+  autoFocus?: boolean;
   ariaLabel?: string;
   /** Renders the boxes in the red error state, per the 2FA error screen. */
   error?: boolean;
@@ -15,7 +16,7 @@ interface OtpFieldProps {
  * Six-box one-time-code input for the 2FA step, built on input-otp. The library
  * keeps a single hidden input; we just render the visible boxes.
  */
-export function OtpField({ value, onChange, onComplete, disabled, ariaLabel, error }: OtpFieldProps) {
+export function OtpField({ value, onChange, onComplete, disabled, autoFocus, ariaLabel, error }: OtpFieldProps) {
   return (
     <OTPInput
       maxLength={6}
@@ -23,6 +24,7 @@ export function OtpField({ value, onChange, onComplete, disabled, ariaLabel, err
       onChange={onChange}
       onComplete={onComplete}
       disabled={disabled}
+      autoFocus={autoFocus}
       aria-label={ariaLabel ?? 'Verification code'}
       containerClassName="w-full"
       render={({ slots }) => (

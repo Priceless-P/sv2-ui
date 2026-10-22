@@ -5,8 +5,10 @@ import { BdLockKeyholeMinimalistic, BdCheckCircle } from 'solar-icon-react/bd';
 import { useAuth } from '@/auth';
 import { useAccountProfile } from '@/hooks/useAccountData';
 import { useAccountScope } from '@/hooks/useAccountScope';
+import { usePermissions } from '@/hooks/useSubaccounts';
 import { Enable2faModal } from './Enable2faModal';
 import { Manage2faModal } from './Manage2faModal';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 function SectionHeading({ title, subtitle }: { title: string; subtitle: string }) {
   return (
@@ -25,8 +27,7 @@ function SectionHeading({ title, subtitle }: { title: string; subtitle: string }
  * authentication. 2FA state comes from the profile (a null `two_factor_secret` means
  * it is active). Enabling opens the QR flow; an active account can Manage 2FA to reset
  * it (there is no disable endpoint, so the design's Disable is a Reset here). The
- * Change password button is present but not wired: it must not link to the recovery
- * flow, and the dedicated reset-password endpoint does not exist yet.
+ * Password changes use the authenticated endpoint and are available to the main account.
  */
 export function SecurityTab() {
   const { session } = useAuth();
@@ -34,9 +35,12 @@ export function SecurityTab() {
   const { data: profile, isLoading } = useAccountProfile();
   const [enabling, setEnabling] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
   // Two-factor protects the master login that owns every subaccount, so it is managed
   // from the master only; a drilled-in subaccount sees the control but cannot use it.
   const { viewingSubaccount } = useAccountScope();
+  const permissions = usePermissions();
+  const canManageSecurity = !viewingSubaccount && permissions.isSuccess && permissions.data.view_sub_accounts;
 
   const twoFaEnabled = !!profile && profile.two_factor_secret == null;
   const refreshProfile = () => void queryClient.invalidateQueries({ queryKey: ['account', 'profile'] });
@@ -63,13 +67,11 @@ export function SecurityTab() {
             <BdLockKeyholeMinimalistic className="h-5 w-5" />
             <span className="tracking-widest">........</span>
           </span>
-          {/* Present per the design but disabled: the recovery flow must not be used
-              for this (per review), and the dedicated reset-password endpoint is not
-              available yet. Wire it up once that endpoint exists. */}
           <button
             type="button"
-            disabled
-            title="Password reset is coming soon"
+            onClick={() => setChangingPassword(true)}
+            disabled={!canManageSecurity || isLoading || !profile}
+            title={!canManageSecurity ? 'Change your password from the main account' : undefined}
             className="inline-flex h-9 shrink-0 items-center rounded-[32px] border-[0.5px] border-black/20 bg-btn-secondary px-5 text-sm leading-5 text-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
           >
             Change password
@@ -93,7 +95,7 @@ export function SecurityTab() {
             <button
               type="button"
               onClick={() => setManaging(true)}
-              disabled={viewingSubaccount}
+              disabled={!canManageSecurity}
               className="inline-flex h-9 shrink-0 items-center rounded-[32px] border-[0.5px] border-black/20 bg-btn-secondary px-5 text-sm leading-5 text-foreground transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Manage
@@ -108,7 +110,7 @@ export function SecurityTab() {
             <button
               type="button"
               onClick={() => setEnabling(true)}
-              disabled={viewingSubaccount}
+              disabled={!canManageSecurity}
               className="shrink-0 rounded-full bg-[hsl(var(--btn))] px-5 py-2.5 text-sm font-medium text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Enable
@@ -117,8 +119,9 @@ export function SecurityTab() {
         )}
       </div>
 
-      {enabling && <Enable2faModal onClose={() => setEnabling(false)} onEnabled={refreshProfile} />}
-      {managing && <Manage2faModal onClose={() => setManaging(false)} onChanged={refreshProfile} />}
+      {enabling && canManageSecurity && <Enable2faModal onClose={() => setEnabling(false)} onEnabled={refreshProfile} />}
+      {managing && canManageSecurity && <Manage2faModal onClose={() => setManaging(false)} onChanged={refreshProfile} />}
+      {changingPassword && canManageSecurity && <ChangePasswordModal twoFaEnabled={twoFaEnabled} onClose={() => setChangingPassword(false)} />}
     </div>
   );
 }

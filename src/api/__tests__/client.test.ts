@@ -172,6 +172,43 @@ test('resetPassword posts email, code, two_fa_token and new_password (snake_case
   });
 });
 
+test('updatePassword uses the authenticated endpoint with current password and optional authenticator code', async () => {
+  const { fetchImpl, calls } = fakeFetch(() => new Response(null, { status: 204 }));
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+  await client.updatePassword('old-password', 'new-password-123', '123456', { accountId: 'owner' });
+  assert.ok(calls[0].url.endsWith('/api/user/update_password'));
+  assert.equal(calls[0].init.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[0].init.body as string), {
+    current_password: 'old-password', new_password: 'new-password-123', two_fa_token: '123456',
+  });
+  assert.equal(new Headers(calls[0].init.headers).get('X-Account-ID'), 'owner');
+  await client.updatePassword('old-password', 'new-password-123');
+  assert.deepEqual(JSON.parse(calls[1].init.body as string), { current_password: 'old-password', new_password: 'new-password-123' });
+});
+
+test('invalid password-change TOTP does not expire the valid owner session', async () => {
+  const { fetchImpl } = fakeFetch(() => jsonResponse({ message: 'Invalid authenticator code' }, 401));
+  const client = createUser({ fetchImpl, backoffMs: 0 });
+  const rejected: unknown[] = [];
+  const unsubscribe = subscribeToDmndAuthRejections((event) => rejected.push(event));
+  try {
+    await assert.rejects(() => client.updatePassword('old', 'new-password-123', '000000', { accountId: 'owner' }), DmndApiError);
+    assert.deepEqual(rejected, []);
+  } finally { unsubscribe(); }
+});
+
+test('a wrong current password keeps the session, while an expired session still signs out', async () => {
+  const rejected: unknown[] = [];
+  const unsubscribe = subscribeToDmndAuthRejections((event) => rejected.push(event));
+  try {
+    for (const message of ['Invalid email or password', 'Session expired']) {
+      const { fetchImpl } = fakeFetch(() => jsonResponse({ message }, 401));
+      await assert.rejects(() => createUser({ fetchImpl }).updatePassword('wrong', 'new-password-123', undefined, { accountId: 'owner' }), DmndApiError);
+      assert.equal(rejected.length, message === 'Session expired' ? 1 : 0);
+    }
+  } finally { unsubscribe(); }
+});
+
 test('signup posts the full account body, defaulting company fields and referral', async () => {
   const { fetchImpl, calls } = fakeFetch(() => new Response('', { status: 200 }));
   const client = createUser({ fetchImpl, backoffMs: 0 });
@@ -283,6 +320,13 @@ test('createSubaccount POSTs sub_account and bitcoin_address', async () => {
     sub_account: 'Warehouse 01',
     bitcoin_address: 'bc1qexample',
   });
+});
+
+test('subaccount creation is never replayed after an ambiguous backend failure', async () => {
+  const { fetchImpl, calls } = fakeFetch(() => jsonResponse({ message: 'Unavailable' }, 503));
+  await assert.rejects(() => createUser({ fetchImpl, backoffMs: 0 }).createSubaccount({ name: 'Farm', bitcoinAddress: 'bc1qexample' }, { accountId: 'owner' }));
+  assert.equal(calls.length, 1);
+  assert.equal(new Headers(calls[0].init.headers).get('X-Account-ID'), 'owner');
 });
 
 test('logSubaccount POSTs owner_token and subaccount_token and returns the new session', async () => {

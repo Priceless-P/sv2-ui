@@ -8,8 +8,9 @@ import { AuthHeading } from '@/components/auth/AuthHeading';
 import { FieldLabel, IconInput } from '@/components/auth/AuthField';
 import { PasswordField } from '@/components/auth/PasswordField';
 import { AuthSubmit } from '@/components/auth/AuthSubmit';
-import { AuthCheckbox } from '@/components/auth/AuthCheckbox';
-import { InfoHint } from '@/components/ui/InfoHint';
+// Restore these imports with the Remember me control when the backend supports it.
+// import { AuthCheckbox } from '@/components/auth/AuthCheckbox';
+// import { InfoHint } from '@/components/ui/InfoHint';
 import { OtpField } from '@/components/ui/input-otp';
 import { authErrorMessage } from '@/components/auth/authError';
 import { useToast } from '@/components/ui/toast';
@@ -24,6 +25,7 @@ import {
 import { minerSignInSchema, type MinerSignInValues } from '@/auth/schemas';
 import { isTwoFactorLoginRequiredError } from '@/auth/loginErrors';
 import { getUser, type DmndSession } from '@/api';
+import { queryClient } from '@/lib/queryClient';
 
 export function SignIn() {
   const { session, signIn } = useAuth();
@@ -32,9 +34,7 @@ export function SignIn() {
   const toast = useToast();
   const [pendingTwoFactor, setPendingTwoFactor] = useState<MinerSignInValues | null>(null);
 
-  // A previous "Remember me" sign-in leaves its email behind, so the form offers it back
-  // and starts with the box ticked. It says nothing about that session still being
-  // valid -- only which address to pre-fill.
+  // A previous remembered email can still pre-fill the form without enabling persistence.
   const [rememberedEmail] = useState(readRememberedEmail);
 
   const {
@@ -44,7 +44,7 @@ export function SignIn() {
   } = useForm<MinerSignInValues>({
     resolver: zodResolver(minerSignInSchema),
     mode: 'onChange',
-    defaultValues: { email: rememberedEmail ?? '', password: '', remember: rememberedEmail !== null },
+    defaultValues: { email: rememberedEmail ?? '', password: '', remember: false },
   });
 
   // Already signed in (or just signed in): the redirect carries post-login nav,
@@ -54,6 +54,7 @@ export function SignIn() {
   }
 
   const finishSignIn = (account: DmndSession, values: MinerSignInValues) => {
+    queryClient.setQueryData(['account', 'profile', String(account.id)], account);
     if (values.remember) writeRememberedEmail(values.email);
     else clearRememberedEmail();
     toast({ type: 'success', message: 'Sign in successful' });
@@ -64,7 +65,7 @@ export function SignIn() {
         company_name: account.company_name,
         company_primary_location: account.company_primary_location,
         kyb_status: account.kyb_status,
-        remember: values.remember,
+        remember: false,
       }),
     );
     navigate(readNextParam(search, '/home'), { replace: true });
@@ -140,11 +141,14 @@ export function SignIn() {
             {...register('password')}
           />
           {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
-          <div className="flex items-center justify-between gap-4 pt-2.5">
+          <div className="flex items-center justify-end gap-4 pt-2.5">
+            {/* TODO: Restore Remember me when the backend supports seven-day cookie
+                and database session lifetimes. Re-enable the form default and session flag too.
             <div className="flex items-center gap-1.5">
               <AuthCheckbox id="remember" label="Remember me" {...register('remember')} />
               <InfoHint size="sm" text="Keeps you signed in on this browser for 7 days." />
             </div>
+            */}
             <Link href="/forgot-password" className="text-xs text-link underline-offset-4 hover:underline">
               Forgot password?
             </Link>

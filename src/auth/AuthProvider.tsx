@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -9,11 +10,14 @@ import {
 } from 'react';
 import { getUser, subscribeToDmndAuthRejections } from '@/api';
 import { queryClient } from '@/lib/queryClient';
+import { revokeDashboardSessions } from './logout';
+import type { Subaccount } from '@/api/types';
+import { useToast } from '@/components/ui/toast';
 import { createAuthStore, type AuthStore, type SignOutReason } from './authStore';
-import { viewingAccountFromAuth, type Session, type ViewingAccountSession } from './session';
+import { isExpired, viewingAccountFromAuth, type Session, type ViewingAccountSession } from './session';
 import { actionForRejectedRequest, shouldEndSessionAfterValidation } from './sessionValidation';
 
-export type AuthStatus = 'authenticated' | 'anonymous';
+export type AuthStatus = 'checking' | 'signing-out' | 'authenticated' | 'anonymous';
 
 export interface AuthContextValue {
   session: Session | null;
@@ -24,7 +28,7 @@ export interface AuthContextValue {
   /** AuthResponse-derived identity for the selected subaccount. */
   viewingAccount: ViewingAccountSession | null;
   signIn: (session: Session) => void;
-  signOut: (reason?: SignOutReason) => void;
+  signOut: (reason?: SignOutReason) => void | Promise<void>;
   setViewingAccount: (account: ViewingAccountSession | null) => void;
 }
 
@@ -39,34 +43,15 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children, store: injectedStore }: AuthProviderProps) {
+  const toast = useToast();
+  const logoutRef = useRef<Promise<void> | null>(null);
   const ownsStore = useRef(!injectedStore);
   const [store] = useState<AuthStore>(() => injectedStore ?? createAuthStore());
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
+  const [validating, setValidating] = useState(() => !!store.getSnapshot().session);
+  const [signingOut, setSigningOut] = useState(false);
   const lastActivityRef = useRef(0);
-
-  useEffect(() => {
-    // Debounced so a stream of mousemoves refreshes the idle deadline at most
-    // once a minute instead of writing sessionStorage on every event.
-    const onActivity = () => {
-      const now = Date.now();
-      if (now - lastActivityRef.current < ACTIVITY_DEBOUNCE_MS) return;
-      lastActivityRef.current = now;
-      store.bumpActivity(now);
-    };
-
-    const windowEvents: Array<keyof WindowEventMap> = ['click', 'keydown', 'mousemove'];
-    for (const e of windowEvents) window.addEventListener(e, onActivity);
-    document.addEventListener('visibilitychange', onActivity);
-
-    const intervalId = window.setInterval(() => store.checkExpiry(), EXPIRY_CHECK_INTERVAL_MS);
-
-    return () => {
-      for (const e of windowEvents) window.removeEventListener(e, onActivity);
-      document.removeEventListener('visibilitychange', onActivity);
-      window.clearInterval(intervalId);
-    };
-  }, [store]);
 
   useEffect(() => {
     const owns = ownsStore.current;
@@ -112,14 +97,18 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     if (validatedRef.current) return;
     validatedRef.current = true;
     const restored = store.getSnapshot().session;
-    if (!restored) return;
+    if (!restored) { setValidating(false); return; }
     const restoredViewing = store.getSnapshot().viewingAccount;
     const stillValidatingRestoredSession = () => {
       const current = store.getSnapshot().session;
       return current?.accountId === restored.accountId && current.expiresAt === restored.expiresAt;
     };
-    getUser()
-      .checkAuth({ accountId: restored.accountId })
+    const ownerValidation = queryClient.fetchQuery({
+      queryKey: ['account', 'profile', restored.accountId],
+      queryFn: ({ signal }) => getUser().checkAuth({ accountId: restored.accountId, signal }),
+      staleTime: 5 * 60 * 1000,
+      retry: false,
+    })
       .then((account) => {
         if (!stillValidatingRestoredSession()) return;
         store.updateSessionProfile({
@@ -137,9 +126,14 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
         }
       });
 
+    const validations = [ownerValidation];
     if (restoredViewing) {
-      getUser()
-        .checkAuth({ accountId: restoredViewing.accountId })
+      validations.push(queryClient.fetchQuery({
+        queryKey: ['account', 'profile', restoredViewing.accountId],
+        queryFn: ({ signal }) => getUser().checkAuth({ accountId: restoredViewing.accountId, signal }),
+        staleTime: 5 * 60 * 1000,
+        retry: false,
+      })
         .then((account) => {
           const current = store.getSnapshot();
           if (
@@ -164,22 +158,77 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
             // gone, so return to main instead of logging the user out entirely.
             store.setViewingAccount(null);
           }
-        });
+        }));
     }
+    void Promise.allSettled(validations).then(() => setValidating(false));
   }, [store]);
+
+  const signOut = useCallback((reason: SignOutReason = 'user'): Promise<void> => {
+    if (reason === 'duplicate_tab') {
+      store.signOut(reason);
+      queryClient.removeQueries({ queryKey: ['account'] });
+      return Promise.resolve();
+    }
+    if (logoutRef.current) return logoutRef.current;
+    const snapshot = store.getSnapshot();
+    if (!snapshot.session) return Promise.resolve();
+    const ownerId = snapshot.session.accountId;
+    const subs = queryClient.getQueryData<Subaccount[]>(['account', 'subaccounts', 'list', ownerId]) ?? [];
+    const knownIds = [...subs.map((sub) => sub.id), ...(snapshot.viewingAccountId ? [snapshot.viewingAccountId] : [])];
+    setSigningOut(true);
+    logoutRef.current = (async () => {
+      await queryClient.cancelQueries({ queryKey: ['account'] });
+      try {
+        const complete = await revokeDashboardSessions(getUser(), ownerId, knownIds);
+        if (!complete) toast({ type: 'error', message: 'Signed out on this device. Some server sessions could not be closed. Please sign in and sign out again when your connection is restored.' });
+      } finally {
+        store.signOut(reason);
+        queryClient.clear();
+        setSigningOut(false);
+        logoutRef.current = null;
+      }
+    })();
+    return logoutRef.current;
+  }, [store, toast]);
+
+  useEffect(() => {
+    const expireIfNeeded = (now: number) => {
+      const current = store.getSnapshot().session;
+      if (!current || logoutRef.current) return true;
+      if (!isExpired(current, now)) return false;
+      void signOut('expired');
+      return true;
+    };
+    const onActivity = () => {
+      const now = Date.now();
+      if (expireIfNeeded(now)) return;
+      if (now - lastActivityRef.current < ACTIVITY_DEBOUNCE_MS) return;
+      lastActivityRef.current = now;
+      store.bumpActivity(now);
+    };
+    const events: Array<keyof WindowEventMap> = ['click', 'keydown', 'mousemove'];
+    for (const event of events) window.addEventListener(event, onActivity);
+    document.addEventListener('visibilitychange', onActivity);
+    const timer = window.setInterval(() => expireIfNeeded(Date.now()), EXPIRY_CHECK_INTERVAL_MS);
+    return () => {
+      for (const event of events) window.removeEventListener(event, onActivity);
+      document.removeEventListener('visibilitychange', onActivity);
+      window.clearInterval(timer);
+    };
+  }, [store, signOut]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session: state.session,
       signOutReason: state.signOutReason,
-      status: state.session ? 'authenticated' : 'anonymous',
+      status: state.session ? (signingOut ? 'signing-out' : validating ? 'checking' : 'authenticated') : 'anonymous',
       viewingAccountId: state.viewingAccountId,
       viewingAccount: state.viewingAccount,
       signIn: store.signIn,
-      signOut: store.signOut,
+      signOut,
       setViewingAccount: store.setViewingAccount,
     }),
-    [state, store],
+    [state, store, signOut, validating, signingOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

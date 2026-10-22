@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getUser } from '@/api';
-import type { BrokerMiner } from '@/api/types';
+import { useBrokerAuth } from '@/auth/BrokerAuthProvider';
+import { brokerMinersQueryOptions } from '@/lib/brokerQueries';
 
 /**
  * The server requires a starting block height and rejects the request without one.
@@ -17,9 +18,6 @@ export const BROKER_MINERS_FROM_BLOCK_HEIGHT = 0;
  * a 500 when its required parameter is missing.
  */
 export function useBrokerMiners() {
-  return useQuery<BrokerMiner[]>({
-    queryKey: ['broker', 'miners', BROKER_MINERS_FROM_BLOCK_HEIGHT],
-    queryFn: ({ signal }) => getUser().brokerMiners(BROKER_MINERS_FROM_BLOCK_HEIGHT, { signal }),
-    retry: false,
-  });
+  const { session } = useBrokerAuth();
+  return useQuery(brokerMinersQueryOptions(getUser(), session?.brokerId ?? null, BROKER_MINERS_FROM_BLOCK_HEIGHT));
 }

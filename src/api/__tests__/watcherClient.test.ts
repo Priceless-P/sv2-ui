@@ -86,7 +86,8 @@ test('getAllWorkers rejects a later-page failure rather than displaying an incom
     : jsonResponse({ workers: [worker], next_cursor: 'next' }));
   await assert.rejects(() => createWatcherClient('TOK', { fetchImpl }).getAllWorkers(controller.signal));
   assert.equal(calls.length, 2);
-  assert.ok(calls.every((call) => call.init.signal === controller.signal));
+  controller.abort();
+  assert.ok(calls.every((call) => call.init.signal?.aborted), 'caller cancellation reaches each timeout-combined signal');
 });
 
 test('getAllWorkers rejects a malformed roster response', async () => {
