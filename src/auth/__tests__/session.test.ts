@@ -2,17 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  FIXED_TTL_MS,
-  IDLE_TTL_MS,
-  REMEMBERED_TTL_MS,
   REMEMBER_EMAIL_KEY,
   STORAGE_KEY,
   clearRememberedEmail,
   createSession,
-  isExpired,
   readRememberedEmail,
   readSession,
-  refreshIdle,
   viewingAccountFromAuth,
   writeRememberedEmail,
   writeSession,
@@ -41,25 +36,13 @@ const sessionInput = (over: Partial<Parameters<typeof createSession>[0]> = {}) =
   ...over,
 });
 
-test('createSession sets the fixed and idle deadlines from now', () => {
-  const s = createSession(sessionInput({ now: 1_000 }));
-  assert.equal(s.expiresAt, 1_000 + FIXED_TTL_MS);
-  assert.equal(s.idleExpiresAt, 1_000 + IDLE_TTL_MS);
-});
-
-test('isExpired trips on either the idle or the fixed deadline', () => {
-  const s = createSession(sessionInput({ now: 0 }));
-  assert.equal(isExpired(s, IDLE_TTL_MS - 1), false);
-  assert.equal(isExpired(s, IDLE_TTL_MS), true); // idle hits first
-  const active = refreshIdle(s, FIXED_TTL_MS - 1);
-  assert.equal(isExpired(active, FIXED_TTL_MS), true); // fixed cap still applies
-});
-
-test('refreshIdle extends only the idle deadline', () => {
-  const s = createSession(sessionInput({ now: 0 }));
-  const r = refreshIdle(s, 5_000);
-  assert.equal(r.expiresAt, s.expiresAt);
-  assert.equal(r.idleExpiresAt, 5_000 + IDLE_TTL_MS);
+test('new sessions have a unique login id and no frontend expiry deadlines', () => {
+  const first = createSession(sessionInput());
+  const second = createSession(sessionInput());
+  assert.ok(first.loginId);
+  assert.notEqual(first.loginId, second.loginId);
+  assert.equal('expiresAt' in first, false);
+  assert.equal('idleExpiresAt' in first, false);
 });
 
 test('readSession round-trips a written session', () => {
@@ -87,19 +70,23 @@ test('readSession returns null for missing, malformed, or invalid core data', ()
 
   storage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ accountId: 'a1', email: 'm@x.io', expiresAt: 'later', idleExpiresAt: Number.MAX_SAFE_INTEGER }),
+    JSON.stringify({ accountId: '', email: 'm@x.io' }),
   );
-  assert.equal(readSession(storage), null); // invalid deadline
+  assert.equal(readSession(storage), null); // empty account id
+
+  storage.setItem(STORAGE_KEY, JSON.stringify(sessionInput()));
+  assert.equal(readSession(storage), null); // no login id
+  assert.equal(storage.getItem(STORAGE_KEY), null);
 });
 
-test('readSession discards and clears an expired session', () => {
+test('a stored session is read back whatever the clock says', (t) => {
   const storage = memoryStorage();
-  writeSession(createSession(sessionInput({ now: 0 })), storage);
-  // far past both deadlines: stub Date.now via an expired write
-  const expired = { ...sessionInput(), expiresAt: 1, idleExpiresAt: 1 };
-  storage.setItem(STORAGE_KEY, JSON.stringify(expired));
-  assert.equal(readSession(storage), null);
-  assert.equal(storage.getItem(STORAGE_KEY), null);
+  const stored = createSession(sessionInput());
+  writeSession(stored, storage);
+  t.mock.method(Date, 'now', () => 24 * 60 * 60 * 1000);
+  assert.equal(readSession(storage)?.accountId, 'a1');
+  assert.equal(readSession(storage)?.loginId, stored.loginId);
+  assert.notEqual(storage.getItem(STORAGE_KEY), null);
 });
 
 test('viewingAccountFromAuth uses log_subaccount AuthResponse.id as the active account', () => {
@@ -124,29 +111,13 @@ test('viewingAccountFromAuth uses log_subaccount AuthResponse.id as the active a
   });
 });
 
-test('a remembered session runs on the 7-day window, with idle no longer the first cap', () => {
-  const s = createSession(sessionInput({ now: 1_000, remember: true }));
-  assert.equal(s.remember, true);
-  assert.equal(s.expiresAt, 1_000 + REMEMBERED_TTL_MS);
-  assert.equal(s.idleExpiresAt, 1_000 + REMEMBERED_TTL_MS);
-  // Half an hour idle would have ended an ordinary session; a remembered one lives on.
-  assert.equal(isExpired(s, 1_000 + IDLE_TTL_MS), false);
-  assert.equal(isExpired(s, 1_000 + FIXED_TTL_MS), false);
-  assert.equal(isExpired(s, 1_000 + REMEMBERED_TTL_MS), true);
-});
-
-test('createSession defaults to not remembered', () => {
-  assert.equal(createSession(sessionInput({ now: 0 })).remember, false);
-  assert.equal(createSession(sessionInput({ now: 0, remember: false })).expiresAt, FIXED_TTL_MS);
-});
-
-test('refreshIdle extends by the window the session was created with', () => {
-  const ordinary = refreshIdle(createSession(sessionInput({ now: 0 })), 5_000);
-  assert.equal(ordinary.idleExpiresAt, 5_000 + IDLE_TTL_MS);
-
-  const remembered = refreshIdle(createSession(sessionInput({ now: 0, remember: true })), 5_000);
-  assert.equal(remembered.idleExpiresAt, 5_000 + REMEMBERED_TTL_MS);
+test('remembering affects storage preference without creating a local deadline', () => {
+  const ordinary = createSession(sessionInput());
+  const remembered = createSession(sessionInput({ remember: true }));
+  assert.equal(ordinary.remember, false);
   assert.equal(remembered.remember, true);
+  assert.equal('expiresAt' in remembered, false);
+  assert.equal('idleExpiresAt' in remembered, false);
 });
 
 test('readSession round-trips the remembered flag', () => {
@@ -155,7 +126,7 @@ test('readSession round-trips the remembered flag', () => {
   assert.equal(readSession(storage)?.remember, true);
 });
 
-test('a session stored before "Remember me" existed reads as not remembered', () => {
+test('a stored session without the remember flag reads as not remembered', () => {
   const storage = memoryStorage();
   storage.setItem(
     STORAGE_KEY,
@@ -165,8 +136,7 @@ test('a session stored before "Remember me" existed reads as not remembered', ()
       company_name: null,
       company_primary_location: null,
       kyb_status: 'Approved',
-      expiresAt: Number.MAX_SAFE_INTEGER,
-      idleExpiresAt: Number.MAX_SAFE_INTEGER,
+      loginId: 'login-1',
     }),
   );
   assert.equal(readSession(storage)?.remember, false);

@@ -17,8 +17,8 @@ export function readAggregated(raw: string | null): boolean {
 export const AGG_DEFAULTED_KEY = 'dmnd.dashboard.aggregated.defaulted';
 
 /** A stable id for one sign-in, so the default applies once per login rather than per render. */
-export function loginMarker(accountId: string, expiresAt: number): string {
-  return `${accountId}:${expiresAt}`;
+export function loginMarker(accountId: string, loginId: string | number): string {
+  return `${accountId}:${loginId}`;
 }
 
 /**

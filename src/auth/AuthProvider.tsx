@@ -15,7 +15,7 @@ import type { Subaccount } from '@/api/types';
 import { useToast } from '@/components/ui/toast';
 import { latestBlogQueryOptions } from '@/hooks/useAccountData';
 import { createAuthStore, type AuthStore, type SignOutReason } from './authStore';
-import { isExpired, viewingAccountFromAuth, type Session, type ViewingAccountSession } from './session';
+import { viewingAccountFromAuth, type Session, type ViewingAccountSession } from './session';
 import { actionForRejectedRequest, shouldEndSessionAfterValidation } from './sessionValidation';
 
 export type AuthStatus = 'checking' | 'signing-out' | 'authenticated' | 'anonymous';
@@ -35,9 +35,6 @@ export interface AuthContextValue {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-const ACTIVITY_DEBOUNCE_MS = 60 * 1000;
-const EXPIRY_CHECK_INTERVAL_MS = 30 * 1000;
-
 interface AuthProviderProps {
   children: ReactNode;
   store?: AuthStore;
@@ -52,13 +49,11 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
 
   const [validating, setValidating] = useState(() => !!store.getSnapshot().session);
   const [signingOut, setSigningOut] = useState(false);
-  const lastActivityRef = useRef(0);
 
   useEffect(() => {
     const owns = ownsStore.current;
-    // Connect the cross-tab channel here (not in the store constructor) so only
-    // the mounted store listens; StrictMode's discarded initializer store never
-    // does, which keeps a refresh from being seen as a duplicate-tab claim.
+    // Connect the cross-tab logout channel only for the mounted store, so
+    // StrictMode's discarded initializer never leaves an extra listener behind.
     if (owns) store.connect();
     return () => {
       if (owns) store.teardown();
@@ -80,7 +75,7 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
   // Drop all cached account data when the master session changes or signs out. Queries
   // within a session are keyed by the active account id, so master/subaccount switches
   // remain isolated without discarding useful cached data. Keyed on the master id so
-  // this does not run on every idle-activity session bump.
+  // this does not run on profile refreshes.
   const accountId = state.session?.accountId ?? null;
   const prevAccountIdRef = useRef(accountId);
   useEffect(() => {
@@ -90,12 +85,12 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     prevAccountIdRef.current = accountId;
   }, [accountId]);
 
-  const loginExpiresAt = state.session?.expiresAt;
+  const loginId = state.session?.loginId;
   useEffect(() => {
-    if (accountId && loginExpiresAt) {
-      void queryClient.prefetchQuery(latestBlogQueryOptions(accountId, loginExpiresAt));
+    if (accountId && loginId) {
+      void queryClient.prefetchQuery(latestBlogQueryOptions(accountId, loginId));
     }
-  }, [accountId, loginExpiresAt]);
+  }, [accountId, loginId]);
 
   // On startup, validate a session restored from storage against the backend.
   // The auth cookie is HttpOnly so we can't inspect it here; check_auth confirms
@@ -109,7 +104,7 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     const restoredViewing = store.getSnapshot().viewingAccount;
     const stillValidatingRestoredSession = () => {
       const current = store.getSnapshot().session;
-      return current?.accountId === restored.accountId && current.expiresAt === restored.expiresAt;
+      return current?.accountId === restored.accountId && current.loginId === restored.loginId;
     };
     const ownerValidation = queryClient.fetchQuery({
       queryKey: ['account', 'profile', restored.accountId],
@@ -146,7 +141,7 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
           const current = store.getSnapshot();
           if (
             current.session?.accountId !== restored.accountId ||
-            current.session.expiresAt !== restored.expiresAt ||
+            current.session.loginId !== restored.loginId ||
             current.viewingAccountId !== restoredViewing.accountId
           ) {
             return;
@@ -158,7 +153,7 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
           const current = store.getSnapshot();
           if (
             current.session?.accountId === restored.accountId &&
-            current.session.expiresAt === restored.expiresAt &&
+            current.session.loginId === restored.loginId &&
             current.viewingAccountId === restoredViewing.accountId &&
             shouldEndSessionAfterValidation(error)
           ) {
@@ -172,11 +167,6 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
   }, [store]);
 
   const signOut = useCallback((reason: SignOutReason = 'user'): Promise<void> => {
-    if (reason === 'duplicate_tab') {
-      store.signOut(reason);
-      queryClient.removeQueries({ queryKey: ['account'] });
-      return Promise.resolve();
-    }
     if (logoutRef.current) return logoutRef.current;
     const snapshot = store.getSnapshot();
     if (!snapshot.session) return Promise.resolve();
@@ -198,32 +188,6 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     })();
     return logoutRef.current;
   }, [store, toast]);
-
-  useEffect(() => {
-    const expireIfNeeded = (now: number) => {
-      const current = store.getSnapshot().session;
-      if (!current || logoutRef.current) return true;
-      if (!isExpired(current, now)) return false;
-      void signOut('expired');
-      return true;
-    };
-    const onActivity = () => {
-      const now = Date.now();
-      if (expireIfNeeded(now)) return;
-      if (now - lastActivityRef.current < ACTIVITY_DEBOUNCE_MS) return;
-      lastActivityRef.current = now;
-      store.bumpActivity(now);
-    };
-    const events: Array<keyof WindowEventMap> = ['click', 'keydown', 'mousemove'];
-    for (const event of events) window.addEventListener(event, onActivity);
-    document.addEventListener('visibilitychange', onActivity);
-    const timer = window.setInterval(() => expireIfNeeded(Date.now()), EXPIRY_CHECK_INTERVAL_MS);
-    return () => {
-      for (const event of events) window.removeEventListener(event, onActivity);
-      document.removeEventListener('visibilitychange', onActivity);
-      window.clearInterval(timer);
-    };
-  }, [store, signOut]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

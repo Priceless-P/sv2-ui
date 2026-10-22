@@ -30,11 +30,15 @@ import { decodePplnsProjection, pplnsProjectionMatchesAccount } from './pplnsPro
 
 // The DMND dashboard API is called directly: it sets CORS for our origin and
 // allows credentials, so the browser sends the HttpOnly session cookie on every
-// call. Overridable for production via VITE_DMND_API_BASE; defaults to staging
-// so dev and review never hit production.
-export const API_BASE =
-  (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_DMND_API_BASE ??
-  'https://staging-user-dashboard-server.dmnd.work';
+// call. Builds require an explicit API origin; development defaults to staging.
+const apiEnvironment = (import.meta as {
+  env?: { VITE_DMND_API_BASE?: string; PROD?: boolean };
+}).env;
+const configuredApiBase = apiEnvironment?.VITE_DMND_API_BASE?.trim();
+if (apiEnvironment?.PROD && !configuredApiBase) {
+  throw new Error('VITE_DMND_API_BASE must be explicitly set for production.');
+}
+export const API_BASE = configuredApiBase || 'https://staging-user-dashboard-server.dmnd.work';
 
 /** Full roster pagination shared by session and token-only clients. Callers own authentication. */
 export async function getAllWorkers(

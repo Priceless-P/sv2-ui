@@ -17,7 +17,7 @@ import { buildOtpAuthUri } from '@/auth/otpauth';
 import { isAuthenticatorCodeError } from '@/api';
 import { getUser } from '@/api';
 import type { DmndSession } from '@/api/types';
-import { getBitcoinAddressError } from '@/lib/utils';
+import { useBitcoinAddressValidation } from '@/hooks/useBitcoinAddressValidation';
 import { POOL_URL, POOL_USERNAME_HINT } from '@/lib/poolConnection';
 import { CredentialRow } from '@/components/home/CredentialRow';
 import { activeBitcoinAddress } from '@/hooks/useAccountData';
@@ -243,8 +243,9 @@ function BitcoinStep({ onDone }: { onDone: () => void }) {
   const [codeError, setCodeError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const addressError = address ? getBitcoinAddressError(address, 'mainnet') : null;
-  const addressValid = !!address && !addressError;
+  const { validation, error: validationError } = useBitcoinAddressValidation();
+  const addressError = validationError ?? (address && validation ? validation.getBitcoinAddressError(address, 'mainnet') : null);
+  const addressValid = !!validation && !!address && !addressError;
   // 2FA is set up in the step before this one, and POST /api/bitcoin_address
   // hard-requires a current TOTP, so the code is required to save (matches the
   // design, which shows the field inline rather than revealing it on failure).
@@ -300,6 +301,7 @@ function BitcoinStep({ onDone }: { onDone: () => void }) {
           autoComplete="off"
           spellCheck={false}
         />
+        {!validation && !validationError && <p role="status" className="text-xs text-body-alt">Loading address validation…</p>}
         {addressError && <p className="text-xs text-destructive">{addressError}</p>}
         <div className="flex justify-end pt-0.5">
           <button

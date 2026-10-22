@@ -7,10 +7,8 @@ RUN npm ci
 
 COPY . .
 
-ARG VITE_APP_ENV=staging
-ARG VITE_DMND_API_BASE=https://staging-user-dashboard-server.dmnd.work
-ENV VITE_APP_ENV=$VITE_APP_ENV
-ENV VITE_DMND_API_BASE=$VITE_DMND_API_BASE
+ENV VITE_APP_ENV=staging
+ENV VITE_DMND_API_BASE=https://staging-user-dashboard-server.dmnd.work
 RUN npm run build
 
 FROM nginx:1.27-alpine

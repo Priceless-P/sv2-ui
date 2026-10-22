@@ -140,7 +140,7 @@ export function HelpPage() {
 function LatestBlogCard() {
   const { session } = useAuth();
   const { data: post } = useQuery({
-    ...latestBlogQueryOptions(session?.accountId ?? '', session?.expiresAt ?? 0),
+    ...latestBlogQueryOptions(session?.accountId ?? '', session?.loginId ?? ''),
     enabled: !!session,
   });
   const [failedImage, setFailedImage] = useState<string | null>(null);

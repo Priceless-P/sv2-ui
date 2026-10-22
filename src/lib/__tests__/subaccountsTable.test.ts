@@ -313,7 +313,7 @@ test('aggregate home earnings display supplied confirmed payouts rather than acc
   const aggregated = { totalWorkers: 0, activeWorkers: 0, offlineWorkers: 0, combinedHashrate: 0, todayEarnings: 9, rejectionRate: null };
   const html = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated, payout: { amountSats: 1_000_000, date: Date.UTC(2026, 9, 20) / 1000 } }));
   assert.match(html, />0\.01<\/span>/);
-  assert.match(html, /Paid Tuesday 20 October 2026 \(UTC\)/);
+  assert.match(html, /Paid on Tuesday 20 October 2026 \(UTC\)/);
   assert.doesNotMatch(html, /Generated today|>9<\/span>/);
   const unknown = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated }));
   assert.doesNotMatch(unknown, />9<\/span>/);

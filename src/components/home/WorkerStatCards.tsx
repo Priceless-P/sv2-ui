@@ -125,7 +125,7 @@ export function LatestPayoutCard({ payout, aggregated = false }: {
     value={payout ? formatBtc(payout.amountSats / 1e8).replace(' BTC', '') : known ? '0' : '--'}
     unit={known ? 'BTC' : undefined}
     captionTone={payout ? 'strong' : 'muted'}
-    caption={payout ? `Paid ${formatPayoutDate(payout.date)} (UTC)`
+    caption={payout ? `Paid on ${formatPayoutDate(payout.date)} (UTC)`
       : known ? 'No confirmed payouts in the last 30 days.' : 'Payout information unavailable.'}
     hint={`Most recently confirmed payout transaction in the last 30 calendar days (UTC)${aggregated ? ' across the main account and all subaccounts' : ' for this account'}.`}
   />;

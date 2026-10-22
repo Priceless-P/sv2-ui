@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createAuthStore } from '../authStore';
-import { createSession, IDLE_TTL_MS } from '../session';
-import { createUser, setDmndAccountId } from '@/api/client';
+import { createSession } from '../session';
+import { createUser, setDmndAccountId, subscribeToDmndAuthRejections } from '@/api/client';
+import { actionForRejectedRequest } from '../sessionValidation';
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -62,7 +63,7 @@ function channelBus() {
   return { make };
 }
 
-test('a second tab claiming the same account signs the first tab out', () => {
+test('signing in to the same account in another tab preserves both sessions', () => {
   const bus = channelBus();
   const session = minerSession({ accountId: '1' });
 
@@ -75,8 +76,8 @@ test('a second tab claiming the same account signs the first tab out', () => {
   tabB.connect();
   tabB.signIn(session);
 
-  assert.equal(tabA.getSnapshot().session, null);
-  assert.equal(tabA.getSnapshot().signOutReason, 'duplicate_tab');
+  assert.equal(tabA.getSnapshot().session?.accountId, '1');
+  assert.equal(tabA.getSnapshot().signOutReason, null);
   assert.equal(tabB.getSnapshot().session?.accountId, '1');
 });
 
@@ -168,13 +169,11 @@ test('restoring a selected subaccount immediately scopes the first API request t
   }
 });
 
-test('an idle bump keeps the viewed subaccount, but signing in or out resets it', () => {
+test('signing in or out resets the selected subaccount', () => {
   const store = createAuthStore({ tabId: 'A', storage: memoryStorage(), channel: null });
   store.signIn(minerSession());
   store.setViewingAccount(subaccountSession('sub-1'));
 
-  // An activity refresh must not kick the miner back to the master account.
-  store.bumpActivity();
   assert.equal(store.getSnapshot().viewingAccountId, 'sub-1');
 
   // Signing out clears the view scope.
@@ -187,22 +186,22 @@ test('an idle bump keeps the viewed subaccount, but signing in or out resets it'
   assert.equal(store.getSnapshot().viewingAccountId, null);
 });
 
-test('activity after the idle deadline signs out instead of reviving the session', () => {
+test('a session and selected subaccount survive elapsed time and a page reload', (t) => {
   const storage = memoryStorage();
   const store = createAuthStore({ tabId: 'A', storage, channel: null });
-  const signedInAt = 1_000;
-  store.signIn(minerSession({ now: signedInAt }));
+  store.signIn(minerSession());
   store.setViewingAccount(subaccountSession('sub-1'));
-
-  store.bumpActivity(signedInAt + IDLE_TTL_MS);
-
-  assert.equal(store.getSnapshot().session, null);
-  assert.equal(store.getSnapshot().viewingAccountId, null);
-  assert.equal(store.getSnapshot().signOutReason, 'expired');
-  assert.equal(storage.getItem('dmnd_session'), null);
+  const session = store.getSnapshot().session;
+  const later = Date.now() + 24 * 60 * 60 * 1000;
+  t.mock.method(Date, 'now', () => later);
+  const restored = createAuthStore({ tabId: 'B', storage, channel: null });
+  assert.equal(store.getSnapshot().session?.loginId, session?.loginId);
+  assert.equal(restored.getSnapshot().session?.loginId, session?.loginId);
+  assert.equal(restored.getSnapshot().viewingAccountId, 'sub-1');
+  assert.equal(restored.getSnapshot().signOutReason, null);
 });
 
-test('refreshing session profile fields preserves the selected account and expiry deadlines', () => {
+test('refreshing session profile fields preserves the selected account and login identity', () => {
   const storage = memoryStorage();
   const store = createAuthStore({ tabId: 'A', storage, channel: null });
   store.signIn(minerSession({ company_name: null, company_primary_location: null, kyb_status: 'NotStarted' }));
@@ -220,8 +219,7 @@ test('refreshing session profile fields preserves the selected account and expir
   assert.equal(after.viewingAccountId, 'sub-1');
   assert.equal(after.session?.email, 'updated@x.io');
   assert.equal(after.session?.company_name, 'Updated Mining');
-  assert.equal(after.session?.expiresAt, before?.expiresAt);
-  assert.equal(after.session?.idleExpiresAt, before?.idleExpiresAt);
+  assert.equal(after.session?.loginId, before?.loginId);
   assert.equal(JSON.parse(storage.getItem('dmnd_session') ?? '').company_name, 'Updated Mining');
 });
 
@@ -285,7 +283,6 @@ test('later writes stay in the slot the session lives in', () => {
   const store = createAuthStore({ tabId: 'A', storage: tab, persistentStorage: remembered, channel: null });
   store.signIn(minerSession({ remember: true }));
 
-  store.bumpActivity(5_000);
   store.updateSessionProfile({
     email: 'updated@x.io',
     company_name: 'Updated Mining',
@@ -314,7 +311,7 @@ test('signing out clears both slots, so nothing can be restored from the other o
   );
 });
 
-test('a second tab claiming the account clears the remembered session too', () => {
+test('a second sign-in does not clear the remembered session in another tab', () => {
   const bus = channelBus();
   const remembered = memoryStorage();
 
@@ -336,8 +333,8 @@ test('a second tab claiming the account clears the remembered session too', () =
   tabB.connect();
   tabB.signIn(minerSession({ accountId: '1' }));
 
-  assert.equal(tabA.getSnapshot().session, null);
-  assert.equal(remembered.getItem('dmnd_session'), null, 'no remembered copy left to restore');
+  assert.equal(tabA.getSnapshot().session?.accountId, '1');
+  assert.notEqual(remembered.getItem('dmnd_session'), null);
 });
 
 test('remembering degrades to an ordinary session when there is nowhere persistent to store it', () => {
@@ -365,7 +362,7 @@ test('explicit logout clears matching sessions in other tabs', () => {
   } finally { a.teardown(); b.teardown(); }
 });
 
-test('completed expiry logout clears matching tabs with the expired reason', () => {
+test('backend-confirmed expiry clears matching tabs with the expired reason', () => {
   const bus = channelBus();
   const session = minerSession();
   const storageA = memoryStorage();
@@ -380,4 +377,65 @@ test('completed expiry logout clears matching tabs with the expired reason', () 
     assert.equal(b.getSnapshot().session, null);
     assert.equal(b.getSnapshot().signOutReason, 'expired');
   } finally { a.teardown(); b.teardown(); }
+});
+
+test('an unknown cross-tab message does not expire a session', () => {
+  const bus = channelBus();
+  const store = createAuthStore({ tabId: 'current', storage: memoryStorage(), channelFactory: bus.make });
+  store.connect();
+  store.signIn(minerSession());
+  const other = bus.make();
+  try {
+    other.postMessage({ type: 'CLAIM_SESSION', tabId: 'old-frontend', accountId: 'master' });
+    assert.equal(store.getSnapshot().session?.accountId, 'master');
+    assert.equal(store.getSnapshot().signOutReason, null);
+  } finally {
+    other.close();
+    store.teardown();
+  }
+});
+
+test('network, server, and permission failures keep the session; only backend auth rejection ends it', async () => {
+  const store = createAuthStore({ storage: memoryStorage(), channel: null });
+  store.signIn(minerSession());
+  const initialLoginId = store.getSnapshot().session?.loginId;
+  let status = 200;
+  const client = createUser({
+    maxAttempts: 1,
+    fetchImpl: async () => {
+      if (status === 0) throw new TypeError('Offline');
+      return Response.json(status === 400 ? { message: 'User not found' } : {}, { status });
+    },
+  });
+  const unsubscribe = subscribeToDmndAuthRejections(({ accountId }) => {
+    const action = actionForRejectedRequest(store.getSnapshot(), accountId);
+    if (action === 'sign-out') store.signOut('expired');
+    else if (action === 'leave-subaccount') store.setViewingAccount(null);
+  });
+  try {
+    for (status of [0, 503, 403]) {
+      await assert.rejects(client.checkAuth({ accountId: 'master' }));
+      assert.equal(store.getSnapshot().session?.loginId, initialLoginId);
+    }
+
+    status = 401;
+    store.setViewingAccount(subaccountSession('sub-1'));
+    await assert.rejects(client.checkAuth({ accountId: 'sub-1' }));
+    assert.equal(store.getSnapshot().session?.loginId, initialLoginId);
+    assert.equal(store.getSnapshot().viewingAccountId, null);
+
+    await assert.rejects(client.checkAuth({ accountId: 'master' }));
+    assert.equal(store.getSnapshot().session, null);
+    assert.equal(store.getSnapshot().signOutReason, 'expired');
+
+    store.signIn(minerSession());
+    status = 400;
+    await assert.rejects(client.checkAuth({ accountId: 'master' }));
+    assert.equal(store.getSnapshot().session, null);
+    assert.equal(store.getSnapshot().signOutReason, 'expired');
+  } finally {
+    unsubscribe();
+    store.teardown();
+    setDmndAccountId(null);
+  }
 });

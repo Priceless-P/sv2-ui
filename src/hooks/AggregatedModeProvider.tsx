@@ -53,7 +53,7 @@ export function AggregatedModeProvider({ children }: { children: ReactNode }) {
   // can switch aggregated mode off without this effect immediately turning it back on.
   useEffect(() => {
     if (!session || subaccountsLoading || viewingAccountId !== null) return;
-    const marker = loginMarker(session.accountId, session.expiresAt);
+    const marker = loginMarker(session.accountId, session.loginId);
     if (defaultAppliedFor.current === marker) return;
     defaultAppliedFor.current = marker;
     const storage = typeof window === 'undefined' ? null : window.sessionStorage;

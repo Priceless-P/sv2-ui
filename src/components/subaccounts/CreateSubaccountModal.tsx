@@ -4,14 +4,9 @@ import { X } from 'lucide-react';
 import { LiClipboardText } from 'solar-icon-react/li';
 import { BoShieldWarning } from 'solar-icon-react/bo';
 import { BdCheckCircle } from 'solar-icon-react/bd';
-import { cn, isValidBitcoinAddress, overlayContainer } from '@/lib/utils';
+import { cn, overlayContainer } from '@/lib/utils';
 import { useCreateSubaccount } from '@/hooks/useSubaccounts';
-
-/** Accept either a mainnet or a testnet payout address; the server is the final authority. */
-function looksLikeBtc(addr: string): boolean {
-  const a = addr.trim();
-  return isValidBitcoinAddress(a, 'mainnet') || isValidBitcoinAddress(a, 'testnet4');
-}
+import { useBitcoinAddressValidation } from '@/hooks/useBitcoinAddressValidation';
 
 /** The 40px field used by both inputs: no visible border, muted fill, 16px radius. */
 function Field({
@@ -102,6 +97,7 @@ export function CreateSubaccountModal({
   const [address, setAddress] = useState('');
   const [addrError, setAddrError] = useState<string | null>(null);
   const create = useCreateSubaccount();
+  const { validation, error: validationError } = useBitcoinAddressValidation();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -111,7 +107,7 @@ export function CreateSubaccountModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const canSubmit = name.trim().length > 0 && !create.isPending;
+  const canSubmit = name.trim().length > 0 && !create.isPending && (!address.trim() || !!validation);
 
   const paste = async () => {
     try {
@@ -127,8 +123,9 @@ export function CreateSubaccountModal({
   };
 
   const submit = () => {
+    if (!canSubmit) return;
     const addr = address.trim();
-    if (addr && !looksLikeBtc(addr)) {
+    if (addr && !(validation?.isValidBitcoinAddress(addr, 'mainnet') || validation?.isValidBitcoinAddress(addr, 'testnet4'))) {
       setAddrError('Enter a valid Bitcoin address.');
       return;
     }
@@ -258,7 +255,8 @@ export function CreateSubaccountModal({
                 }
               />
 
-              {addrError && <p className="text-sm leading-5 text-destructive">{addrError}</p>}
+              {address.trim() && !validation && !validationError && <p role="status" className="text-sm text-body-alt">Loading address validation…</p>}
+              {(addrError || validationError) && <p className="text-sm leading-5 text-destructive">{addrError || validationError}</p>}
 
               {address.trim().length > 0 && (
                 <div className="flex gap-1 rounded-[16px] bg-toast-warning p-3">
