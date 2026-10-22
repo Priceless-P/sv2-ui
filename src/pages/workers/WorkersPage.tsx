@@ -36,7 +36,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { LiAddCircle, LiDownloadMinimalistic } from 'solar-icon-react/li';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useAccountAllWorkers } from '@/hooks/useAccountData';
-import { useAggregatedWorkers } from '@/hooks/useAggregatedWorkers';
+import { useAggregatedWorkers } from '@/hooks/useAggregatedData';
 import { tagWorkersBySubaccount } from '@/lib/workersTable';
 
 const PAGE_SIZE = 10;

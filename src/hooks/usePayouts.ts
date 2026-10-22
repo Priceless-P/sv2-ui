@@ -3,6 +3,7 @@ import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import {
   accountForAddress,
+  accountPayoutQueryOptions,
   payoutFromApi,
   sortPayoutsByDateDesc,
   MAIN_ACCOUNT_LABEL,
@@ -12,7 +13,6 @@ import {
 import { useAccountProfile, userBitcoinAddresses } from '@/hooks/useAccountData';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { subaccountName } from '@/lib/subaccountsTable';
-import { accountPayoutQueryOptions } from '@/lib/payoutQueries';
 
 /** Confirmed payouts for exactly the account being viewed, shared by history and progress. */
 export function usePayouts(enabled = true) {

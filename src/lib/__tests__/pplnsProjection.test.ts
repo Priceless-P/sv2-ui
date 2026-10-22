@@ -1,12 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  combinePplnsDailyWork,
+  derivePplnsProjectionStats,
   filterPplnsDailyWork,
   formatPplnsWorkDay,
   hasPayablePplnsWork,
   searchPplnsDailyWork,
   totalDailyWorkNetSats,
+  pplnsDailyWorkToCsv,
 } from '../pplnsProjection';
+
+test('PPLNS CSV exports only supplied work days with raw rate and satoshi amounts', () => {
+  const csv = pplnsDailyWorkToCsv([day({ work_day: '2026-10-21', retained_difficulty: 86400 / 2 ** 32, total_net_sats: 123 })]);
+  const lines = csv.split('\n');
+  assert.equal(lines.length, 2);
+  const cells = lines[1].split(',');
+  assert.equal(cells[0], '2026-10-21');
+  assert.equal(cells[2], '1');
+  assert.equal(cells[5], '123');
+});
 import type { PplnsProjectionDailyWork } from '@/api/types';
 import { pplnsProjectionFixture } from '@/api/__tests__/pplnsProjectionFixture';
 
@@ -76,4 +89,20 @@ test('visibility follows horizon zero rather than the daily rows', () => {
   assert.equal(hasPayablePplnsWork(projection), false);
   assert.equal(hasPayablePplnsWork(null), false);
   assert.equal(hasPayablePplnsWork(undefined), false);
+});
+
+test('combined PPLNS work sums earned and projected sats and keeps one row per UTC day', () => {
+  const base = pplnsProjectionFixture().daily_work[0];
+  const rows = combinePplnsDailyWork([
+    [{ ...base, work_day: '2026-10-20', retained_difficulty: 10, projected_net_sats: 100, already_earned_net_sats: 20, total_net_sats: 120 }],
+    [{ ...base, work_day: '2026-10-20', retained_difficulty: 30, projected_net_sats: 300, already_earned_net_sats: 60, total_net_sats: 360, earned_history_complete: false },
+      { ...base, work_day: '2026-10-21', retained_difficulty: 20, projected_net_sats: 200, already_earned_net_sats: 0, total_net_sats: 200 }],
+  ]);
+  assert.equal(rows.length, 2);
+  const firstDay = rows.find((day) => day.work_day === '2026-10-20')!;
+  assert.equal(firstDay.total_net_sats, 480);
+  assert.equal(firstDay.retained_difficulty, 40);
+  assert.equal(firstDay.already_earned_net_sats, 80);
+  assert.equal(firstDay.earned_history_complete, false);
+  assert.deepEqual(derivePplnsProjectionStats(rows), { totalNetSats: 680, projectedNetSats: 600, retainedDifficulty: 60, workDays: 2 });
 });

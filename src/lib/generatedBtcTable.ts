@@ -1,8 +1,6 @@
-import { formatUtcDay } from './utcDate';
-import { csvCell } from './csvDownload';
 import type { Payout } from './payoutsTable';
 import type { GeneratedBtcEntry } from '@/api/types';
-import { BTC_DISPLAY_DP, formatHashrate } from '@/lib/utils';
+import { BTC_DISPLAY_DP, csvCell, formatHashrate, formatUtcDay } from '@/lib/utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

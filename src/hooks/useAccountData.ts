@@ -1,15 +1,14 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getUser } from '@/api';
 import { useAuth } from '@/auth';
-import type { DmndSession, HashrateRange } from '@/api/types';
-import { downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
-import { cachedHashrateHistory } from '@/lib/incrementalHistory';
+import type { DmndSession, HashrateRange, DmndClient, Worker } from '@/api/types';
+import { cachedHashrateHistory, downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
 import { mapConcurrent } from '@/lib/concurrency';
 import { sumHashrateSeries } from '@/lib/aggregatedHashrate';
-import { useSubaccountList } from './useSubaccounts';
+import { useSubaccountList, ACCOUNT_POLL_MS } from './useSubaccounts';
 import { useActiveAccountId } from './useActiveAccountId';
 import { msUntilNextTick } from '@/lib/utils';
-import { accountPayoutQueryOptions } from '@/lib/payoutQueries';
+import { accountPayoutQueryOptions } from '@/lib/payoutsTable';
 
 // The UI checks account data every five minutes.
 const CLOUD_POLL_MS = 5 * 60 * 1000;
@@ -204,4 +203,28 @@ export function useTodayEarnings(enabled = true, aggregated = false) {
       .reduce((sum, record) => sum + record.amount_sats, 0) / 1e8,
     enabled: enabled && !!session && !!accountId,
   });
+}
+
+/** Setup needs worker existence, reusing a full roster when another widget loads it. */
+export function workerPresenceQueryOptions(cache: QueryClient, client: DmndClient, accountId: string | null) {
+  return {
+    queryKey: ['account', 'worker-presence', accountId],
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const key = ['account', 'workers-all', accountId];
+      const cached = cache.getQueryData<Worker[]>(key);
+      if (cached && cached.length > 0) return true;
+      const updatedAt = cache.getQueryState(key)?.dataUpdatedAt ?? 0;
+      if (cached !== undefined && Date.now() - updatedAt < ACCOUNT_POLL_MS) return false;
+      if (cache.getQueryState(key)?.fetchStatus === 'fetching') {
+        const workers = await cache.fetchQuery<Worker[]>({ queryKey: key, staleTime: ACCOUNT_POLL_MS, retry: false });
+        return workers.length > 0;
+      }
+      return client.hasWorkers({ signal, accountId: accountId! });
+    },
+    staleTime: (query: { state: { data: unknown } }) => query.state.data === true ? Infinity : ACCOUNT_POLL_MS,
+    refetchInterval: (query: { state: { data: unknown } }) => query.state.data === true ? false as const : msUntilNextTick(ACCOUNT_POLL_MS),
+    gcTime: 60 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  };
 }

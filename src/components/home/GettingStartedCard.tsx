@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getUser } from '@/api';
 import { useActiveAccountId } from '@/hooks/useActiveAccountId';
-import { workerPresenceQueryOptions } from '@/lib/workerPresence';
+import { workerPresenceQueryOptions } from '@/hooks/useAccountData';
 import { Link } from 'wouter';
 import { LiCheckCircle, LiAltArrowDown, LiAltArrowUp, LiCloseCircle } from 'solar-icon-react/li';
 import { activeBitcoinAddress, useAccountProfile } from '@/hooks/useAccountData';

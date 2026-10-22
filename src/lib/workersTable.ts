@@ -1,4 +1,4 @@
-import { csvCell } from './csvDownload';
+import { csvCell } from './utils';
 import type { Worker } from '@/api/types';
 import { deriveWorkerStats } from '@/lib/workerStats';
 import { formatHashrate } from '@/lib/utils';

@@ -245,9 +245,11 @@ function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyW
 function ProjectionBody({
   dailyWork,
   showStats,
+  aggregated,
 }: {
   dailyWork: PplnsProjectionDailyWork[];
   showStats: boolean;
+  aggregated: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<GbtcFilterDraft>(EMPTY_GBTC_FILTER_DRAFT);
@@ -280,7 +282,7 @@ function ProjectionBody({
 
   return (
     <div className="space-y-4">
-      {showStats && <PplnsProjectionStatCards dailyWork={dailyWork} />}
+      {showStats && <PplnsProjectionStatCards dailyWork={dailyWork} aggregated={aggregated} />}
       <div className="rounded-xl border border-border bg-card">
         <ProjectionToolbar
           query={query}
@@ -297,6 +299,8 @@ function ProjectionBody({
 
 export function PplnsProjectionPanel({
   projection,
+  dailyWork,
+  aggregated = false,
   isLoading,
   isError,
   showStats = false,
@@ -306,6 +310,8 @@ export function PplnsProjectionPanel({
   isLoading: boolean;
   isError: boolean;
   showStats?: boolean;
+  dailyWork?: PplnsProjectionDailyWork[] | null;
+  aggregated?: boolean;
 }) {
   if (isLoading) {
     if (!showStats) return <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />;
@@ -328,7 +334,7 @@ export function PplnsProjectionPanel({
       />
     );
   }
-  if (projection === null) {
+  if (projection === null || dailyWork === null) {
     return (
       <StateMessage
         title="Projection temporarily unavailable"
@@ -336,5 +342,6 @@ export function PplnsProjectionPanel({
       />
     );
   }
-  return projection ? <ProjectionBody dailyWork={projection.daily_work} showStats={showStats} /> : null;
+  const rows = dailyWork ?? projection?.daily_work;
+  return rows ? <ProjectionBody dailyWork={rows} showStats={showStats} aggregated={aggregated} /> : null;
 }

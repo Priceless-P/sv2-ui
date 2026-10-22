@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import type { GeneratedBtcEntry } from '@/api/types';
 import {
+  combinedDailyEarnings,
+  averageEntryHashrate,
   sumGenerated,
   hasFppsActivity,
   sortGeneratedByDateDesc,
@@ -202,4 +204,21 @@ test('generatedBtcRowId distinguishes the same day across accounts', () => {
     generatedBtcRowId({ ...a, account: 'Main Farm' }),
   );
   assert.notEqual(generatedBtcRowId(a), generatedBtcRowId({ ...a, account: 'Main Farm' }));
+});
+
+function aggregateEntry(day: string, accountId: string, btc: number, hashrate: number): GeneratedBtcEntry {
+  return { entry_day: day, accountId, account: 'Shared display name', fpps_btc_generated: btc, hashrate, pplns_btc_generated: 100, btc_generated: btc + 100, pplns_hashrate: 0 };
+}
+
+test('combined generated summaries sum accounts by day before averaging hashrate or selecting the best day', () => {
+  const rows = [aggregateEntry('2026-10-20', '1', 1, 10), aggregateEntry('2026-10-20', '2', 2, 20), aggregateEntry('2026-10-21', '1', 4, 40), aggregateEntry('2026-10-21', '2', 0.5, 5)];
+  const unique = dedupeGeneratedBtc([...rows, rows[0]]);
+  assert.equal(unique.length, 4, 'matching display names must not merge different accounts');
+  const days = combinedDailyEarnings(unique);
+  assert.equal(days.length, 2);
+  assert.equal(sumGenerated(days), 7.5);
+  assert.equal(averageEntryHashrate(days), 37.5);
+  assert.equal(highestEarningDay(days)?.fpps_btc_generated, 4.5);
+  assert.equal(highestEarningDay(days)?.entry_day, '2026-10-21');
+  assert.equal(rows[0].hashrate, 10, 'account rows must remain unchanged');
 });

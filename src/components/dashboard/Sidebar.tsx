@@ -9,12 +9,9 @@ import { TooltipPill } from '@/components/ui/tooltip-pill';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useHasSubaccounts } from '@/hooks/useSubaccounts';
 import { useAccountScope } from '@/hooks/useAccountScope';
-import { usePplnsProjection } from '@/hooks/usePplnsProjection';
-import { hasPayablePplnsWork } from '@/lib/pplnsProjection';
 import {
   NAV_GROUPS,
   SETTINGS_ITEM,
-  PPLNS_PROJECTION_ROUTE,
   isPathActive,
   isAggregatedRestrictedRoute,
   isSubaccountRestrictedRoute,
@@ -202,9 +199,6 @@ export function Sidebar({
   // A subaccount cannot reach the subaccounts page, so its nav entry is dropped rather
   // than left to lead somewhere it has no permission for.
   const { canViewSubaccounts } = useAccountScope();
-  const { data: pplnsProjection } = usePplnsProjection();
-
-  const hasPplnsWork = hasPayablePplnsWork(pplnsProjection);
 
   return (
     <SidebarView collapsed={collapsed} drawer={drawer} onToggleCollapse={onToggleCollapse} account={
@@ -237,8 +231,7 @@ export function Sidebar({
         groups={NAV_GROUPS.map((group) => ({
           ...group, items: group.items.filter((item) =>
             (canViewSubaccounts || !isSubaccountRestrictedRoute(item.href)) &&
-            (!aggregated || !isAggregatedRestrictedRoute(item.href)) &&
-            (item.href !== PPLNS_PROJECTION_ROUTE || hasPplnsWork)
+            (!aggregated || !isAggregatedRestrictedRoute(item.href))
           )
         }))}
         renderItem={(item) => item.children ? (

@@ -1,3 +1,6 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { WorkerStatCardsView } from '@/components/home/WorkerStatCards';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -304,4 +307,14 @@ test('subaccountsToCsv does not depend on lifetime history availability', () => 
 test('sumGeneratedBtc totals only FPPS from untagged entries and reports null when there are none', () => {
   assert.equal(sumGeneratedBtc([gen('', 0.5, 9), gen('', 0.25, 8)]), 0.75);
   assert.equal(sumGeneratedBtc([]), null);
+});
+
+test('aggregate home earnings display supplied confirmed payouts rather than accrued generated earnings', () => {
+  const aggregated = { totalWorkers: 0, activeWorkers: 0, offlineWorkers: 0, combinedHashrate: 0, todayEarnings: 9, rejectionRate: null };
+  const html = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated, earnings: 0.01 }));
+  assert.match(html, />0\.01<\/span>/);
+  assert.match(html, /Paid out today across all accounts \(UTC\)/);
+  assert.doesNotMatch(html, /Generated today|>9<\/span>/);
+  const unknown = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated }));
+  assert.doesNotMatch(unknown, />9<\/span>/);
 });

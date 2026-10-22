@@ -1,6 +1,8 @@
+import type { DmndClient, PayoutRecord } from '@/api/types';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  loadTodayPayouts,
   payoutFromApi,
   sortPayoutsByDateDesc,
   searchPayouts,
@@ -283,4 +285,24 @@ test('payoutRowId distinguishes rows that share a txid', () => {
   assert.notEqual(payoutRowId(a), payoutRowId({ ...a, outputIndex: 1 }));
   assert.notEqual(payoutRowId({ ...a, account: 'Main account' }), payoutRowId({ ...a, account: 'Farm' }));
   assert.equal(payoutRowId(a), payoutRowId({ ...a }));
+});
+
+test('today payouts use one tree request in aggregate mode and an exact account request in single mode', async () => {
+  const rows: PayoutRecord[] = [
+    { txid: 'shared', output_index: 0, amount_sats: 10, address: 'same-wallet', kind: 'fpps', confirmed_at: Date.parse('2026-10-21T00:00:00Z') / 1000 },
+    { txid: 'shared', output_index: 1, amount_sats: 20, address: 'same-wallet', kind: 'pplns', confirmed_at: Date.parse('2026-10-21T23:59:59Z') / 1000 },
+    { txid: 'old', output_index: 0, amount_sats: 90, address: 'wallet', kind: 'fpps', confirmed_at: Date.parse('2026-10-20T23:59:59Z') / 1000 },
+    { txid: 'future', output_index: 0, amount_sats: 90, address: 'wallet', kind: 'fpps', confirmed_at: Date.parse('2026-10-22T00:00:00Z') / 1000 },
+  ];
+  const calls: unknown[] = [];
+  const client: Pick<DmndClient, 'getPayouts' | 'getSubaccountPayouts'> = {
+    getPayouts: async (query, req) => { calls.push(['tree', query, req?.accountId]); return rows; },
+    getSubaccountPayouts: async (id, query, req) => { calls.push([id, query, req?.accountId]); return rows; },
+  };
+  const options = { ownerAccountId: 'owner', accountId: 'selected', today: '2026-10-21' };
+  assert.equal(await loadTodayPayouts(client, { ...options, aggregated: true }), 30 / 1e8);
+  assert.deepEqual(calls, [['tree', { from: options.today, to: options.today }, 'owner']]);
+  calls.length = 0;
+  assert.equal(await loadTodayPayouts(client, { ...options, aggregated: false }), 30 / 1e8);
+  assert.deepEqual(calls, [['selected', { from: options.today, to: options.today }, 'owner']]);
 });

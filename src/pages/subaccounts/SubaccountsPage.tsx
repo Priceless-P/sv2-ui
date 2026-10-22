@@ -1,4 +1,4 @@
-import { downloadCsv } from '@/lib/csvDownload';
+import { downloadCsv } from '@/lib/utils';
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { LiExport } from 'solar-icon-react/li';

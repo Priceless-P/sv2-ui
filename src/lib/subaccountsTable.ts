@@ -1,5 +1,5 @@
 import { deriveWorkerStats } from './workerStats';
-import { csvCell } from './csvDownload';
+import { csvCell } from './utils';
 import type {
   GeneratedBtcEntry,
   Subaccount,
