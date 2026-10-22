@@ -8,8 +8,11 @@ import { useAuth } from './useAuth';
  * value is validated on the read side (readNextParam) to block open redirects.
  */
 export function AuthGuard({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { session, status } = useAuth();
   const [location] = useLocation();
+
+  if (status === 'checking') return <p role="status" className="p-6">Checking your session…</p>;
+  if (status === 'signing-out') return <p role="status" className="p-6">Signing out…</p>;
 
   if (!session) {
     return <Redirect to={`/signin?next=${encodeURIComponent(location)}`} replace />;

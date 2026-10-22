@@ -31,6 +31,10 @@ export function isAuthenticatorCodeError(error: unknown): boolean {
 export interface RequestOptions {
   signal?: AbortSignal;
   accountId?: string;
+  /** Local identity used to ignore rejections from a previous broker login. */
+  brokerId?: string;
+  /** Logout discovery must finish cleanup before changing local authentication. */
+  suppressAuthRejection?: boolean;
   /** Current authenticator code for key management and replacing enrolled 2FA. */
   totpToken?: string;
 }

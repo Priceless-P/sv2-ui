@@ -50,12 +50,14 @@ export interface AuthStoreOptions {
 
 const CHANNEL_NAME = 'dmnd_auth';
 const CLAIM_MSG = 'CLAIM_SESSION';
+const SIGN_OUT_MSG = 'SIGN_OUT_SESSION';
 const VIEWING_ACCOUNT_KEY = 'dmnd_viewing_account';
 
 interface ClaimMessage {
-  type: typeof CLAIM_MSG;
+  type: typeof CLAIM_MSG | typeof SIGN_OUT_MSG;
   tabId: string;
   accountId: string;
+  reason?: 'user' | 'expired';
 }
 
 function generateTabId(): string {
@@ -167,13 +169,13 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
   const handleMessage = (msg: unknown) => {
     if (!msg || typeof msg !== 'object') return;
     const m = msg as Partial<ClaimMessage>;
-    if (m.type !== CLAIM_MSG) return;
+    if (m.type !== CLAIM_MSG && m.type !== SIGN_OUT_MSG) return;
     if (m.tabId === tabId) return;
     if (!state.session) return;
     if (m.accountId !== state.session.accountId) return;
     clearStoredSession();
     writeViewingAccount(null);
-    setState({ session: null, signOutReason: 'duplicate_tab', viewingAccountId: null, viewingAccount: null });
+    setState({ session: null, signOutReason: m.type === SIGN_OUT_MSG ? (m.reason === 'expired' ? 'expired' : 'user') : 'duplicate_tab', viewingAccountId: null, viewingAccount: null });
   };
 
   // Best-effort cross-tab claim. The channel can be closed (e.g. a StrictMode
@@ -225,6 +227,11 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       postClaim(session.accountId);
     },
     signOut(reason: SignOutReason = 'user') {
+      if (reason !== 'duplicate_tab' && state.session) {
+        try {
+          channel?.postMessage({ type: SIGN_OUT_MSG, tabId, accountId: state.session.accountId, reason } satisfies ClaimMessage);
+        } catch { /* Local cleanup must work when the channel is unavailable. */ }
+      }
       clearStoredSession();
       writeViewingAccount(null);
       setState({ session: null, signOutReason: reason, viewingAccountId: null, viewingAccount: null });

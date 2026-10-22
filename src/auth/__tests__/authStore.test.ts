@@ -347,3 +347,37 @@ test('remembering degrades to an ordinary session when there is nowhere persiste
   assert.equal(store.getSnapshot().session?.accountId, 'master');
   assert.equal(tab.getItem('dmnd_session') !== null, true);
 });
+
+test('explicit logout clears matching sessions in other tabs', () => {
+  const bus = channelBus();
+  const session = minerSession();
+  const storageA = memoryStorage();
+  const storageB = memoryStorage();
+  storageA.setItem('dmnd_session', JSON.stringify(session));
+  storageB.setItem('dmnd_session', JSON.stringify(session));
+  const a = createAuthStore({ storage: storageA, channelFactory: bus.make });
+  const b = createAuthStore({ storage: storageB, channelFactory: bus.make });
+  a.connect(); b.connect();
+  try {
+    a.signOut('user');
+    assert.equal(b.getSnapshot().session, null);
+    assert.equal(b.getSnapshot().signOutReason, 'user');
+  } finally { a.teardown(); b.teardown(); }
+});
+
+test('completed expiry logout clears matching tabs with the expired reason', () => {
+  const bus = channelBus();
+  const session = minerSession();
+  const storageA = memoryStorage();
+  const storageB = memoryStorage();
+  storageA.setItem('dmnd_session', JSON.stringify(session));
+  storageB.setItem('dmnd_session', JSON.stringify(session));
+  const a = createAuthStore({ storage: storageA, channelFactory: bus.make });
+  const b = createAuthStore({ storage: storageB, channelFactory: bus.make });
+  a.connect(); b.connect();
+  try {
+    a.signOut('expired');
+    assert.equal(b.getSnapshot().session, null);
+    assert.equal(b.getSnapshot().signOutReason, 'expired');
+  } finally { a.teardown(); b.teardown(); }
+});

@@ -96,6 +96,12 @@ export interface DmndAuthRejection {
 type AuthRejectionListener = (rejection: DmndAuthRejection) => void;
 
 const authRejectionListeners = new Set<AuthRejectionListener>();
+const brokerRejectionListeners = new Set<(brokerId: string) => void>();
+
+export function subscribeToBrokerAuthRejections(listener: (brokerId: string) => void): () => void {
+  brokerRejectionListeners.add(listener);
+  return () => brokerRejectionListeners.delete(listener);
+}
 
 /**
  * Reports a rejected authenticated request to the auth layer. This keeps the
@@ -132,7 +138,7 @@ function resolveOptions(o: DmndClientOptions): ResolvedOptions {
  * Aborts when either the per-request timeout fires or the caller's signal does,
  * so a component that unmounts mid-request cancels cleanly.
  */
-function combineSignals(timeoutMs: number, external?: AbortSignal): AbortSignal {
+export function combineSignals(timeoutMs: number, external?: AbortSignal): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
   if (!external) return timeout;
   const controller = new AbortController();
@@ -181,6 +187,7 @@ interface RequestSpec {
   suppressAuthRejection?: boolean;
   /** `/check_auth` represents a missing/expired User guard as a specific 400 response. */
   sessionCheck?: boolean;
+  brokerSession?: boolean;
 }
 
 interface PayoutPage {
@@ -194,13 +201,14 @@ async function request<T>(
   req: RequestOptions = {},
 ): Promise<T> {
   let lastError: unknown = null;
-  const maxAttempts = spec.maxAttempts ?? opts.maxAttempts;
+  // A failed response can follow a committed write or an issued session cookie.
+  const maxAttempts = spec.maxAttempts ?? (spec.method === 'GET' ? opts.maxAttempts : 1);
+  const requestAccountId = req.accountId ?? accountId;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (req.signal?.aborted) throw new DmndApiError(API_ERROR_MESSAGES.cancelled, 'network');
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const requestAccountId = req.accountId ?? accountId;
     if (requestAccountId && !spec.omitAccountId) {
       headers['X-Account-ID'] = requestAccountId;
     }
@@ -232,12 +240,20 @@ async function request<T>(
         const rejectedSession =
           invalidSession ||
           (response.status === 401 && !(spec.stepUp && isAuthenticatorCodeError(error)));
-        if (rejectedSession && !spec.suppressAuthRejection && !spec.omitAccountId && requestAccountId) {
+        if (rejectedSession && !spec.suppressAuthRejection && !req.suppressAuthRejection && !spec.omitAccountId && requestAccountId) {
           reportAuthRejection({ accountId: requestAccountId });
+        }
+        if (response.status === 401 && spec.brokerSession && req.brokerId) {
+          for (const listener of brokerRejectionListeners) listener(req.brokerId);
         }
         throw error;
       }
       if (response.status >= 500) {
+        // The backend uses Retry-After for unavailable/rate-limited resources.
+        // Leave the next attempt to the page's normal refresh instead of replaying now.
+        if (response.headers.has('Retry-After')) {
+          throw new DmndApiError(API_ERROR_MESSAGES.server, 'other', response.status);
+        }
         if (serverMessage === 'Invalid referral code') {
           throw new DmndApiError("Invalid referral code", 'other');
         }
@@ -376,7 +392,7 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
       );
     },
     logout(req) {
-      return request<void>({ method: 'POST', path: '/api/logout' }, opts, req);
+      return request<void>({ method: 'POST', path: '/api/logout', suppressAuthRejection: true }, opts, req);
     },
     checkAuth(req) {
       // Validate the selected dashboard session on startup and profile refresh.
@@ -445,6 +461,7 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
           method: 'GET',
           path: `/api/broker/miners?from_block_height=${encodeURIComponent(String(fromBlockHeight))}`,
           omitAccountId: true,
+          brokerSession: true,
         },
         opts,
         req,
@@ -604,6 +621,7 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
         {
           method: 'POST',
           path: '/api/user/sub_account',
+          maxAttempts: 1,
           body: { sub_account: input.name, bitcoin_address: input.bitcoinAddress },
         },
         opts,
