@@ -1,12 +1,14 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getUser } from '@/api';
 import { useAuth } from '@/auth';
-import type { DmndSession, HashrateRange } from '@/api/types';
-import { downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
+import type { DmndSession, HashrateRange, DmndClient, Worker } from '@/api/types';
+import { cachedHashrateHistory, downsampleHashrate, rangeToWindow } from '@/lib/hashrateHistory';
+import { mapConcurrent } from '@/lib/concurrency';
 import { sumHashrateSeries } from '@/lib/aggregatedHashrate';
-import { useSubaccountList } from './useSubaccounts';
+import { useSubaccountList, ACCOUNT_POLL_MS } from './useSubaccounts';
 import { useActiveAccountId } from './useActiveAccountId';
 import { msUntilNextTick } from '@/lib/utils';
+import { accountPayoutQueryOptions } from '@/lib/payoutsTable';
 
 // The UI checks account data every five minutes.
 const CLOUD_POLL_MS = 5 * 60 * 1000;
@@ -14,9 +16,6 @@ const CLOUD_POLL_MS = 5 * 60 * 1000;
 // The historical series is dense (~one sample every two minutes); cap the points
 // the chart renders so Recharts stays smooth.
 const MAX_CHART_POINTS = 300;
-
-// Confirmed payout history is cached server-side, so today's earnings polls gently.
-const EARNINGS_POLL_MS = 15 * 60 * 1000;
 
 /** Live hashrate snapshot for the signed-in account (home live-hashrate card). */
 export function useAccountHashrate(enabled = true) {
@@ -48,14 +47,13 @@ export function useAccountHashrateHistory(
   // A custom window is a fixed span, so it does not slide with "now" and its key is
   // the explicit from/to; a preset recomputes its window on each fetch.
   const key = custom ? `custom:${custom.from}:${custom.to}` : range;
+  const cache = useQueryClient();
   return useQuery({
     queryKey: ['account', 'hashrate-history', key, accountId],
-    queryFn: async ({ signal }) => {
+    queryFn: async () => {
       const window = custom ?? rangeToWindow(range, Date.now());
-      const points = await getUser().getHashrateHistory(window.from, window.to, {
-        signal,
-        accountId: accountId ?? undefined,
-      });
+      const points = await cachedHashrateHistory(cache, ['account', 'hashrate-history-raw', key, accountId], window,
+        (from, to, signal) => getUser().getHashrateHistory(from, to, { signal, accountId: accountId! }), !!custom);
       return downsampleHashrate(points, MAX_CHART_POINTS);
     },
     enabled: !!session && enabled,
@@ -104,7 +102,7 @@ export function useAggregatedHashrateHistory(
   const queryClient = useQueryClient();
   const key = custom ? `custom:${custom.from}:${custom.to}` : range;
   return useQuery({
-    queryKey: ['account', 'hashrate-history', 'aggregated', key, ownerAccountId],
+    queryKey: ['account', 'hashrate-history', 'aggregated', key, ownerAccountId, subs?.map((sub) => sub.id)],
     queryFn: async ({ signal }) => {
       const owners = subs ?? [];
       const window = custom ?? rangeToWindow(range, Date.now());
@@ -118,22 +116,16 @@ export function useAggregatedHashrateHistory(
         // The mining credentials used for delegation are stable for the login.
         // Explicit profile invalidation still refreshes this cache when settings change.
         staleTime: Infinity,
+        retry: false,
       });
       const [mainPoints, subSeries] = await Promise.all([
-        client.getHashrateHistory(window.from, window.to, {
-          signal,
-          accountId: ownerAccountId ?? undefined,
-        }),
-        ownerProfile.then((profile) => Promise.all(
-          owners.map((s) => client.getSubaccountHashrateHistory(
-            s.id,
-            window.from,
-            window.to,
-            profile.token,
-            s.token,
-            { signal, accountId: ownerAccountId ?? undefined },
-          )),
-        )),
+        cachedHashrateHistory(queryClient, ['account', 'hashrate-history-raw', key, ownerAccountId], window,
+          (from, to, signal) => client.getHashrateHistory(from, to, { signal, accountId: ownerAccountId! }), !!custom),
+        ownerProfile.then((profile) => mapConcurrent(owners, (s) => {
+          signal.throwIfAborted();
+          return cachedHashrateHistory(queryClient, ['account', 'hashrate-history-raw', key, s.id], window,
+            (from, to, signal) => client.getSubaccountHashrateHistory(s.id, from, to, profile.token, s.token, { signal, accountId: ownerAccountId! }), !!custom);
+        })),
       ]);
       return downsampleHashrate(sumHashrateSeries([mainPoints, ...subSeries]), MAX_CHART_POINTS);
     },
@@ -196,39 +188,43 @@ export function activeBitcoinAddress(profile: DmndSession | undefined): string |
 }
 
 /**
- * Today's confirmed earnings in BTC from the payout-history API. Main-account view
- * filters the aggregate account-tree response to the main profile's addresses; a
- * drilled-in subaccount uses the exact per-subaccount endpoint.
+ * Confirmed payouts for today's UTC date. Single mode uses the exact account endpoint;
+ * aggregated mode reads the complete account tree once, avoiding duplicate shared-address outputs.
  */
-export function useTodayEarnings(enabled = true) {
-  const { session, viewingAccountId } = useAuth();
+export function useTodayEarnings(enabled = true, aggregated = false) {
+  const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const accountId = useActiveAccountId();
-  const { data: profile } = useAccountProfile();
-  const addressKey = viewingAccountId === null ? userBitcoinAddressesKey(profile) : 'exact-subaccount';
+  const today = new Date().toISOString().slice(0, 10);
   return useQuery({
-    // Main-account results are filtered by the profile's address roster. Including it
-    // prevents a just-saved payout address from reusing a transformed cache entry that
-    // was computed with the old roster.
-    queryKey: ['account', 'today-earnings', accountId, addressKey],
-    queryFn: async ({ signal }) => {
-      const today = new Date().toISOString().slice(0, 10);
-      const query = { from: today, to: today };
-      const req = { signal, accountId: ownerAccountId ?? undefined };
-      const records = viewingAccountId
-        ? await getUser().getSubaccountPayouts(viewingAccountId, query, req)
-        : await getUser().getPayouts(query, req);
-      const addresses = userBitcoinAddresses(profile);
-      const scoped = viewingAccountId
-        ? records
-        : records.filter((row) => addresses.has(row.address));
-      const sats = scoped.reduce((total, row) => total + row.amount_sats, 0);
-      return sats / 1e8;
-    },
-    enabled: enabled && !!session && !!profile,
-    refetchInterval: EARNINGS_POLL_MS,
-    staleTime: EARNINGS_POLL_MS,
-    refetchOnWindowFocus: false,
-    retry: false,
+    ...accountPayoutQueryOptions(getUser(), ownerAccountId, accountId, aggregated),
+    select: (records) => records
+      .filter((record) => new Date(record.confirmed_at * 1000).toISOString().slice(0, 10) === today)
+      .reduce((sum, record) => sum + record.amount_sats, 0) / 1e8,
+    enabled: enabled && !!session && !!accountId,
   });
+}
+
+/** Setup needs worker existence, reusing a full roster when another widget loads it. */
+export function workerPresenceQueryOptions(cache: QueryClient, client: DmndClient, accountId: string | null) {
+  return {
+    queryKey: ['account', 'worker-presence', accountId],
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const key = ['account', 'workers-all', accountId];
+      const cached = cache.getQueryData<Worker[]>(key);
+      if (cached && cached.length > 0) return true;
+      const updatedAt = cache.getQueryState(key)?.dataUpdatedAt ?? 0;
+      if (cached !== undefined && Date.now() - updatedAt < ACCOUNT_POLL_MS) return false;
+      if (cache.getQueryState(key)?.fetchStatus === 'fetching') {
+        const workers = await cache.fetchQuery<Worker[]>({ queryKey: key, staleTime: ACCOUNT_POLL_MS, retry: false });
+        return workers.length > 0;
+      }
+      return client.hasWorkers({ signal, accountId: accountId! });
+    },
+    staleTime: (query: { state: { data: unknown } }) => query.state.data === true ? Infinity : ACCOUNT_POLL_MS,
+    refetchInterval: (query: { state: { data: unknown } }) => query.state.data === true ? false as const : msUntilNextTick(ACCOUNT_POLL_MS),
+    gcTime: 60 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  };
 }

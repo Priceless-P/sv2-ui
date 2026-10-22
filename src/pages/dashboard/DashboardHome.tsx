@@ -102,9 +102,10 @@ function widgetBlock(
   drag: DragState,
   aggregatedStats?: AggregatedStats,
   slices: DonutSlice[] = [],
+  aggregateStatus?: ReactNode,
 ): ReactNode {
   const inner =
-    id === 'hashrate' ? (
+    aggregateStatus && (id === 'combined' || id === 'stats') ? aggregateStatus : id === 'hashrate' ? (
       <LiveHashrateCard />
     ) : id === 'combined' ? (
       <CombinedHashrateCard slices={slices} total={aggregatedStats?.combinedHashrate ?? 0} />
@@ -134,7 +135,14 @@ export function DashboardHome() {
   const mode: DashboardMode = aggregated ? 'aggregated' : 'single';
   const { layout, toggle, reorder, reset } = useDashboardLayout(mode);
   // Only fetches the per-subaccount roll-up while aggregated mode is on.
-  const { stats: aggStats, slices } = useAggregatedData(aggregated);
+  const visibleIds = visibleInOrder(layout).map((w) => w.id);
+  const aggregate = useAggregatedData(aggregated && (visibleIds.includes('combined') || visibleIds.includes('stats')), visibleIds.includes('stats'));
+  const { stats: aggStats, slices } = aggregate;
+  const aggregateStatus = aggregated && (aggregate.isLoading || aggregate.isError) ? (
+    <div role="status" className="border border-border bg-card p-5 text-sm text-body-alt">
+      {aggregate.isError ? <>Combined account data is unavailable. <button type="button" className="underline" onClick={() => void aggregate.refetch()}>Retry</button></> : 'Loading combined account data…'}
+    </div>
+  ) : undefined;
   const [customizing, setCustomizing] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
@@ -182,7 +190,6 @@ export function DashboardHome() {
   };
 
   // The widgets to render, in the saved order, hidden ones removed.
-  const visibleIds = visibleInOrder(layout).map((w) => w.id);
 
   // Walk the visible widgets in order. Hashrate and Connect share a 3:2 row ONLY when
   // they end up adjacent (in either order); if the user reorders a widget between
@@ -210,7 +217,7 @@ export function DashboardHome() {
               {slot === 'hashrate' ? (
                 <LiveHashrateCard />
               ) : slot === 'combined' ? (
-                <CombinedHashrateCard slices={slices} total={aggStats.combinedHashrate} />
+                aggregateStatus ?? <CombinedHashrateCard slices={slices} total={aggStats.combinedHashrate} />
               ) : (
                 <ConnectWorkersCard />
               )}
@@ -221,7 +228,7 @@ export function DashboardHome() {
       i += 1; // consume the paired widget
       continue;
     }
-    rendered.push(widgetBlock(id, customizing, drag, aggregated ? aggStats : undefined, slices));
+    rendered.push(widgetBlock(id, customizing, drag, aggregated ? aggStats : undefined, slices, aggregateStatus));
   }
 
   return (

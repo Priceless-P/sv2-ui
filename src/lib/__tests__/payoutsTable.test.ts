@@ -1,6 +1,8 @@
+import type { DmndClient, PayoutRecord } from '@/api/types';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  loadTodayPayouts,
   payoutFromApi,
   sortPayoutsByDateDesc,
   searchPayouts,
@@ -25,6 +27,7 @@ import {
   filterPayoutsByAccount,
   formatCalendarDate,
   payoutRowId,
+  summarizePayouts,
 } from '@/lib/payoutsTable';
 
 const WALLET = 'bc1qpool';
@@ -32,6 +35,21 @@ const WALLET = 'bc1qpool';
 function payout(over: Partial<Payout> = {}): Payout {
   return { date: 1_718_000_000, txid: 't', amountSats: 1000, mode: 'pplns', toAddress: 'bc1quser', outputIndex: 0, fromAddress: WALLET, ...over };
 }
+
+test('payout summary sums satoshis and counts outputs sharing a transaction across accounts', () => {
+  const latest = payout({ date: 300, txid: 'shared', outputIndex: 1, amountSats: 2, account: 'Farm' });
+  const rows = [
+    payout({ date: 100, txid: 'shared', amountSats: 1, account: 'Main account' }),
+    latest,
+    payout({ date: 200, txid: 'other', amountSats: 100_000_000 }),
+  ];
+  assert.deepEqual(summarizePayouts(rows), { totalSats: 100_000_003, count: 3, latest });
+  assert.equal(rows[0].date, 100, 'summary must not reorder the table');
+});
+
+test('an empty payout history has zero totals and no latest payout', () => {
+  assert.deepEqual(summarizePayouts([]), { totalSats: 0, count: 0, latest: null });
+});
 
 test('payoutFromApi adapts a confirmed server output for the table', () => {
   assert.deepEqual(
@@ -109,9 +127,9 @@ test('isPayoutFilterActive is true only when a facet is set', () => {
   assert.equal(isPayoutFilterActive({ modes: [], sinceSec: 123 }), true);
 });
 
-test('formatPayoutDate renders the "21 Jun, 2026" style in UTC', () => {
+test('formatPayoutDate renders the same long UTC date as PPLNS Projection', () => {
   const sec = Math.floor(Date.UTC(2026, 5, 21, 10, 0, 0) / 1000);
-  assert.equal(formatPayoutDate(sec), '21 Jun, 2026');
+  assert.equal(formatPayoutDate(sec), 'Sunday 21 June 2026');
 });
 
 test('sortPayoutsByAmount orders by amount, highest or lowest first', () => {
@@ -267,4 +285,24 @@ test('payoutRowId distinguishes rows that share a txid', () => {
   assert.notEqual(payoutRowId(a), payoutRowId({ ...a, outputIndex: 1 }));
   assert.notEqual(payoutRowId({ ...a, account: 'Main account' }), payoutRowId({ ...a, account: 'Farm' }));
   assert.equal(payoutRowId(a), payoutRowId({ ...a }));
+});
+
+test('today payouts use one tree request in aggregate mode and an exact account request in single mode', async () => {
+  const rows: PayoutRecord[] = [
+    { txid: 'shared', output_index: 0, amount_sats: 10, address: 'same-wallet', kind: 'fpps', confirmed_at: Date.parse('2026-10-21T00:00:00Z') / 1000 },
+    { txid: 'shared', output_index: 1, amount_sats: 20, address: 'same-wallet', kind: 'pplns', confirmed_at: Date.parse('2026-10-21T23:59:59Z') / 1000 },
+    { txid: 'old', output_index: 0, amount_sats: 90, address: 'wallet', kind: 'fpps', confirmed_at: Date.parse('2026-10-20T23:59:59Z') / 1000 },
+    { txid: 'future', output_index: 0, amount_sats: 90, address: 'wallet', kind: 'fpps', confirmed_at: Date.parse('2026-10-22T00:00:00Z') / 1000 },
+  ];
+  const calls: unknown[] = [];
+  const client: Pick<DmndClient, 'getPayouts' | 'getSubaccountPayouts'> = {
+    getPayouts: async (query, req) => { calls.push(['tree', query, req?.accountId]); return rows; },
+    getSubaccountPayouts: async (id, query, req) => { calls.push([id, query, req?.accountId]); return rows; },
+  };
+  const options = { ownerAccountId: 'owner', accountId: 'selected', today: '2026-10-21' };
+  assert.equal(await loadTodayPayouts(client, { ...options, aggregated: true }), 30 / 1e8);
+  assert.deepEqual(calls, [['tree', { from: options.today, to: options.today }, 'owner']]);
+  calls.length = 0;
+  assert.equal(await loadTodayPayouts(client, { ...options, aggregated: false }), 30 / 1e8);
+  assert.deepEqual(calls, [['selected', { from: options.today, to: options.today }, 'owner']]);
 });

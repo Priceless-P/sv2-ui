@@ -1,3 +1,4 @@
+import { csvCell, formatUtcDay } from './utils';
 import type { PplnsProjection, PplnsProjectionDailyWork } from '@/api/types';
 import { formatBtcFromSats } from '@/lib/payoutsTable';
 
@@ -10,22 +11,6 @@ const HASHRATE_UNITS: [number, string][] = [
   [1e3, 'KH/s'],
 ];
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function roundTo(digits: number, value: number): string {
   const factor = Math.pow(10, digits);
@@ -52,6 +37,33 @@ export function hasPayablePplnsWork(projection: PplnsProjection | null | undefin
 /** Grand total of the daily breakdown: every retained day's value, earned plus projected. */
 export function totalDailyWorkNetSats(dailyWork: PplnsProjectionDailyWork[]): number {
   return dailyWork.reduce((sum, day) => sum + day.total_net_sats, 0);
+}
+
+export function pplnsDailyWorkToCsv(rows: PplnsProjectionDailyWork[]): string {
+  return [
+    'work_day,retained_difficulty,average_hashrate_hs,projected_net_sats,already_earned_net_sats,total_net_sats,earned_history_complete',
+    ...rows.map((row) => [row.work_day, row.retained_difficulty, row.retained_difficulty * 2 ** 32 / 86400,
+      row.projected_net_sats, row.already_earned_net_sats, row.total_net_sats, row.earned_history_complete].map((cell) => csvCell(String(cell))).join(',')),
+  ].join('\n');
+}
+
+/** Combine each account's earned and projected work by UTC day without inventing snapshot metadata. */
+export function combinePplnsDailyWork(accounts: PplnsProjectionDailyWork[][]): PplnsProjectionDailyWork[] {
+  const days = new Map<string, PplnsProjectionDailyWork>();
+  for (const rows of accounts) {
+    for (const day of rows) {
+      const previous = days.get(day.work_day);
+      days.set(day.work_day, {
+        work_day: day.work_day,
+        retained_difficulty: (previous?.retained_difficulty ?? 0) + day.retained_difficulty,
+        projected_net_sats: (previous?.projected_net_sats ?? 0) + day.projected_net_sats,
+        already_earned_net_sats: (previous?.already_earned_net_sats ?? 0) + day.already_earned_net_sats,
+        total_net_sats: (previous?.total_net_sats ?? 0) + day.total_net_sats,
+        earned_history_complete: (previous?.earned_history_complete ?? true) && day.earned_history_complete,
+      });
+    }
+  }
+  return [...days.values()].sort((a, b) => b.work_day.localeCompare(a.work_day));
 }
 
 export interface PplnsProjectionStats {
@@ -95,15 +107,8 @@ export function formatPplnsAverageHashrate(retainedDifficulty: number): string {
   return `${twoDigits(raw / scale)} ${unit}`;
 }
 
-/** Format a YYYY-MM-DD work day in the same long UTC form used by the canonical table. */
-export function formatPplnsWorkDay(workDay: string): string {
-  const iso = (workDay ?? '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return workDay || '—';
-  const [year, month, day] = iso.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return iso;
-  return `${WEEKDAYS[date.getUTCDay()]} ${day} ${MONTHS[month - 1]} ${year}`;
-}
+/** Shared long-form UTC dates across earnings and projections. */
+export const formatPplnsWorkDay = formatUtcDay;
 
 export interface PplnsDailyWorkDateFilter {
   sinceMs: number | null;

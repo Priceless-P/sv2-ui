@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { getUser } from '@/api';
 import { useAuth } from '@/auth';
-import type { CreateSubaccountInput } from '@/api/types';
+import type { CreateSubaccountInput, DmndClient, Subaccount } from '@/api/types';
 import { enrichSubaccount, type EnrichedSubaccount } from '@/lib/subaccountsTable';
+import { mapConcurrent } from '@/lib/concurrency';
 import { useActiveAccountId } from './useActiveAccountId';
 import { msUntilNextTick } from '@/lib/utils';
 
@@ -11,42 +12,20 @@ const CLOUD_POLL_MS = 5 * 60 * 1000;
 
 /**
  * The account's subaccounts, each enriched with its summary (rejection + today's
- * earnings in one response) and worker roster (active/offline counts, which the
- * summary does not carry). A failed sub-call rejects the whole query so the page
- * shows its error state, rather than silently reporting 0 workers or 0 earnings for
- * a row whose data could not be read (a misleading figure on money data).
+ * earnings in one response). Worker rosters are opt-in for aggregate Home; the
+ * Subaccounts page does not request or display worker counts.
  */
-export function useSubaccounts(enabled = true) {
+export function useSubaccounts(enabled = true, includeWorkers = false, refreshIntervalMs = CLOUD_POLL_MS) {
   const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const queryClient = useQueryClient();
   return useQuery({
-    queryKey: ['account', 'subaccounts', ownerAccountId],
+    queryKey: ['account', 'subaccounts', ownerAccountId, { includeWorkers }],
     queryFn: async ({ signal }): Promise<EnrichedSubaccount[]> => {
-      const client = getUser();
-      const requestOptions = { signal, accountId: ownerAccountId ?? undefined };
-      // Share the lightweight list cache used by the account switcher, aggregate
-      // chart, and filters instead of issuing a second identical list request.
-      const list = await queryClient.fetchQuery({
-        queryKey: ['account', 'subaccounts', 'list', ownerAccountId],
-        queryFn: ({ signal: listSignal }) => client.getSubaccounts({
-          signal: listSignal,
-          accountId: ownerAccountId ?? undefined,
-        }),
-        staleTime: CLOUD_POLL_MS,
-      });
-      return Promise.all(
-        list.map(async (row) => {
-          const [summary, workersRes] = await Promise.all([
-            client.getSubaccountSummary(row.id, requestOptions),
-            client.getSubaccountWorkers(row.id, requestOptions),
-          ]);
-          return enrichSubaccount(row, summary, workersRes.workers);
-        }),
-      );
+      return loadSubaccountRows(queryClient, getUser(), ownerAccountId!, includeWorkers, signal);
     },
     enabled: !!session && enabled,
-    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
+    refetchInterval: () => msUntilNextTick(refreshIntervalMs),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
@@ -115,5 +94,54 @@ export function useCreateSubaccount() {
     },
     retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'subaccounts'] }),
+  });
+}
+
+export const ACCOUNT_POLL_MS = 5 * 60 * 1000;
+
+/** Share reads within a polling period, but refresh at the next chart/live tick. */
+function accountPollStaleTime() {
+  return Math.max(1, Date.now() % ACCOUNT_POLL_MS);
+}
+
+export function subaccountWorkersQuery(cache: QueryClient, client: DmndClient, ownerId: string, id: string) {
+  return cache.fetchQuery({
+    queryKey: ['account', 'workers-all', id],
+    queryFn: async ({ signal }) => (await client.getSubaccountWorkers(id, { signal, accountId: ownerId })).workers,
+    staleTime: accountPollStaleTime,
+    retry: false,
+  });
+}
+
+/** Subaccounts only requires summaries; full rosters are opt-in for aggregate Home. */
+export async function loadSubaccountRows(
+  cache: QueryClient, client: DmndClient, ownerId: string, includeWorkers: boolean, signal: AbortSignal,
+) {
+  const list = await cache.fetchQuery({
+    queryKey: ['account', 'subaccounts', 'list', ownerId],
+    queryFn: ({ signal }) => client.getSubaccounts({ signal, accountId: ownerId }),
+    staleTime: accountPollStaleTime,
+    retry: false,
+  });
+  return mapConcurrent(list, async (row) => {
+    signal.throwIfAborted();
+    const summary = await cache.fetchQuery({
+      queryKey: ['account', 'subaccount-summary', ownerId, row.id],
+      queryFn: ({ signal }) => client.getSubaccountSummary(row.id, { signal, accountId: ownerId }),
+      staleTime: accountPollStaleTime,
+      retry: false,
+    });
+    const workers = includeWorkers ? await subaccountWorkersQuery(cache, client, ownerId, row.id) : [];
+    return enrichSubaccount(row, summary, workers);
+  });
+}
+
+/** Workers pages read only rosters, without fees, shares, generated BTC, or history. */
+export function loadSubaccountWorkerGroups(
+  cache: QueryClient, client: DmndClient, ownerId: string, subs: Subaccount[], signal: AbortSignal,
+) {
+  return mapConcurrent(subs, async (sub) => {
+    signal.throwIfAborted();
+    return { sub, workers: await subaccountWorkersQuery(cache, client, ownerId, sub.id) };
   });
 }

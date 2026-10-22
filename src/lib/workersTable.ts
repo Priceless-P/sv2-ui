@@ -1,3 +1,4 @@
+import { csvCell } from './utils';
 import type { Worker } from '@/api/types';
 import { deriveWorkerStats } from '@/lib/workerStats';
 import { formatHashrate } from '@/lib/utils';
@@ -63,16 +64,24 @@ export interface WorkersPageStats {
   active: number;
   offline: number;
   rejectionRate: number | null;
+  /** Combined FPPS + PPLNS rate averaged over the backend's ten-minute window. */
+  hashrate10m: number | null;
 }
 
 /** Stat-card figures from the roster returned by `/workers/all`. */
 export function deriveWorkersPageStats(workers: Worker[]): WorkersPageStats {
   const base = deriveWorkerStats(workers);
+  let hashrate10m: number | null = null;
+  for (const worker of workers) {
+    const rate = workerHashrate(worker);
+    if (rate !== null) hashrate10m = (hashrate10m ?? 0) + rate;
+  }
   return {
     total: base.totalCount,
     active: base.activeCount,
     offline: base.offlineCount,
     rejectionRate: base.rejectionRate,
+    hashrate10m,
   };
 }
 
@@ -242,13 +251,6 @@ export function filterWorkersByMode(workers: Worker[], mode: WorkerExportMode): 
 
 const CSV_HEADER = ['name', 'kind', 'hashrate', 'total_shares', 'rejected_shares', 'is_connected'];
 
-function csvCell(value: string): string {
-  // Guard against spreadsheet formula injection: a cell starting with =,+,-,@,
-  // tab, or CR is prefixed with a quote so Excel/Sheets treat it as text.
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  // Quote when the value contains a comma, quote, or newline; double inner quotes.
-  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
-}
 
 /** Raw numeric cell: the value as-is, or an empty cell when null (as production does). */
 function numCell(value: number | null | undefined): string {

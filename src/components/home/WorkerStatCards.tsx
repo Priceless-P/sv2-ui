@@ -26,7 +26,8 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
   const { data: workers } = useAccountAllWorkers();
   const { data: shareStats } = useAccountShareStats(aggregated === undefined);
   const { data: hashrate } = useAccountHashrate(aggregated === undefined);
-  const { data: earnings } = useTodayEarnings(aggregated === undefined);
+  const earningsQuery = useTodayEarnings(true, aggregated !== undefined);
+  const earnings = earningsQuery.isSuccess ? earningsQuery.data : undefined;
   return <WorkerStatCardsView workers={workers} shareStats={shareStats} hashrate={hashrate} earnings={earnings} aggregated={aggregated} />;
 }
 
@@ -58,7 +59,7 @@ export function WorkerStatCardsView({ workers, shareStats, hashrate, earnings, a
       rejectionRate: aggregated.rejectionRate,
     }
     : { ...single, rejectionRate: singleRejection };
-  const todayEarnings = aggregated ? aggregated.todayEarnings : earnings;
+  const todayEarnings = earnings;
   const totalHashrate = aggregated ? aggregated.combinedHashrate : hashrate?.total_hashrate;
   // No active worker means no rate to divide, which is unknown rather than zero.
   const perWorker = workersKnown && stats.activeCount > 0 && totalHashrate !== undefined ? totalHashrate / stats.activeCount : null;
@@ -126,20 +127,11 @@ export function TodayEarningsCard({ earnings: todayEarnings, aggregated = false 
       value={earningsKnown ? earningsValue.replace(' BTC', '') : '--'}
       unit={earningsKnown ? 'BTC' : undefined}
       captionTone={earningsKnown && todayEarnings > 0 ? 'strong' : 'muted'}
-      // Aggregated mode sums accrued earnings, so it must not claim "paid out".
-      caption={
-        aggregated
-          ? todayEarnings !== undefined && todayEarnings > 0
-            ? 'Generated today across all accounts.'
-            : 'Earnings generated today across all accounts.'
-          : todayEarnings !== undefined && todayEarnings > 0
-            ? 'Paid out on-chain today.'
-            : 'Earnings paid out on-chain today.'
-      }
+      caption={aggregated ? 'Paid out today across all accounts (UTC).' : 'Confirmed payouts today (UTC).'}
       hint={
         aggregated
-          ? 'Bitcoin generated today across the accounts in this view.'
-          : 'Confirmed payouts sent to your payout address today.'
+          ? 'Confirmed payouts today (UTC) across the main account and all subaccounts.'
+          : 'Confirmed payouts sent to this account today (UTC).'
       }
     />
   );

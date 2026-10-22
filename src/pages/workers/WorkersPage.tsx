@@ -36,7 +36,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { LiAddCircle, LiDownloadMinimalistic } from 'solar-icon-react/li';
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useAccountAllWorkers } from '@/hooks/useAccountData';
-import { useAggregatedData } from '@/hooks/useAggregatedData';
+import { useAggregatedWorkers } from '@/hooks/useAggregatedData';
 import { tagWorkersBySubaccount } from '@/lib/workersTable';
 
 const PAGE_SIZE = 10;
@@ -442,7 +442,7 @@ export function WorkersPage() {
   const singleAccount = useAccountAllWorkers(!aggregated);
   // In aggregated mode the table spans every subaccount, so the rows come from each
   // account's roster tagged with its owner rather than this account's own workers.
-  const agg = useAggregatedData(aggregated);
+  const agg = useAggregatedWorkers(aggregated);
   const workers = useMemo(() => {
     if (!aggregated) return singleAccount.data ?? [];
     // Every account, main included: its own workers are part of the combined roster,

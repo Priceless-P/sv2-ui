@@ -1,3 +1,5 @@
+import { deriveWorkerStats } from './workerStats';
+import { csvCell } from './utils';
 import type {
   GeneratedBtcEntry,
   Subaccount,
@@ -66,14 +68,15 @@ export function enrichSubaccount(
   summary: SubaccountSummary | null,
   workers: Worker[],
 ): EnrichedSubaccount {
+  const stats = deriveWorkerStats(workers);
   return {
     id: row.id,
     name: subaccountName(row),
-    hashrate: parseHashrate(row),
+    hashrate: summary?.hashrate.total_hashrate ?? parseHashrate(row),
     pplns: summary?.hashrate.pplns_hashrate ?? 0,
     fpps: summary?.hashrate.fpps_hashrate ?? 0,
-    active: workers.length,
-    offline: 0,
+    active: stats.activeCount,
+    offline: stats.offlineCount,
     pplnsPassword: row.token,
     fppsPassword: row.fpps_token,
     rejection: rejectionFromStats(summary?.share_stats),
@@ -101,14 +104,15 @@ export function withGeneratedBtc(
 ): EnrichedSubaccount[] {
   const byAccount = new Map<string, GeneratedBtcEntry[]>();
   for (const e of entries) {
-    if (e.account === undefined) continue;
-    const list = byAccount.get(e.account);
+    const key = e.accountId ?? e.account;
+    if (key === undefined) continue;
+    const list = byAccount.get(key);
     if (list) list.push(e);
-    else byAccount.set(e.account, [e]);
+    else byAccount.set(key, [e]);
   }
   const today = new Date(nowMs).toISOString().slice(0, 10);
   return subs.map((s) => {
-    const accountEntries = byAccount.get(s.name) ?? [];
+    const accountEntries = byAccount.get(s.id) ?? byAccount.get(s.name) ?? [];
     return {
       ...s,
       generatedBtc: sumGeneratedBtc(accountEntries),
@@ -124,38 +128,37 @@ export function sumGeneratedBtc(entries: GeneratedBtcEntry[]): number | null {
 }
 
 export interface SubaccountsPageStats {
+  averageRejectionRate: number | null;
   total: number;
-  activeWorkers: number;
   combinedHashrate: number;
   todayEarnings: number;
 }
 
-/** Stat-card figures: count, summed active workers, summed hashrate, summed earnings. */
+/** Summary figures, with rejection weighted by submitted shares across subaccounts. */
 export function deriveSubaccountsPageStats(subs: EnrichedSubaccount[]): SubaccountsPageStats {
-  let activeWorkers = 0;
   let combinedHashrate = 0;
   let todayTotal = 0;
+  let accepted = 0;
+  let rejected = 0;
   for (const s of subs) {
-    activeWorkers += s.active;
     combinedHashrate += s.hashrate;
     todayTotal += s.todayEarnings;
+    accepted += s.accepted;
+    rejected += s.rejected;
   }
-  return { total: subs.length, activeWorkers, combinedHashrate, todayEarnings: todayTotal };
+  return { total: subs.length, combinedHashrate, todayEarnings: todayTotal, averageRejectionRate: accepted + rejected > 0 ? rejected / (accepted + rejected) : null };
 }
 
 /** Lowercased text for every value displayed in a subaccount row. */
 export function subaccountSearchText(sub: EnrichedSubaccount): string {
   const rejection = sub.rejection === null ? '--' : `${(sub.rejection * 100).toFixed(1)}%`;
-  const generated = sub.generatedBtc === null ? '--' : `${formatBtc(sub.generatedBtc)} BTC`;
   return [
     sub.id,
     sub.name,
-    String(sub.active),
     sub.pplnsPassword,
     sub.fppsPassword ?? 'Not available',
     formatHashrate(sub.hashrate),
     rejection,
-    generated,
     `${formatBtc(sub.todayEarnings)} BTC`,
   ]
     .join(' ')
@@ -250,30 +253,19 @@ export function formatBtc(n: number): string {
 // report cannot silently write mining credentials to disk.
 const CSV_HEADER = [
   'Name',
-  'Active workers',
   'Hashrate',
   'Rejection rate',
-  'Generated BTC',
-  "Today's earnings (BTC)",
+  'Today FPPS earnings (BTC, UTC)',
 ];
 
-function csvCell(value: string): string {
-  // Guard against spreadsheet formula injection: a cell starting with =,+,-,@,
-  // tab, or CR is prefixed with a quote so Excel/Sheets treat it as text. (Same
-  // rule as the workers CSV; kept local so this module is self-contained.)
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
-}
 
 /** CSV of the given (already filtered/sorted) subaccounts, exactly what's on screen. */
 export function subaccountsToCsv(subs: EnrichedSubaccount[]): string {
   const rows = subs.map((s) =>
     [
       s.name,
-      String(s.active),
       formatHashrate(s.hashrate),
       s.rejection == null ? '--' : `${(s.rejection * 100).toFixed(2)}%`,
-      s.generatedBtc === null ? '--' : formatBtc(s.generatedBtc),
       formatBtc(s.todayEarnings),
     ].map(csvCell),
   );

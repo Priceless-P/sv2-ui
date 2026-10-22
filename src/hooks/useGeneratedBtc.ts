@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { mapConcurrent } from '@/lib/concurrency';
 import { getUser } from '@/api';
 import { useAuth } from '@/auth';
 import type { GeneratedBtcEntry } from '@/api/types';
@@ -38,29 +39,34 @@ export function useGeneratedBtc(enabled = true) {
  * none. A failed subaccount fetch rejects the whole query (Promise.all), so the page
  * shows its error state rather than a total that is silently missing an account's BTC.
  */
-export function useAggregatedGeneratedBtc(enabled = true) {
+export function useAggregatedGeneratedBtc(enabled = true, includeMain = true) {
+  const cache = useQueryClient();
   const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const { data: subs } = useSubaccountList();
   return useQuery({
-    queryKey: ['account', 'generated-btc', 'aggregated', ownerAccountId],
+    queryKey: ['account', 'generated-btc', 'aggregated', ownerAccountId, includeMain, (subs ?? []).map((sub) => [sub.id, subaccountName(sub)])],
     queryFn: async ({ signal }): Promise<GeneratedBtcEntry[]> => {
       const client = getUser();
       const owners = subs ?? [];
       const [mainRows, subResults] = await Promise.all([
-        client.getGeneratedBtc({ signal, accountId: ownerAccountId ?? undefined }),
-        Promise.all(
-          owners.map((s) =>
-            client.getSubaccountGeneratedBtc(s.id, {
-              signal,
-              accountId: ownerAccountId ?? undefined,
-            }),
-          ),
-        ),
+        includeMain ? cache.fetchQuery({
+          queryKey: ['account', 'generated-btc', ownerAccountId],
+          queryFn: ({ signal }) => client.getGeneratedBtc({ signal, accountId: ownerAccountId! }),
+          staleTime: CLOUD_POLL_MS, retry: false,
+        }) : Promise.resolve([]),
+        mapConcurrent(owners, (s) => {
+          signal.throwIfAborted();
+          return cache.fetchQuery({
+            queryKey: ['account', 'generated-btc', s.id],
+            queryFn: ({ signal }) => client.getSubaccountGeneratedBtc(s.id, { signal, accountId: ownerAccountId! }),
+            staleTime: CLOUD_POLL_MS, retry: false,
+          });
+        }),
       ]);
       const tagged: GeneratedBtcEntry[] = [
-        ...mainRows.map((r) => ({ ...r, account: MAIN_ACCOUNT_LABEL })),
-        ...subResults.flatMap((rows, i) => rows.map((r) => ({ ...r, account: subaccountName(owners[i]) }))),
+        ...mainRows.map((r) => ({ ...r, account: MAIN_ACCOUNT_LABEL, accountId: ownerAccountId ?? undefined })),
+        ...subResults.flatMap((rows, i) => rows.map((r) => ({ ...r, account: subaccountName(owners[i]), accountId: owners[i].id }))),
       ];
       return sortGeneratedByDateDesc(dedupeGeneratedBtc(tagged));
     },

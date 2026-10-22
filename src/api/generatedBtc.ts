@@ -10,7 +10,7 @@ const generatedBtcEntrySchema = z.object({
   btc_generated: z.number(),
 });
 
-export type GeneratedBtcEntry = z.infer<typeof generatedBtcEntrySchema> & { account?: string };
+export type GeneratedBtcEntry = z.infer<typeof generatedBtcEntrySchema> & { account?: string; accountId?: string };
 
 export function decodeGeneratedBtc(payload: unknown): GeneratedBtcEntry[] {
   return z.array(generatedBtcEntrySchema).parse(payload);

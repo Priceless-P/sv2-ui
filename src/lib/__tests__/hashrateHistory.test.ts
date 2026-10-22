@@ -46,6 +46,15 @@ test('downsampleHashrate with maxPoints 0 yields an empty series', () => {
   assert.deepEqual(downsampleHashrate([point('a', 1, 1)], 0), []);
 });
 
+test('chart downsampling preserves the actual newest snapshot instead of averaging its rate', () => {
+  const pts = Array.from({ length: 10 }, (_, i) => point(String(i), i === 9 ? 100 : 10, i === 9 ? 50 : 5));
+  for (const cap of [1, 3, 5]) {
+    const result = downsampleHashrate(pts, cap);
+    assert.ok(result.length <= cap);
+    assert.deepEqual(result.at(-1), pts.at(-1));
+  }
+});
+
 test('hashrateComparisonWindow is centred 24 hours before the live snapshot, not wall-clock now', () => {
   assert.deepEqual(hashrateComparisonWindow(CURRENT_OBSERVED_AT, NOW), {
     from: '2026-06-29T11:53:00.000Z',

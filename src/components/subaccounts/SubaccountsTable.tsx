@@ -6,7 +6,7 @@ import { CellCheckbox } from '@/components/ui/CellCheckbox';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { formatBtc, type EnrichedSubaccount } from '@/lib/subaccountsTable';
 import { truncateMiddle } from '@/lib/payoutsTable';
-import { ACCOUNT_REJECTION_HINT, ACTIVE_WORKERS_HINT, LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
+import { ACCOUNT_REJECTION_HINT, LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
 
 /** The empty message shown in the table body when a search or filter excludes every row. */
 export interface SubaccountsEmpty {
@@ -148,8 +148,8 @@ function PasswordCell({ subaccount }: { subaccount: EnrichedSubaccount }) {
 }
 
 /**
- * One subaccount as a mobile card: Name / Active workers / Hashrate on the first line,
- * Rejection rate / Today's earnings / Generated BTC on the second. The mobile frame
+ * One subaccount as a mobile card: Name / Hashrate on the first line,
+ * Rejection rate / Today’s FPPS earnings on the second. The mobile frame
  * draws neither the select column nor the row action, so this card carries no
  * checkbox and no Open link; a phone can still open a subaccount from the account
  * switcher in the top bar.
@@ -157,16 +157,14 @@ function PasswordCell({ subaccount }: { subaccount: EnrichedSubaccount }) {
 function SubaccountCard({ subaccount }: { subaccount: EnrichedSubaccount }) {
   const cells: [string, React.ReactNode][] = [
     ['Name', <span className="font-medium text-foreground">{subaccount.name}</span>],
-    ['Active workers', <span className="text-foreground">{subaccount.active}</span>],
     ['Hashrate', <span className="text-foreground">{formatHashrate(subaccount.hashrate)}</span>],
     ['Rejection rate', <span className="text-foreground">{rejectionText(subaccount.rejection)}</span>],
-    ["Today's earnings", <BtcCell value={subaccount.todayEarnings} />],
-    ['Generated BTC', <BtcCell value={subaccount.generatedBtc} />],
+    ['Today’s FPPS earnings', <BtcCell value={subaccount.todayEarnings} />],
   ];
   return (
     <div className="flex flex-col gap-2 border-b-[0.5px] border-border px-3 py-3 last:border-0">
-      {[cells.slice(0, 3), cells.slice(3)].map((row, i) => (
-        <div key={i} className="grid grid-cols-3 gap-2">
+      {[cells.slice(0, 2), cells.slice(2)].map((row, i) => (
+        <div key={i} className="grid grid-cols-2 gap-2">
           {row.map(([label, value]) => (
             <div key={label} className="flex min-w-0 flex-col">
               <p className="truncate text-xs leading-4 text-body-alt">{label}</p>
@@ -240,24 +238,20 @@ export function SubaccountsTable({
               </th>
               <th className="px-3 py-3 text-left font-normal">Name</th>
               <th className="px-3 py-3 text-left font-normal">
-                <span className="inline-flex items-center gap-2">Active Workers <InfoHint text={ACTIVE_WORKERS_HINT} /></span>
+                <span className="inline-flex items-center gap-2">Hashrate <InfoHint text={LIVE_HASHRATE_HINT} /></span>
               </th>
               <th className="px-3 py-3 text-left font-normal">Password</th>
               <th className="px-3 py-3 text-left font-normal">
-                <span className="inline-flex items-center gap-2">Hashrate <InfoHint text={LIVE_HASHRATE_HINT} /></span>
-              </th>
-              <th className="px-3 py-3 text-left font-normal">
                 <span className="inline-flex items-center gap-2">Rejection <InfoHint text={ACCOUNT_REJECTION_HINT} /></span>
               </th>
-              <th className="px-3 py-3 text-left font-normal">Generated BTC</th>
-              <th className="px-3 py-3 text-left font-normal">Today's earnings</th>
+              <th className="px-3 py-3 text-left font-normal">Today’s FPPS earnings</th>
               <th className="px-4 py-3 text-left font-normal">Action</th>
             </tr>
           </thead>
           <tbody>
             {emptyRow && (
               <tr>
-                <td colSpan={9}>{emptyRow}</td>
+                <td colSpan={7}>{emptyRow}</td>
               </tr>
             )}
             {subaccounts.map((s) => (
@@ -270,13 +264,9 @@ export function SubaccountsTable({
                   />
                 </td>
                 <td className="px-3 py-3 font-medium text-foreground">{s.name}</td>
-                <td className="px-3 py-3 text-foreground">{s.active}</td>
-                <td className="px-3 py-3 text-foreground"><PasswordCell subaccount={s} /></td>
                 <td className="px-3 py-3 text-foreground">{formatHashrate(s.hashrate)}</td>
+                <td className="px-3 py-3 text-foreground"><PasswordCell subaccount={s} /></td>
                 <td className="px-3 py-3 text-foreground">{rejectionText(s.rejection)}</td>
-                <td className="px-3 py-3">
-                  <BtcCell value={s.generatedBtc} />
-                </td>
                 <td className="px-3 py-3">
                   <BtcCell value={s.todayEarnings} />
                 </td>

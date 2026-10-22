@@ -1,3 +1,4 @@
+import { combinedDailyEarnings, hasFppsActivity } from '@/lib/generatedBtcTable';
 import type { GeneratedBtcEntry } from '@/api/types';
 import { GeneratedBtcEmptyState } from '@/components/generated-btc/GeneratedBtcEmptyState';
 import {
@@ -53,7 +54,7 @@ function downloadCsv(content: string): void {
  * The Generated BTC page: the account's daily FPPS hashrate and generated BTC with
  * summary cards, a date filter, pagination, and CSV export.
  */
-export function GeneratedBtcContent({ entries, isLoading, isError, onRetry: refetch, accounts: accountNames, canConnect = false, canExport = false }: {
+export function GeneratedBtcContent({ entries: allEntries, isLoading, isError, onRetry: refetch, accounts: accountNames, canConnect = false, canExport = false }: {
   entries: GeneratedBtcEntry[];
   isLoading: boolean;
   isError: boolean;
@@ -62,6 +63,7 @@ export function GeneratedBtcContent({ entries, isLoading, isError, onRetry: refe
   canConnect?: boolean;
   canExport?: boolean;
 }) {
+  const entries = useMemo(() => allEntries.filter(hasFppsActivity), [allEntries]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<GbtcFilterDraft>(EMPTY_GBTC_FILTER_DRAFT);
   const [page, setPage] = useState(1);
@@ -77,14 +79,11 @@ export function GeneratedBtcContent({ entries, isLoading, isError, onRetry: refe
   }, [sorted, filter, query]);
   const pageData = paginate(visible, page, PAGE_SIZE);
 
-  const totals = useMemo(
-    () => ({
-      generated: sumGenerated(entries),
-      averageHashrate: averageEntryHashrate(entries),
-      highestDay: highestEarningDay(entries),
-    }),
-    [entries],
-  );
+  const aggregated = accountNames !== undefined;
+  const totals = useMemo(() => {
+    const dailyEntries = aggregated ? combinedDailyEarnings(entries) : entries;
+    return { generated: sumGenerated(entries), averageHashrate: averageEntryHashrate(dailyEntries), highestDay: highestEarningDay(dailyEntries) };
+  }, [entries, aggregated]);
 
   const changeQuery = (next: string) => {
     setQuery(next);

@@ -18,6 +18,9 @@ export const OFFLINE_WORKER_HINT =
 export const ACTIVE_WORKERS_HINT =
   'Total number of workers active in the last 10 minutes.';
 
+export const WORKER_STATUS_HINT =
+  'Online: telemetry received within the last 10 minutes. Offline: no telemetry received in that window.';
+
 export const WORKER_METRICS_HINT =
   'Average hashrate over the last 10 minutes.';
 

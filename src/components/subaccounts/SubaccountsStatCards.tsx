@@ -3,7 +3,7 @@ import { InfoHint } from '@/components/ui/InfoHint';
 import { Reading } from '@/components/ui/Reading';
 import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import { formatBtc, type SubaccountsPageStats } from '@/lib/subaccountsTable';
-import { ACTIVE_WORKERS_HINT, SUBACCOUNTS_LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
+import { SUBACCOUNTS_LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
 
 /**
  * A stat card. Same shell and type ramp as the home and workers cards, so the three
@@ -33,7 +33,7 @@ function Card({
   );
 }
 
-/** Total subaccounts / Active workers / Combined hashrate / Today's total earnings. */
+/** Summary figures from the existing subaccount data. */
 export function SubaccountsStatCards({ stats }: { stats: SubaccountsPageStats }) {
   // One unit for the combined figure, matching how every other hashrate reading is set.
   const scale = pickHashrateScale([stats.combinedHashrate]);
@@ -44,19 +44,15 @@ export function SubaccountsStatCards({ stats }: { stats: SubaccountsPageStats })
         <Reading value={stats.total} />
       </Card>
 
-      <Card
-        title="Active workers"
-        hint={ACTIVE_WORKERS_HINT}
-        caption="Across all subaccounts"
-      >
-        <Reading value={stats.activeWorkers} />
-      </Card>
-
-      <Card title="Combined hashrate" hint={SUBACCOUNTS_LIVE_HASHRATE_HINT} caption="Across all subaccounts">
+      <Card title="Average hashrate" hint={SUBACCOUNTS_LIVE_HASHRATE_HINT} caption="Across all subaccounts">
         <Reading value={formatAxisValue(stats.combinedHashrate, scale.divisor)} unit={scale.unit} />
       </Card>
 
-      <Card title="Today's total earnings" caption="Generated across all subaccounts">
+      <Card title="Average rejection rate" hint="Rejected shares divided by all submitted shares across subaccounts over the last 24 hours. Weighted by share volume." caption="Last 24 hours across all subaccounts">
+        <Reading value={stats.averageRejectionRate === null ? '--' : (stats.averageRejectionRate * 100).toFixed(2)} unit={stats.averageRejectionRate === null ? undefined : '%'} />
+      </Card>
+
+      <Card title="Today's FPPS earnings" caption="Generated today (UTC) across subaccounts">
         <Reading value={formatBtc(stats.todayEarnings)} unit="BTC" />
       </Card>
     </div>

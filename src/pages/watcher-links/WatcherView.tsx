@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link } from 'wouter';
 import { LiCloseCircle } from 'solar-icon-react/li';
 import { BdEye } from 'solar-icon-react/bd';
@@ -84,23 +84,25 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
   const [custom, setCustom] = useState<CustomWindow | null>(null);
   const [chosen, setChosen] = useState<WatcherSection | null>(null);
 
+  const section = chosen ?? 'home';
+  const homeVisible = section === 'home';
   const revoked = useWatcherTokenRevoked(token);
-  const hashrate = useWatcherHashrate(token, !revoked);
-  const history = useWatcherHashrateHistory(token, range, custom, !revoked && hashrate.isSuccess);
+  const hashrate = useWatcherHashrate(token, !revoked, homeVisible);
+  const history = useWatcherHashrateHistory(token, range, custom, !revoked && hashrate.isSuccess && homeVisible);
   const now = Date.now();
   const comparisonWindow = hashrateComparisonWindow(hashrate.data?.observed_at, now);
   const comparisonHistory = useWatcherHashrateHistory(token, '24H', comparisonWindow ? {
     fromMs: Date.parse(comparisonWindow.from), toMs: Date.parse(comparisonWindow.to),
-  } : null, hashrate.isSuccess && comparisonWindow !== null);
+  } : null, homeVisible && hashrate.isSuccess && comparisonWindow !== null);
   const change = hashrateChangeFrom24HoursAgo(hashrate.data?.total_hashrate ?? 0, hashrate.data?.observed_at, comparisonHistory.data ?? [], now);
-  const workers = useWatcherWorkers(token);
+  const workers = useWatcherWorkers(token, true, homeVisible || section === 'workers');
   // Each section is attempted (not gated on a scope flag) so a link that only grants one
   // scope still renders that section instead of looking like a dead link.
-  const generated = useWatcherGeneratedBtc(token, true, accountId);
-  const payouts = useWatcherPayouts(token, generated.isSuccess && !revoked, accountId);
-  const fees = useWatcherFees(token, true);
-  const shareStats = useWatcherShareStats(token, true);
-  const pplns = useWatcherPplnsProjection(accountId, token, true);
+  const generated = useWatcherGeneratedBtc(token, true, accountId, section === 'generated');
+  const payouts = useWatcherPayouts(token, generated.isSuccess && !revoked, accountId, homeVisible || section === 'generated' || section === 'payouts');
+  const fees = useWatcherFees(token, true, homeVisible);
+  const shareStats = useWatcherShareStats(token, true, homeVisible);
+  const pplns = useWatcherPplnsProjection(accountId, token, true, section === 'pplns');
 
   // A scope is granted unless its probe came back unauthorised; while a probe is still
   // loading we cannot yet tell, so navigation waits for it to settle before deciding
@@ -135,6 +137,10 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
     canViewPayouts ? 'payouts' : null,
     canViewProjection ? 'PPLNS projection' : null,
   ].filter((name): name is string => name !== null);
+
+  useEffect(() => {
+    if (settled && chosen && !sections.includes(chosen)) setChosen(null);
+  }, [settled, chosen, sections]);
 
   const active: WatcherSection = chosen && sections.includes(chosen) ? chosen : sections[0] ?? 'home';
 

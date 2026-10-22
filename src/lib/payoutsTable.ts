@@ -1,4 +1,5 @@
-import type { PayoutRecord } from '@/api/types';
+import { csvCell, formatUtcDay } from './utils';
+import type { DmndClient, PayoutRecord } from '@/api/types';
 
 export type PayoutMode = 'pplns' | 'fpps';
 
@@ -168,6 +169,21 @@ export function sortPayoutsByDateDesc(payouts: Payout[]): Payout[] {
   return [...payouts].sort((a, b) => b.date - a.date);
 }
 
+/** Summarize confirmed outputs in the fetched history, before table filters. */
+export function summarizePayouts(payouts: Payout[]): {
+  totalSats: number;
+  count: number;
+  latest: Payout | null;
+} {
+  let totalSats = 0;
+  let latest: Payout | null = null;
+  for (const payout of payouts) {
+    totalSats += payout.amountSats;
+    if (latest === null || payout.date > latest.date) latest = payout;
+  }
+  return { totalSats, count: payouts.length, latest };
+}
+
 /** Case-insensitive substring match on the transaction id; a blank query passes all. */
 export function searchPayouts(payouts: Payout[], query: string): Payout[] {
   const q = query.trim().toLowerCase();
@@ -195,12 +211,10 @@ export function truncateMiddle(value: string, head: number, tail: number): strin
   return `${value.slice(0, head)}...${value.slice(-tail)}`;
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** Format a unix-second timestamp as "21 Jun, 2026" (UTC). */
+/** Same long UTC date used by PPLNS Projection. */
 export function formatPayoutDate(sec: number): string {
-  const d = new Date(sec * 1000);
-  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}, ${d.getUTCFullYear()}`;
+  const date = new Date(sec * 1000);
+  return Number.isNaN(date.getTime()) ? '—' : formatUtcDay(date.toISOString());
 }
 
 const MONTHS_FULL = [
@@ -235,12 +249,6 @@ export function mempoolTxUrl(txid: string): string {
 
 const CSV_HEADER = 'timestamp,kind,amount_btc,txid,from,to';
 
-function csvCell(value: string): string {
-  // Guard against spreadsheet formula injection, then quote when the value holds a
-  // comma, quote, or newline (same rule as the other CSVs; kept local).
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return /[",\n]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
-}
 
 /** CSV with header `timestamp,kind,amount_btc,txid,from,to`; kind uppercased, cells guarded. */
 export function payoutsToCsv(payouts: Payout[]): string {
@@ -255,4 +263,46 @@ export function payoutsToCsv(payouts: Payout[]): string {
     ].map(csvCell),
   );
   return [CSV_HEADER, ...rows.map((r) => r.join(','))].join('\n');
+}
+
+/** Read confirmed outputs once for the selected scope and sum only the requested UTC day. */
+export async function loadTodayPayouts(client: Pick<DmndClient, 'getPayouts' | 'getSubaccountPayouts'>, options: {
+  accountId: string;
+  ownerAccountId: string;
+  aggregated: boolean;
+  today: string;
+  signal?: AbortSignal;
+}): Promise<number> {
+  const { accountId, ownerAccountId, aggregated, today, signal } = options;
+  const query = { from: today, to: today };
+  const req = { signal, accountId: ownerAccountId };
+  const records = aggregated
+    ? await client.getPayouts(query, req)
+    : await client.getSubaccountPayouts(accountId, query, req);
+  return records
+    .filter((row) => new Date(row.confirmed_at * 1000).toISOString().slice(0, 10) === today)
+    .reduce((total, row) => total + row.amount_sats, 0) / 1e8;
+}
+
+const PAYOUT_REFRESH_MS = 30 * 60 * 1000;
+
+/** Keep payout data fresh and available across page navigation for thirty minutes. */
+export const PAYOUT_QUERY_OPTIONS = {
+  staleTime: PAYOUT_REFRESH_MS,
+  gcTime: 2 * PAYOUT_REFRESH_MS,
+  refetchInterval: (query: { state: { dataUpdatedAt: number } }) =>
+    Math.max(1000, PAYOUT_REFRESH_MS - (Date.now() - query.state.dataUpdatedAt)),
+  refetchOnWindowFocus: false,
+  retry: false,
+} as const;
+
+/** Share the same cached records across Home, payout history, and payout progress. */
+export function accountPayoutQueryOptions(client: DmndClient, ownerId: string | null | undefined, accountId: string | null | undefined, aggregated: boolean) {
+  return {
+    queryKey: ['account', 'payout-records', ownerId, aggregated ? 'tree' : 'single', aggregated ? ownerId : accountId],
+    queryFn: ({ signal }: { signal: AbortSignal }) => aggregated
+      ? client.getPayouts({}, { signal, accountId: ownerId! })
+      : client.getSubaccountPayouts(accountId!, {}, { signal, accountId: ownerId! }),
+    ...PAYOUT_QUERY_OPTIONS,
+  };
 }
