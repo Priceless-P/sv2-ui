@@ -537,6 +537,10 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
         req,
       ));
     },
+    async hasWorkers(req) {
+      const page = await request<WorkersResponse>({ method: 'GET', path: '/api/workers/all?limit=1' }, opts, req);
+      return page.workers.length > 0;
+    },
     getPayouts(query = {}, req = {}) {
       return requestAllPayouts('/api/v1/user/payouts', query, opts, req);
     },

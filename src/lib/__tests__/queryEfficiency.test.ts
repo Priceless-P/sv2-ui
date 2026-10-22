@@ -4,8 +4,8 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { createWatcherClient, WatcherRequestError } from '@/api/watcherClient';
 import type { DmndClient } from '@/api/types';
 import { brokerMinersQueryOptions, clearBrokerQueries } from '../brokerQueries';
+import { refreshHashrateHistory } from '../incrementalHistory';
 import { watcherQueryPolicy } from '../watcherQueries';
-
 
 test('broker identities cannot share rows and logout removes an in-flight response', async () => {
   const cache = new QueryClient();
@@ -25,6 +25,22 @@ test('broker identities cannot share rows and logout removes an in-flight respon
     assert.equal(cache.getQueryData(a.queryKey), undefined);
     assert.equal(cache.getQueryData(b.queryKey), undefined);
   } finally { cache.clear(); }
+});
+
+test('rolling history reads only the missing tail, replaces overlap, and evicts old samples', async () => {
+  const point = (minute: number, total = minute) => ({ observed_at: new Date(minute * 60_000).toISOString(), total_hashrate: total, pplns_hashrate: total, fpps_hashrate: 0 });
+  const window = (from: number, to: number) => ({ from: new Date(from * 60_000).toISOString(), to: new Date(to * 60_000).toISOString() });
+  const first = await refreshHashrateHistory(undefined, window(0, 60), async () => [point(0), point(30), point(58), point(60)]);
+  let requestedFrom = '';
+  const next = await refreshHashrateHistory(first, window(5, 65), async (from) => {
+    requestedFrom = from;
+    return [point(58, 999), point(62), point(64)];
+  });
+  assert.equal(requestedFrom, new Date(56 * 60_000).toISOString());
+  assert.deepEqual(next.points.map((p) => p.total_hashrate), [30, 999, 60, 62, 64]);
+  let resetFrom = '';
+  await refreshHashrateHistory(next, window(70, 130), async (from) => { resetFrom = from; return []; });
+  assert.equal(resetFrom, new Date(70 * 60_000).toISOString(), 'a disjoint window requires bootstrap');
 });
 
 test('a denied watcher scope disables future automatic reads; a revoked token blocks all reads', async () => {

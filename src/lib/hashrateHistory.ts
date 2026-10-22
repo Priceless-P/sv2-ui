@@ -107,5 +107,8 @@ export function downsampleHashrate(points: HashratePoint[], maxPoints: number): 
       total_hashrate: total / n,
     });
   }
+  // The current reading must match the live snapshot, even when the older trend
+  // needs averaging. Retain its rates as well as its timestamp.
+  out[out.length - 1] = { ...points[points.length - 1] };
   return out;
 }

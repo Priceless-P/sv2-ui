@@ -9,41 +9,19 @@ import {
   type Payout,
   type PayoutAccount,
 } from '@/lib/payoutsTable';
-import { useAccountProfile, userBitcoinAddresses, userBitcoinAddressesKey } from '@/hooks/useAccountData';
+import { useAccountProfile, userBitcoinAddresses } from '@/hooks/useAccountData';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
 import { subaccountName } from '@/lib/subaccountsTable';
+import { accountPayoutQueryOptions } from '@/lib/payoutQueries';
 
-const PAYOUTS_POLL_MS = 15 * 60 * 1000;
-
-/**
- * Confirmed payouts for the selected account. The user endpoint returns the owner's
- * complete account tree, so main-account view keeps only the main profile's addresses;
- * a drilled-in subaccount uses the backend's exact per-subaccount endpoint.
- */
+/** Confirmed payouts for exactly the account being viewed, shared by history and progress. */
 export function usePayouts(enabled = true) {
   const { session, viewingAccountId } = useAuth();
-  const ownerAccountId = session?.accountId ?? null;
-  const { data: profile } = useAccountProfile();
-  const addressKey = viewingAccountId === null ? userBitcoinAddressesKey(profile) : 'exact-subaccount';
+  const accountId = viewingAccountId ?? session?.accountId;
   return useQuery({
-    queryKey: ['account', 'payouts', viewingAccountId ?? ownerAccountId, addressKey],
-    queryFn: async ({ signal }): Promise<Payout[]> => {
-      const client = getUser();
-      const req = { signal, accountId: ownerAccountId ?? undefined };
-      const records = viewingAccountId
-        ? await client.getSubaccountPayouts(viewingAccountId, {}, req)
-        : await client.getPayouts({}, req);
-      const mainAddresses = userBitcoinAddresses(profile);
-      const scoped = viewingAccountId
-        ? records
-        : records.filter((row) => mainAddresses.has(row.address));
-      return sortPayoutsByDateDesc(scoped.map(payoutFromApi));
-    },
-    enabled: enabled && !!session && (viewingAccountId !== null || !!profile),
-    refetchInterval: PAYOUTS_POLL_MS,
-    staleTime: PAYOUTS_POLL_MS,
-    refetchOnWindowFocus: false,
-    retry: false,
+    ...accountPayoutQueryOptions(getUser(), session?.accountId, accountId, false),
+    select: (rows): Payout[] => sortPayoutsByDateDesc(rows.map(payoutFromApi)),
+    enabled: enabled && !!session && !!accountId,
   });
 }
 
@@ -57,20 +35,9 @@ export function useAggregatedPayouts(enabled = true) {
   const ownerAccountId = session?.accountId ?? null;
   const { data: profile } = useAccountProfile();
   const { data: subs } = useSubaccountList();
-  // Attribution happens inside the query function, so every input to that transform
-  // belongs in the key. Otherwise a renamed/new subaccount or changed address roster
-  // can leave cached rows carrying stale account labels until the polling interval.
-  const ownershipKey = JSON.stringify([
-    [ownerAccountId, MAIN_ACCOUNT_LABEL, [...userBitcoinAddresses(profile)].sort()],
-    ...(subs ?? []).map((s) => [
-      s.id,
-      subaccountName(s),
-      Object.keys(s.bitcoin_addresses ?? {}).filter(Boolean).sort(),
-    ]),
-  ]);
   return useQuery({
-    queryKey: ['account', 'payouts', 'aggregated', ownerAccountId, ownershipKey],
-    queryFn: async ({ signal }): Promise<Payout[]> => {
+    ...accountPayoutQueryOptions(getUser(), ownerAccountId, ownerAccountId, true),
+    select: (records): Payout[] => {
       const owners: PayoutAccount[] = [
         { name: MAIN_ACCOUNT_LABEL, addresses: userBitcoinAddresses(profile) },
         ...(subs ?? []).map((s) => ({
@@ -78,10 +45,6 @@ export function useAggregatedPayouts(enabled = true) {
           addresses: new Set(Object.keys(s.bitcoin_addresses ?? {}).filter(Boolean)),
         })),
       ];
-      const records = await getUser().getPayouts({}, {
-        signal,
-        accountId: ownerAccountId ?? undefined,
-      });
       return sortPayoutsByDateDesc(
         records.map((record) => ({
           ...payoutFromApi(record),
@@ -90,9 +53,5 @@ export function useAggregatedPayouts(enabled = true) {
       );
     },
     enabled: enabled && !!session && !!profile && subs !== undefined,
-    refetchInterval: PAYOUTS_POLL_MS,
-    staleTime: PAYOUTS_POLL_MS,
-    refetchOnWindowFocus: false,
-    retry: false,
   });
 }

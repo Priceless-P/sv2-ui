@@ -25,6 +25,7 @@ import {
   filterPayoutsByAccount,
   formatCalendarDate,
   payoutRowId,
+  summarizePayouts,
 } from '@/lib/payoutsTable';
 
 const WALLET = 'bc1qpool';
@@ -32,6 +33,21 @@ const WALLET = 'bc1qpool';
 function payout(over: Partial<Payout> = {}): Payout {
   return { date: 1_718_000_000, txid: 't', amountSats: 1000, mode: 'pplns', toAddress: 'bc1quser', outputIndex: 0, fromAddress: WALLET, ...over };
 }
+
+test('payout summary sums satoshis and counts outputs sharing a transaction across accounts', () => {
+  const latest = payout({ date: 300, txid: 'shared', outputIndex: 1, amountSats: 2, account: 'Farm' });
+  const rows = [
+    payout({ date: 100, txid: 'shared', amountSats: 1, account: 'Main account' }),
+    latest,
+    payout({ date: 200, txid: 'other', amountSats: 100_000_000 }),
+  ];
+  assert.deepEqual(summarizePayouts(rows), { totalSats: 100_000_003, count: 3, latest });
+  assert.equal(rows[0].date, 100, 'summary must not reorder the table');
+});
+
+test('an empty payout history has zero totals and no latest payout', () => {
+  assert.deepEqual(summarizePayouts([]), { totalSats: 0, count: 0, latest: null });
+});
 
 test('payoutFromApi adapts a confirmed server output for the table', () => {
   assert.deepEqual(
@@ -109,9 +125,9 @@ test('isPayoutFilterActive is true only when a facet is set', () => {
   assert.equal(isPayoutFilterActive({ modes: [], sinceSec: 123 }), true);
 });
 
-test('formatPayoutDate renders the "21 Jun, 2026" style in UTC', () => {
+test('formatPayoutDate renders the same long UTC date as PPLNS Projection', () => {
   const sec = Math.floor(Date.UTC(2026, 5, 21, 10, 0, 0) / 1000);
-  assert.equal(formatPayoutDate(sec), '21 Jun, 2026');
+  assert.equal(formatPayoutDate(sec), 'Sunday 21 June 2026');
 });
 
 test('sortPayoutsByAmount orders by amount, highest or lowest first', () => {

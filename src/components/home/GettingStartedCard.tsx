@@ -1,7 +1,11 @@
 import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getUser } from '@/api';
+import { useActiveAccountId } from '@/hooks/useActiveAccountId';
+import { workerPresenceQueryOptions } from '@/lib/workerPresence';
 import { Link } from 'wouter';
 import { LiCheckCircle, LiAltArrowDown, LiAltArrowUp, LiCloseCircle } from 'solar-icon-react/li';
-import { activeBitcoinAddress, useAccountAllWorkers, useAccountProfile } from '@/hooks/useAccountData';
+import { activeBitcoinAddress, useAccountProfile } from '@/hooks/useAccountData';
 import { cn } from '@/lib/utils';
 import type { DmndSession } from '@/api/types';
 
@@ -21,24 +25,30 @@ function hasBitcoinAddress(account: DmndSession | undefined): boolean {
  * they get confirmation before the card goes away rather than it vanishing silently.
  */
 export function GettingStartedCard() {
+  const accountId = useActiveAccountId();
+  return <AccountGettingStartedCard key={accountId} accountId={accountId} />;
+}
+
+function AccountGettingStartedCard({ accountId }: { accountId: string | null }) {
+  const dismissKey = `${DISMISS_KEY}:${accountId}`;
   const [collapsed, setCollapsed] = useState(false);
   const [dismissed, setDismissed] = useState(() => {
     try {
-      return localStorage.getItem(DISMISS_KEY) === '1';
+      return localStorage.getItem(dismissKey) === '1';
     } catch {
       return false;
     }
   });
   const { data: account } = useAccountProfile();
-  const { data: workers } = useAccountAllWorkers();
+  const cache = useQueryClient();
+  const { data: hasWorker } = useQuery({
+    ...workerPresenceQueryOptions(cache, getUser(), accountId),
+    enabled: !!accountId && !dismissed,
+  });
 
   const items = [
-    // This is a one-time setup checklist, not a live status widget, so "connect a
-    // worker" stays done once the account has ever had one: /api/workers/all lists
-    // every worker ever connected, which is exactly that. A rig going offline later
-    // is a monitoring concern (the stat cards and the workers page), and shouldn't
-    // reopen a setup step the miner already completed.
-    { label: 'Connect a worker', done: (workers?.length ?? 0) > 0, href: undefined as string | undefined },
+    // A positive result completes the connection step for this session.
+    { label: 'Connect a worker', done: hasWorker === true, href: undefined as string | undefined },
     { label: 'Setup 2FA', done: account != null && account.two_factor_secret === null, href: '/account-setup' },
     { label: 'Add payout address', done: hasBitcoinAddress(account), href: '/account-setup' },
   ];
@@ -47,7 +57,7 @@ export function GettingStartedCard() {
 
   const dismiss = () => {
     try {
-      localStorage.setItem(DISMISS_KEY, '1');
+      localStorage.setItem(dismissKey, '1');
     } catch {
       /* ignore storage failures; the card just reappears next load */
     }
@@ -55,7 +65,7 @@ export function GettingStartedCard() {
   };
 
   // Once complete and acknowledged, stop showing it.
-  if (allDone && dismissed) return null;
+  if (dismissed) return null;
 
   // The first unfinished step reads as the current one and carries a darker ring.
   const currentIndex = items.findIndex((item) => !item.done);

@@ -332,6 +332,8 @@ export interface DmndClient {
   ): Promise<HashratePoint[]>;
   /** The full worker roster (GET /api/workers/all, following every page); home counts. */
   getAllWorkers(req?: RequestOptions): Promise<Worker[]>;
+  /** Check for a worker using one existing roster page with limit=1. */
+  hasWorkers(req?: RequestOptions): Promise<boolean>;
   /** Confirmed payouts for the account tree, following every server page. */
   getPayouts(query?: PayoutQuery, req?: RequestOptions): Promise<PayoutRecord[]>;
   /** The account's daily generated-BTC entries (GET /api/generated_btc); a bare array, empty when none. */
