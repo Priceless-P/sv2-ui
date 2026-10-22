@@ -1,4 +1,0 @@
-config:
-  aws:region: eu-west-1
-  pulumi:tags:
-    pulumi:template: aws-typescript
