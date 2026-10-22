@@ -1,32 +1,39 @@
+import { lazy, type ReactNode } from 'react';
 import { Switch, Route, Redirect } from 'wouter';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
-import { DashboardShell } from '@/components/dashboard/DashboardShell';
-import { DashboardHome } from '@/pages/dashboard/DashboardHome';
-import { AccountSetup } from '@/pages/account-setup/AccountSetup';
-import { WorkersPage } from '@/pages/workers/WorkersPage';
-import { SubaccountsPage } from '@/pages/subaccounts/SubaccountsPage';
-import { GeneratedBtcPage } from '@/pages/generated-btc/GeneratedBtcPage';
-import { PayoutsPage } from '@/pages/payouts/PayoutsPage';
-import { SettingsPage } from '@/pages/settings/SettingsPage';
-import { BuildYourBlockPage } from '@/pages/build-your-block/BuildYourBlockPage';
-import { JobDeclarationPage } from '@/pages/build-your-block/JobDeclarationPage';
-import { PrioritizeTransactionsPage } from '@/pages/build-your-block/PrioritizeTransactionsPage';
-import { MergeMiningPage } from '@/pages/build-your-block/MergeMiningPage';
-import { WatcherLinksPage } from '@/pages/watcher-links/WatcherLinksPage';
-import { PplnsProjectionPage } from '@/pages/pplns-projection/PplnsProjectionPage';
-import { WatcherView } from '@/pages/watcher-links/WatcherView';
-import { MultiwatcherView } from '@/pages/watcher-links/MultiwatcherView';
-import { SignIn } from '@/pages/auth/SignIn';
-import { SignUp } from '@/pages/auth/SignUp';
-import { ResetPassword } from '@/pages/auth/ResetPassword';
-import { BrokerSignIn } from '@/pages/auth/BrokerSignIn';
-import { WatcherSignIn } from '@/pages/auth/WatcherSignIn';
-import { BrokerSignUp } from '@/pages/auth/BrokerSignUp';
-import { BrokerHome } from '@/pages/broker/BrokerHome';
-import { BrokerSettings } from '@/pages/broker/BrokerSettings';
 import { AuthProvider, AuthGuard, BrokerAuthProvider, BrokerGuard } from '@/auth';
 import { ToastProvider } from '@/components/ui/toast';
+import { PageBoundary } from '@/components/ui/PageBoundary';
+
+const DashboardShell = lazy(() => import('@/components/dashboard/DashboardShell').then((m) => ({ default: m.DashboardShell })));
+const DashboardHome = lazy(() => import('@/pages/dashboard/DashboardHome').then((m) => ({ default: m.DashboardHome })));
+const AccountSetup = lazy(() => import('@/pages/account-setup/AccountSetup').then((m) => ({ default: m.AccountSetup })));
+const WorkersPage = lazy(() => import('@/pages/workers/WorkersPage').then((m) => ({ default: m.WorkersPage })));
+const SubaccountsPage = lazy(() => import('@/pages/subaccounts/SubaccountsPage').then((m) => ({ default: m.SubaccountsPage })));
+const GeneratedBtcPage = lazy(() => import('@/pages/generated-btc/GeneratedBtcPage').then((m) => ({ default: m.GeneratedBtcPage })));
+const PayoutsPage = lazy(() => import('@/pages/payouts/PayoutsPage').then((m) => ({ default: m.PayoutsPage })));
+const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const BuildYourBlockPage = lazy(() => import('@/pages/build-your-block/BuildYourBlockPage').then((m) => ({ default: m.BuildYourBlockPage })));
+const JobDeclarationPage = lazy(() => import('@/pages/build-your-block/JobDeclarationPage').then((m) => ({ default: m.JobDeclarationPage })));
+const PrioritizeTransactionsPage = lazy(() => import('@/pages/build-your-block/PrioritizeTransactionsPage').then((m) => ({ default: m.PrioritizeTransactionsPage })));
+const MergeMiningPage = lazy(() => import('@/pages/build-your-block/MergeMiningPage').then((m) => ({ default: m.MergeMiningPage })));
+const WatcherLinksPage = lazy(() => import('@/pages/watcher-links/WatcherLinksPage').then((m) => ({ default: m.WatcherLinksPage })));
+const PplnsProjectionPage = lazy(() => import('@/pages/pplns-projection/PplnsProjectionPage').then((m) => ({ default: m.PplnsProjectionPage })));
+const WatcherView = lazy(() => import('@/pages/watcher-links/WatcherView').then((m) => ({ default: m.WatcherView })));
+const MultiwatcherView = lazy(() => import('@/pages/watcher-links/MultiwatcherView').then((m) => ({ default: m.MultiwatcherView })));
+const SignIn = lazy(() => import('@/pages/auth/SignIn').then((m) => ({ default: m.SignIn })));
+const SignUp = lazy(() => import('@/pages/auth/SignUp').then((m) => ({ default: m.SignUp })));
+const ResetPassword = lazy(() => import('@/pages/auth/ResetPassword').then((m) => ({ default: m.ResetPassword })));
+const BrokerSignIn = lazy(() => import('@/pages/auth/BrokerSignIn').then((m) => ({ default: m.BrokerSignIn })));
+const WatcherSignIn = lazy(() => import('@/pages/auth/WatcherSignIn').then((m) => ({ default: m.WatcherSignIn })));
+const BrokerSignUp = lazy(() => import('@/pages/auth/BrokerSignUp').then((m) => ({ default: m.BrokerSignUp })));
+const BrokerHome = lazy(() => import('@/pages/broker/BrokerHome').then((m) => ({ default: m.BrokerHome })));
+const BrokerSettings = lazy(() => import('@/pages/broker/BrokerSettings').then((m) => ({ default: m.BrokerSettings })));
+
+function DashboardRoute({ children }: { children: ReactNode }) {
+  return <DashboardShell><PageBoundary>{children}</PageBoundary></DashboardShell>;
+}
 
 /**
  * The authenticated area, reached only after sign-in (AuthGuard).
@@ -35,69 +42,69 @@ function AppRoutes() {
   return (
     <Switch>
       <Route path="/home">
-        <DashboardShell>
+        <DashboardRoute>
           <DashboardHome />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/workers">
-        <DashboardShell>
+        <DashboardRoute>
           <WorkersPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/subaccounts">
-        <DashboardShell>
+        <DashboardRoute>
           <SubaccountsPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/payouts">
-        <DashboardShell>
+        <DashboardRoute>
           <PayoutsPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/generated-bitcoin">
-        <DashboardShell>
+        <DashboardRoute>
           <GeneratedBtcPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/pplns-projection">
-        <DashboardShell>
+        <DashboardRoute>
           <PplnsProjectionPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/watcher-links">
-        <DashboardShell>
+        <DashboardRoute>
           <WatcherLinksPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/account">
-        <DashboardShell>
+        <DashboardRoute>
           <SettingsPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/help">
-        <DashboardShell>
+        <DashboardRoute>
           <SettingsPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/build-your-block">
-        <DashboardShell>
+        <DashboardRoute>
           <BuildYourBlockPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/build-your-block/job-declaration/:section?">
-        <DashboardShell>
+        <DashboardRoute>
           <JobDeclarationPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/build-your-block/merge-mining/:section?">
-        <DashboardShell>
+        <DashboardRoute>
           <MergeMiningPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       <Route path="/build-your-block/prioritize-transactions/:section?">
-        <DashboardShell>
+        <DashboardRoute>
           <PrioritizeTransactionsPage />
-        </DashboardShell>
+        </DashboardRoute>
       </Route>
       {/* Full-screen account-setup flow, reached from the home prompt. */}
       <Route path="/account-setup">
@@ -168,7 +175,7 @@ function PrivateApplication() {
   return (
     <AuthProvider>
       <BrokerAuthProvider>
-        <Router />
+        <PageBoundary><Router /></PageBoundary>
       </BrokerAuthProvider>
     </AuthProvider>
   );
@@ -178,17 +185,19 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <Switch>
-          <Route path="/login/watcher/:userId/:token">
-            {(params) => <WatcherView userId={params.userId} token={params.token} />}
-          </Route>
-          <Route path="/login/multiwatcher/*">
-            {(params) => <MultiwatcherView rest={params['*'] ?? ''} />}
-          </Route>
-          <Route>
-            <PrivateApplication />
-          </Route>
-        </Switch>
+        <PageBoundary>
+          <Switch>
+            <Route path="/login/watcher/:userId/:token">
+              {(params) => <WatcherView userId={params.userId} token={params.token} />}
+            </Route>
+            <Route path="/login/multiwatcher/*">
+              {(params) => <MultiwatcherView rest={params['*'] ?? ''} />}
+            </Route>
+            <Route>
+              <PrivateApplication />
+            </Route>
+          </Switch>
+        </PageBoundary>
       </ToastProvider>
     </QueryClientProvider>
   );

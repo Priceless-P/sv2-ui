@@ -7,7 +7,7 @@ import { authErrorMessage } from '@/components/auth/authError';
 import { isAuthenticatorCodeError } from '@/api';
 import { useToast } from '@/components/ui/toast';
 import { getUser } from '@/api';
-import { getBitcoinAddressError } from '@/lib/utils';
+import { useBitcoinAddressValidation } from '@/hooks/useBitcoinAddressValidation';
 import { useAccountProfile } from '@/hooks/useAccountData';
 import { Link } from 'wouter';
 import { useActiveAccountId } from '@/hooks/useActiveAccountId';
@@ -34,8 +34,9 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
   const { canEditBitcoinAddress } = useAccountScope();
   const twoFaEnabled = profile.data?.two_factor_secret === null;
 
-  const addressError = address ? getBitcoinAddressError(address, 'mainnet') : null;
-  const addressValid = !!address && !addressError;
+  const { validation, error: validationError } = useBitcoinAddressValidation();
+  const addressError = validationError ?? (address && validation ? validation.getBitcoinAddressError(address, 'mainnet') : null);
+  const addressValid = !!validation && !!address && !addressError;
 
   const paste = async () => {
     try {
@@ -108,6 +109,7 @@ export function ChangeBitcoinAddressModal({ onClose, onSaved }: { onClose: () =>
                   autoComplete="off"
                   spellCheck={false}
                 />
+                {!validation && !validationError && <p role="status" className="text-xs text-body-alt">Loading address validation…</p>}
                 {addressError && <p className="text-xs text-destructive">{addressError}</p>}
                 <div className="flex justify-end pt-0.5">
                   <button
