@@ -45,6 +45,9 @@ Missing or blank values fail the build. CI explicitly uses staging.
 
 The API must allow the frontend origin and credentialed browser requests because authentication uses an HttpOnly session cookie.
 
+Session expiry is controlled by the backend. The frontend validates restored miner sessions through
+`/api/check_auth` and handles authentication rejections from protected API calls.
+
 ## Quality checks
 
 ```bash

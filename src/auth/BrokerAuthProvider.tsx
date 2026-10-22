@@ -2,8 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { subscribeToBrokerAuthRejections } from '@/api';
 import { queryClient } from '@/lib/queryClient';
 import { clearBrokerQueries } from '@/lib/brokerQueries';
-import { IDLE_TTL_MS } from './session';
-import { type BrokerSession, readBrokerSession, writeBrokerSession, clearBrokerSession, isBrokerSessionExpired } from './brokerSession';
+import { type BrokerSession, readBrokerSession, writeBrokerSession, clearBrokerSession, parseBrokerSession } from './brokerSession';
 
 export interface BrokerAuthContextValue {
   session: BrokerSession | null;
@@ -13,12 +12,11 @@ export interface BrokerAuthContextValue {
 
 const BrokerAuthContext = createContext<BrokerAuthContextValue | null>(null);
 
-/** The existing API has no broker logout/check-auth route. Local state expires and protected reads validate the cookie. */
+/** The existing API has no broker check-auth route; protected reads validate the cookie. */
 export function BrokerAuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<BrokerSession | null>(() => readBrokerSession());
   const current = useRef(session);
   const channel = useRef<BroadcastChannel | null>(null);
-  const lastActivity = useRef(0);
   const clear = useCallback(() => {
     clearBrokerQueries(queryClient);
     clearBrokerSession();
@@ -26,48 +24,43 @@ export function BrokerAuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }, []);
   const signOut = useCallback(() => {
+    const brokerId = current.current?.brokerId;
     clear();
-    channel.current?.postMessage('identity-changed');
+    channel.current?.postMessage({ type: 'signed-out', brokerId });
   }, [clear]);
   const signIn = useCallback((next: BrokerSession) => {
     clearBrokerQueries(queryClient);
     writeBrokerSession(next);
     current.current = next;
     setSession(next);
-    // One broker cookie is shared across tabs, even when their local identities differ.
-    channel.current?.postMessage('identity-changed');
+    // One broker cookie is shared across tabs. Keep their display identity aligned
+    // with the successful login instead of forcing another local logout.
+    channel.current?.postMessage({ type: 'signed-in', session: next });
   }, []);
 
   useEffect(() => {
     const connection = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('dmnd_broker_auth');
     channel.current = connection;
-    if (connection) connection.onmessage = () => clear();
+    if (connection) connection.onmessage = ({ data }: MessageEvent<unknown>) => {
+      if (!data || typeof data !== 'object') return;
+      const message = data as { type?: unknown; brokerId?: unknown; session?: unknown };
+      if (message.type === 'signed-out' && current.current?.brokerId === message.brokerId) clear();
+      if (message.type === 'signed-in') {
+        const next = parseBrokerSession(message.session);
+        if (!next) return;
+        clearBrokerQueries(queryClient);
+        writeBrokerSession(next);
+        current.current = next;
+        setSession(next);
+      }
+    };
     const unsubscribe = subscribeToBrokerAuthRejections((id) => {
       if (current.current?.brokerId === id) clear();
     });
-    const checkExpiry = () => {
-      if (current.current && isBrokerSessionExpired(current.current)) clear();
-    };
-    const onActivity = () => {
-      checkExpiry();
-      const now = Date.now();
-      if (!current.current || now - lastActivity.current < 60_000) return;
-      lastActivity.current = now;
-      const next = { ...current.current, idleExpiresAt: now + IDLE_TTL_MS };
-      current.current = next;
-      writeBrokerSession(next);
-      setSession(next);
-    };
-    const interval = window.setInterval(checkExpiry, 30_000);
-    for (const event of ['click', 'keydown', 'mousemove']) window.addEventListener(event, onActivity);
-    document.addEventListener('visibilitychange', checkExpiry);
     return () => {
       unsubscribe();
       connection?.close();
       channel.current = null;
-      window.clearInterval(interval);
-      for (const event of ['click', 'keydown', 'mousemove']) window.removeEventListener(event, onActivity);
-      document.removeEventListener('visibilitychange', checkExpiry);
     };
   }, [clear]);
 

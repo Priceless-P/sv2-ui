@@ -1,9 +1,6 @@
 import type { DmndSession } from '@/api/types';
 
-export const FIXED_TTL_MS = 8 * 60 * 60 * 1000;
-export const IDLE_TTL_MS = 30 * 60 * 1000;
 export const STORAGE_KEY = 'dmnd_session';
-export const REMEMBERED_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Where the email of a remembered sign-in is kept, so the form can pre-fill it. */
 export const REMEMBER_EMAIL_KEY = 'dmnd_remember_email';
@@ -35,9 +32,8 @@ export function viewingAccountFromAuth(account: DmndSession): ViewingAccountSess
  * auth response: account/company display fields and the id sent as X-Account-ID.
  * Lives in sessionStorage (per tab, gone on tab close) unless the miner ticked
  * "Remember me", which moves it to localStorage so it survives closing the browser.
- * The two timestamps are a UX convenience; real expiry is enforced server-side (the
- * cookie + check_auth), so the user is sent back to sign-in promptly rather than
- * discovering a dead session mid-action.
+ * Only backend authentication responses determine expiry. The login id identifies
+ * this sign-in for cache isolation and asynchronous validation; it is not a credential.
  */
 export interface Session {
   accountId: string;
@@ -45,10 +41,9 @@ export interface Session {
   company_name: string | null;
   company_primary_location: string | null;
   kyb_status: KybStatus;
-  /** True when "Remember me" was ticked: longer deadlines, kept in localStorage. */
+  /** Whether display metadata is kept in localStorage; this never extends backend expiry. */
   remember: boolean;
-  expiresAt: number;
-  idleExpiresAt: number;
+  loginId: string;
 }
 
 export interface CreateSessionInput {
@@ -58,38 +53,20 @@ export interface CreateSessionInput {
   company_primary_location: string | null;
   kyb_status: KybStatus;
   remember?: boolean;
-  now?: number;
-}
-
-/** The fixed and idle windows a session runs on, decided by whether it is remembered. */
-function ttlFor(remember: boolean): { fixed: number; idle: number } {
-  return remember
-    ? { fixed: REMEMBERED_TTL_MS, idle: REMEMBERED_TTL_MS }
-    : { fixed: FIXED_TTL_MS, idle: IDLE_TTL_MS };
 }
 
 export function createSession(input: CreateSessionInput): Session {
-  const now = input.now ?? Date.now();
-  const remember = input.remember ?? false;
-  const ttl = ttlFor(remember);
   return {
     accountId: input.accountId,
     email: input.email,
     company_name: input.company_name,
     company_primary_location: input.company_primary_location,
     kyb_status: input.kyb_status,
-    remember,
-    expiresAt: now + ttl.fixed,
-    idleExpiresAt: now + ttl.idle,
+    remember: input.remember ?? false,
+    loginId: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   };
-}
-
-export function isExpired(s: Session, now: number = Date.now()): boolean {
-  return now >= s.expiresAt || now >= s.idleExpiresAt;
-}
-
-export function refreshIdle(s: Session, now: number = Date.now()): Session {
-  return { ...s, idleExpiresAt: now + ttlFor(s.remember).idle };
 }
 
 export function readSession(storage: Storage = sessionStorage): Session | null {
@@ -98,7 +75,7 @@ export function readSession(storage: Storage = sessionStorage): Session | null {
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     const session = parseSession(parsed);
-    if (!session || isExpired(session)) {
+    if (!session) {
       storage.removeItem(STORAGE_KEY);
       return null;
     }
@@ -130,10 +107,8 @@ function parseSession(v: unknown): Session | null {
     typeof s.accountId !== 'string' ||
     s.accountId.length === 0 ||
     typeof s.email !== 'string' ||
-    typeof s.expiresAt !== 'number' ||
-    !Number.isFinite(s.expiresAt) ||
-    typeof s.idleExpiresAt !== 'number' ||
-    !Number.isFinite(s.idleExpiresAt)
+    typeof s.loginId !== 'string' ||
+    s.loginId.length === 0
   ) {
     return null;
   }
@@ -144,8 +119,7 @@ function parseSession(v: unknown): Session | null {
     company_primary_location: typeof s.company_primary_location === 'string' ? s.company_primary_location : null,
     kyb_status: s.kyb_status as KybStatus,
     remember: s.remember === true,
-    expiresAt: s.expiresAt,
-    idleExpiresAt: s.idleExpiresAt,
+    loginId: s.loginId,
   };
 }
 

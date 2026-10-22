@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { FIXED_TTL_MS, IDLE_TTL_MS } from '../session';
 import {
   BROKER_STORAGE_KEY,
   createBrokerSession,
-  isBrokerSessionExpired,
   readBrokerSession,
   writeBrokerSession,
   clearBrokerSession,
@@ -25,16 +23,10 @@ function memoryStorage(): Storage {
   } as Storage;
 }
 
-test('createBrokerSession sets the fixed and idle deadlines from now', () => {
-  const s = createBrokerSession({ brokerId: '7', email: 'b@x.io', referenceCode: 'RC-1', now: 1_000 });
-  assert.equal(s.expiresAt, 1_000 + FIXED_TTL_MS);
-  assert.equal(s.idleExpiresAt, 1_000 + IDLE_TTL_MS);
-});
-
-test('isBrokerSessionExpired trips on either deadline', () => {
-  const s = createBrokerSession({ brokerId: '7', email: 'b@x.io', referenceCode: 'RC-1', now: 0 });
-  assert.equal(isBrokerSessionExpired(s, IDLE_TTL_MS - 1), false);
-  assert.equal(isBrokerSessionExpired(s, IDLE_TTL_MS), true);
+test('broker metadata never creates a frontend expiry deadline', () => {
+  const session = createBrokerSession({ brokerId: '7', email: 'b@x.io', referenceCode: 'RC-1' });
+  assert.equal('expiresAt' in session, false);
+  assert.equal('idleExpiresAt' in session, false);
 });
 
 test('readBrokerSession round-trips a written session', () => {
@@ -60,12 +52,13 @@ test('readBrokerSession returns null for missing, malformed, or wrong-shaped dat
   assert.equal(readBrokerSession(storage), null);
 });
 
-test('readBrokerSession discards and clears an expired session', () => {
+test('broker metadata is read back whatever the clock says', (t) => {
   const storage = memoryStorage();
-  const expired = { brokerId: '7', email: 'b@x.io', referenceCode: 'RC-1', expiresAt: 1, idleExpiresAt: 1 };
-  storage.setItem(BROKER_STORAGE_KEY, JSON.stringify(expired));
-  assert.equal(readBrokerSession(storage), null);
-  assert.equal(storage.getItem(BROKER_STORAGE_KEY), null);
+  const metadata = { brokerId: '7', email: 'b@x.io', referenceCode: 'RC-1' };
+  storage.setItem(BROKER_STORAGE_KEY, JSON.stringify(metadata));
+  t.mock.method(Date, 'now', () => 24 * 60 * 60 * 1000);
+  assert.deepEqual(readBrokerSession(storage), metadata);
+  assert.notEqual(storage.getItem(BROKER_STORAGE_KEY), null);
 });
 
 test('clearBrokerSession removes the stored session', () => {

@@ -3,15 +3,13 @@ import {
   readSession,
   writeSession,
   clearSession,
-  refreshIdle,
-  isExpired,
   persistentStorage,
   type KybStatus,
   type ViewingAccountSession,
 } from './session';
 import { setDmndAccountId } from '@/api';
 
-export type SignOutReason = 'user' | 'expired' | 'duplicate_tab';
+export type SignOutReason = 'user' | 'expired';
 
 export interface AuthState {
   session: Session | null;
@@ -29,12 +27,10 @@ export interface AuthStore {
   connect: () => void;
   signIn: (session: Session) => void;
   signOut: (reason?: SignOutReason) => void;
-  /** Refresh display fields from check_auth without resetting account scope or deadlines. */
+  /** Refresh display fields from check_auth without resetting account scope or login identity. */
   updateSessionProfile: (profile: Pick<Session, 'email' | 'company_name' | 'company_primary_location' | 'kyb_status'>) => void;
   /** Scope the dashboard to an authenticated subaccount or back to the master. */
   setViewingAccount: (account: ViewingAccountSession | null) => void;
-  bumpActivity: (now?: number) => void;
-  checkExpiry: (now?: number) => void;
   tabId: string;
   teardown: () => void;
 }
@@ -49,12 +45,11 @@ export interface AuthStoreOptions {
 }
 
 const CHANNEL_NAME = 'dmnd_auth';
-const CLAIM_MSG = 'CLAIM_SESSION';
 const SIGN_OUT_MSG = 'SIGN_OUT_SESSION';
 const VIEWING_ACCOUNT_KEY = 'dmnd_viewing_account';
 
-interface ClaimMessage {
-  type: typeof CLAIM_MSG | typeof SIGN_OUT_MSG;
+interface LogoutMessage {
+  type: typeof SIGN_OUT_MSG;
   tabId: string;
   accountId: string;
   reason?: 'user' | 'expired';
@@ -164,36 +159,24 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
     emit();
   };
 
-  // A second tab signing in as the same account claims the session; the older
-  // tab clears itself so one account isn't live in two places at once.
+  // Explicit logout and backend-confirmed expiry propagate to matching tabs.
+  // Signing in elsewhere must never expire a still-valid backend session locally.
   const handleMessage = (msg: unknown) => {
     if (!msg || typeof msg !== 'object') return;
-    const m = msg as Partial<ClaimMessage>;
-    if (m.type !== CLAIM_MSG && m.type !== SIGN_OUT_MSG) return;
+    const m = msg as Partial<LogoutMessage>;
+    if (m.type !== SIGN_OUT_MSG) return;
     if (m.tabId === tabId) return;
     if (!state.session) return;
     if (m.accountId !== state.session.accountId) return;
     clearStoredSession();
     writeViewingAccount(null);
-    setState({ session: null, signOutReason: m.type === SIGN_OUT_MSG ? (m.reason === 'expired' ? 'expired' : 'user') : 'duplicate_tab', viewingAccountId: null, viewingAccount: null });
-  };
-
-  // Best-effort cross-tab claim. The channel can be closed (e.g. a StrictMode
-  // remount in dev reuses the store after teardown), so posting must not throw.
-  const postClaim = (accountId: string) => {
-    try {
-      channel?.postMessage({ type: CLAIM_MSG, tabId, accountId } satisfies ClaimMessage);
-    } catch {
-      // channel closed; cross-tab logout degrades but sign-in still works
-    }
+    setState({ session: null, signOutReason: m.reason === 'expired' ? 'expired' : 'user', viewingAccountId: null, viewingAccount: null });
   };
 
   return {
     tabId,
     connect() {
-      // Subscribe to the cross-tab channel. A restored session does not broadcast a
-      // claim: doing so makes a reload race the document being replaced and can clear
-      // its own session. Only an explicit sign-in claims the account in another tab.
+      // Subscribe to logout notifications only after this store mounts.
       // Subscribe from a React effect (not the constructor) so a store that is built but
       // never mounted -- e.g. StrictMode double-invoking the useState
       // initializer in dev -- never listens, and so can't clear another
@@ -224,12 +207,11 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       // scope from a previous session.
       writeViewingAccount(null);
       setState({ session, signOutReason: null, viewingAccountId: null, viewingAccount: null });
-      postClaim(session.accountId);
     },
     signOut(reason: SignOutReason = 'user') {
-      if (reason !== 'duplicate_tab' && state.session) {
+      if (state.session) {
         try {
-          channel?.postMessage({ type: SIGN_OUT_MSG, tabId, accountId: state.session.accountId, reason } satisfies ClaimMessage);
+          channel?.postMessage({ type: SIGN_OUT_MSG, tabId, accountId: state.session.accountId, reason } satisfies LogoutMessage);
         } catch { /* Local cleanup must work when the channel is unavailable. */ }
       }
       clearStoredSession();
@@ -248,28 +230,6 @@ export function createAuthStore(options: AuthStoreOptions = {}): AuthStore {
       // just clearing this to null.
       writeViewingAccount(account);
       setState({ ...state, viewingAccountId: account?.accountId ?? null, viewingAccount: account });
-    },
-    bumpActivity(now?: number) {
-      if (!state.session) return;
-      if (isExpired(state.session, now)) {
-        clearStoredSession();
-        writeViewingAccount(null);
-        setState({ session: null, signOutReason: 'expired', viewingAccountId: null, viewingAccount: null });
-        return;
-      }
-      // An idle refresh preserves the viewed account: a mere activity tick must not
-      // yank the miner out of a subaccount they are viewing.
-      const refreshed = refreshIdle(state.session, now);
-      writeCurrentSession(refreshed);
-      setState({ ...state, session: refreshed });
-    },
-    checkExpiry(now?: number) {
-      if (!state.session) return;
-      if (isExpired(state.session, now)) {
-        clearStoredSession();
-        writeViewingAccount(null);
-        setState({ session: null, signOutReason: 'expired', viewingAccountId: null, viewingAccount: null });
-      }
     },
     teardown() {
       channel?.close();

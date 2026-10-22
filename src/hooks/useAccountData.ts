@@ -261,9 +261,9 @@ export interface LatestBlogPost {
 }
 
 /** One attempt per login, shared by login prefetch and Help. */
-export function latestBlogQueryOptions(accountId: string, loginExpiresAt: number) {
+export function latestBlogQueryOptions(accountId: string, loginId: string | number) {
   return {
-    queryKey: ['blog', 'latest-post', accountId, loginExpiresAt],
+    queryKey: ['blog', 'latest-post', accountId, loginId],
     queryFn: ({ signal }: { signal: AbortSignal }) => fetchLatestBlogPost(signal),
     staleTime: Infinity,
     gcTime: Infinity,

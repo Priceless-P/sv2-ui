@@ -6,14 +6,9 @@ export { createAuthStore } from './authStore';
 export type { AuthStore, AuthState, SignOutReason } from './authStore';
 export {
   createSession,
-  isExpired,
-  refreshIdle,
   readSession,
   writeSession,
   clearSession,
-  FIXED_TTL_MS,
-  IDLE_TTL_MS,
-  REMEMBERED_TTL_MS,
   STORAGE_KEY,
   REMEMBER_EMAIL_KEY,
   readRememberedEmail,
