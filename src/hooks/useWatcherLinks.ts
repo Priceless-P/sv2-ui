@@ -29,9 +29,10 @@ export function useWatcherLinks() {
  */
 export function useCreateWatcherLink() {
   const queryClient = useQueryClient();
+  const accountId = useActiveAccountId();
   return useMutation({
     mutationFn: (input: CreateWatcherLinkInput & { totpToken?: string }) =>
-      getUser().createWatcherLink(input, { totpToken: input.totpToken }),
+      getUser().createWatcherLink(input, { accountId: accountId ?? undefined, totpToken: input.totpToken }),
     retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'watcher-links'] }),
   });
@@ -40,9 +41,10 @@ export function useCreateWatcherLink() {
 /** Revoke a watcher link, then refresh the list so the row disappears. */
 export function useRevokeWatcherLink() {
   const queryClient = useQueryClient();
+  const accountId = useActiveAccountId();
   return useMutation({
     mutationFn: ({ id, totpToken }: { id: string; totpToken?: string }) =>
-      getUser().revokeWatcherLink(id, { totpToken }),
+      getUser().revokeWatcherLink(id, { accountId: accountId ?? undefined, totpToken }),
     retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'watcher-links'] }),
   });

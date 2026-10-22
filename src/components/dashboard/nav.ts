@@ -115,7 +115,7 @@ export function isSubaccountRestrictedRoute(path: string): boolean {
   return SUBACCOUNT_RESTRICTED_ROUTES.includes(path);
 }
 
-export const AGGREGATED_RESTRICTED_ROUTES = [PPLNS_PROJECTION_ROUTE];
+export const AGGREGATED_RESTRICTED_ROUTES = [PPLNS_PROJECTION_ROUTE, '/subaccounts', '/watcher-links'];
 
 export function isAggregatedRestrictedRoute(path: string): boolean {
   return AGGREGATED_RESTRICTED_ROUTES.includes(path);

@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthContext, type AuthContextValue } from '@/auth/AuthProvider';
+import { createSession } from '@/auth/session';
+import { useAccountScope } from '@/hooks/useAccountScope';
+
+function ScopeProbe() {
+  const scope = useAccountScope();
+  return createElement('span', null, JSON.stringify(scope));
+}
+
+test('permission controls deny access while loading, after denial, and inside a subaccount', () => {
+  for (const state of ['loading', 'denied', 'main', 'subaccount']) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const viewingAccountId = state === 'subaccount' ? 'sub' : null;
+    const auth: AuthContextValue = {
+      session: createSession({ accountId: 'owner', email: 'owner@example.com', company_name: null, company_primary_location: null, kyb_status: 'Approved' }),
+      viewingAccountId, viewingAccount: null, status: 'authenticated', signOutReason: null,
+      signIn: () => {}, signOut: () => {}, setViewingAccount: () => {},
+    };
+    if (state !== 'loading') client.setQueryData(['account', 'permissions', viewingAccountId ?? 'owner'], {
+      view_sub_accounts: state !== 'denied', edit_btc_address: state !== 'denied',
+    });
+    try {
+      const html = renderToStaticMarkup(createElement(QueryClientProvider, { client },
+        createElement(AuthContext.Provider, { value: auth }, createElement(ScopeProbe))));
+      assert.ok(html.includes(`canViewSubaccounts&quot;:${state === 'main'}`));
+      assert.ok(html.includes(`canEditBitcoinAddress&quot;:${state === 'main'}`));
+    } finally { client.clear(); }
+  }
+});

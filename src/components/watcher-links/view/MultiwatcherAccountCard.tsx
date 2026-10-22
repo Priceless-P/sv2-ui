@@ -1,10 +1,11 @@
-import { useWatcherHashrate, useWatcherGeneratedBtc } from '@/hooks/useWatcherView';
+import { useWatcherHashrate, useWatcherGeneratedBtc, useWatcherTokenRevoked } from '@/hooks/useWatcherView';
+import { isWatcherAccessDenied } from '@/lib/watcherQueries';
 import { formatBtc, sumGenerated } from '@/lib/generatedBtcTable';
 import { LiveHashrateCardView } from '@/components/home/LiveHashrateCard';
 
 /** True when a query failed because the token does not grant that scope (or is invalid). */
 function isUnauthorized(error: unknown): boolean {
-  return error instanceof Error && /no longer valid|401/.test(error.message);
+  return isWatcherAccessDenied(error);
 }
 
 /**
@@ -23,12 +24,15 @@ export function MultiwatcherAccountCard({
   showHashrate: boolean;
   showGenerated: boolean;
 }) {
-  const hashrate = useWatcherHashrate(token);
+  const revoked = useWatcherTokenRevoked(token);
+  const hashrate = useWatcherHashrate(token, showHashrate && !revoked);
   const generated = useWatcherGeneratedBtc(token, showGenerated, accountId);
 
   const hashrateOk = showHashrate && !(hashrate.isError && isUnauthorized(hashrate.error));
   const generatedOk = showGenerated && !(generated.isError && isUnauthorized(generated.error));
   const totalBtc = sumGenerated(generated.data ?? []);
+
+  if (revoked) return <p role="status">This Watcher link is no longer valid.</p>;
 
   return (
     <div className="space-y-4">

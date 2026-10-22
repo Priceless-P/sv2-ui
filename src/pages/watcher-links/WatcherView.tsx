@@ -7,6 +7,7 @@ import { parseWatcherPath, readWatcherAccountIdentity } from '@/lib/watcherLinks
 import { useAppliedTheme } from '@/hooks/useTheme';
 import {
   useWatcherHashrate,
+  useWatcherTokenRevoked,
   useWatcherHashrateHistory,
   useWatcherWorkers,
   useWatcherGeneratedBtc,
@@ -16,6 +17,7 @@ import {
   useWatcherPplnsProjection,
   type CustomWindow,
 } from '@/hooks/useWatcherView';
+import { isWatcherAccessDenied } from '@/lib/watcherQueries';
 import { hasPayablePplnsWork } from '@/lib/pplnsProjection';
 import { hashrateChangeFrom24HoursAgo, hashrateComparisonWindow } from '@/lib/hashrateHistory';
 import { PplnsProjectionPanel } from '@/components/pplns-projection/PplnsProjectionPanel';
@@ -42,7 +44,7 @@ type WatcherSection = keyof typeof SECTION_PATHS;
 
 /** True when a query failed because the token does not grant that scope (or is invalid). */
 function isUnauthorized(error: unknown): boolean {
-  return error instanceof Error && /no longer valid|401/.test(error.message);
+  return isWatcherAccessDenied(error);
 }
 
 /** Human-readable list of the data this token can read. */
@@ -82,8 +84,9 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
   const [custom, setCustom] = useState<CustomWindow | null>(null);
   const [chosen, setChosen] = useState<WatcherSection | null>(null);
 
-  const hashrate = useWatcherHashrate(token);
-  const history = useWatcherHashrateHistory(token, range, custom);
+  const revoked = useWatcherTokenRevoked(token);
+  const hashrate = useWatcherHashrate(token, !revoked);
+  const history = useWatcherHashrateHistory(token, range, custom, !revoked && hashrate.isSuccess);
   const now = Date.now();
   const comparisonWindow = hashrateComparisonWindow(hashrate.data?.observed_at, now);
   const comparisonHistory = useWatcherHashrateHistory(token, '24H', comparisonWindow ? {
@@ -94,7 +97,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
   // Each section is attempted (not gated on a scope flag) so a link that only grants one
   // scope still renders that section instead of looking like a dead link.
   const generated = useWatcherGeneratedBtc(token, true, accountId);
-  const payouts = useWatcherPayouts(token, true, accountId);
+  const payouts = useWatcherPayouts(token, generated.isSuccess && !revoked, accountId);
   const fees = useWatcherFees(token, true);
   const shareStats = useWatcherShareStats(token, true);
   const pplns = useWatcherPplnsProjection(accountId, token, true);
@@ -103,6 +106,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
   // loading we cannot yet tell, so navigation waits for it to settle before deciding
   // the link is dead.
   const granted = (q: { isError: boolean; error: unknown }) => !(q.isError && isUnauthorized(q.error));
+  const canViewPayouts = generated.data !== undefined && granted(generated) && granted(payouts);
   const canViewHashrate = granted(hashrate);
   const canViewRejects = granted(shareStats);
   const canViewFees = granted(fees);
@@ -116,10 +120,10 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
     !shareStats.isLoading &&
     !pplns.isLoading;
   const sections: WatcherSection[] = [
-    canViewHashrate || canViewRejects || canViewFees || granted(workers) || granted(payouts) ? 'home' : null,
+    canViewHashrate || canViewRejects || canViewFees || granted(workers) || canViewPayouts ? 'home' : null,
     granted(workers) ? 'workers' : null,
     granted(generated) ? 'generated' : null,
-    granted(payouts) ? 'payouts' : null,
+    canViewPayouts ? 'payouts' : null,
     canViewProjection ? 'pplns' : null,
   ].filter((s): s is WatcherSection => s !== null);
   const readableData = [
@@ -128,14 +132,14 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
     canViewFees ? 'fees' : null,
     granted(workers) ? 'workers' : null,
     granted(generated) ? 'earnings' : null,
-    granted(payouts) ? 'payouts' : null,
+    canViewPayouts ? 'payouts' : null,
     canViewProjection ? 'PPLNS projection' : null,
   ].filter((name): name is string => name !== null);
 
   const active: WatcherSection = chosen && sections.includes(chosen) ? chosen : sections[0] ?? 'home';
 
   // Probes must settle before showing content: loading must not imply permission.
-  if (settled && sections.length === 0) return <WatcherInvalid />;
+  if (revoked || (settled && sections.length === 0)) return <WatcherInvalid />;
 
   const today = new Date().toISOString().slice(0, 10);
   const earnings = payouts.isSuccess
@@ -145,7 +149,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
   const subtitle = accountIdentity ? (accountIdentity.kind === 'subaccount' ? 'Subaccount' : undefined) : 'Read only';
   const activePath = SECTION_PATHS[active];
   const hasWatcherData = canViewRejects;
-  const inlineEarnings = !granted(workers) && granted(payouts);
+  const inlineEarnings = !granted(workers) && canViewPayouts;
   const inlineFee = !granted(workers) && canViewFees;
   const neighboringCards = Number(hasWatcherData) + Number(inlineEarnings) + Number(inlineFee);
   const overviewCount = Number(canViewHashrate) + neighboringCards;
@@ -209,7 +213,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
               showWorkers={granted(workers)}
               showHashrate={canViewHashrate}
               showRejection={false}
-              showEarnings={granted(payouts)}
+              showEarnings={canViewPayouts}
             >
               {feeCard}
             </WorkerStatCardsView>}

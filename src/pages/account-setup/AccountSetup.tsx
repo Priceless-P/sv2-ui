@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'wouter';
+import { Redirect, useLocation } from 'wouter';
+import { useAccountScope } from '@/hooks/useAccountScope';
+import { usePermissions } from '@/hooks/useSubaccounts';
 import { QRCodeSVG } from 'qrcode.react';
 import { Check } from 'lucide-react';
 import { LiCopy, LiClipboard, LiDangerTriangle } from 'solar-icon-react/li';
@@ -38,6 +40,14 @@ function initialStep(account: DmndSession): AccountSetupStep {
  * between showing the QR and activating).
  */
 export function AccountSetup() {
+  const { viewingSubaccount, canEditBitcoinAddress } = useAccountScope();
+  const permissions = usePermissions();
+  if (viewingSubaccount || (permissions.isSuccess && !canEditBitcoinAddress)) return <Redirect to="/home" replace />;
+  if (!permissions.isSuccess) return <p role="status" className="p-6">{permissions.isError ? 'Unable to verify account permissions.' : 'Checking account permissions…'}</p>;
+  return <AccountSetupFlow />;
+}
+
+function AccountSetupFlow() {
   const [, navigate] = useLocation();
   const { session } = useAuth();
   const [account, setAccount] = useState<DmndSession | null>(null);
@@ -308,7 +318,7 @@ function BitcoinStep({ onDone }: { onDone: () => void }) {
         <div>
           <p className="text-sm font-semibold text-foreground">Double check address</p>
           <p className="mt-0.5 text-xs text-body-alt">
-            Bitcoin payments sent to the wrong address cannot be recovered by anyone, including DMND Pool.
+            Payments sent to the wrong address cannot be recovered by anyone, including DMND Pool.
           </p>
         </div>
       </div>

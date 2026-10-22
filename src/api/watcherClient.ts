@@ -1,6 +1,6 @@
 import { decodeGeneratedBtc } from './generatedBtc';
 import { requireArray } from './response';
-import { API_BASE, getAllWorkers } from './client';
+import { API_BASE, combineSignals, getAllWorkers } from './client';
 import { fetchHashrateHistory } from './hashrateHistory';
 import { API_ERROR_MESSAGES } from './errorMessages';
 import { decodePplnsProjection, pplnsProjectionMatchesAccount } from './pplnsProjection';
@@ -16,7 +16,7 @@ import type {
   Worker,
 } from './types';
 
-class WatcherRequestError extends Error {
+export class WatcherRequestError extends Error {
   constructor(
     message: string,
     public readonly status: number,
@@ -41,20 +41,24 @@ export interface WatcherClient {
 
 interface WatcherClientOptions {
   fetchImpl?: typeof fetch;
+  onUnauthorized?: () => void;
+  isRevoked?: () => boolean;
 }
 
 export function createWatcherClient(token: string, options: WatcherClientOptions = {}): WatcherClient {
   const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
 
   async function get<T>(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<T> {
+    if (options.isRevoked?.()) throw new WatcherRequestError('This Watcher link is no longer valid.', 401);
     const query = new URLSearchParams(params).toString();
     const response = await fetchImpl(`${API_BASE}${path}?${query}`, {
       method: 'GET',
-      signal,
+      signal: combineSignals(20_000, signal),
       credentials: 'omit',
       headers: { Authorization: `Bearer ${token}` },
     });
     if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) options.onUnauthorized?.();
       throw new WatcherRequestError('This Watcher link is no longer valid.', response.status);
     }
     if (!response.ok) {

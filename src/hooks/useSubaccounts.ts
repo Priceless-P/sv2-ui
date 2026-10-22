@@ -95,8 +95,8 @@ export function usePermissions() {
     queryKey: ['account', 'permissions', accountId],
     queryFn: ({ signal }) => getUser().getPermissions({ signal, accountId: accountId ?? undefined }),
     enabled: !!session,
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
+    staleTime: CLOUD_POLL_MS,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 }
@@ -104,8 +104,16 @@ export function usePermissions() {
 /** Create a subaccount, then refresh the list so the new row appears. */
 export function useCreateSubaccount() {
   const queryClient = useQueryClient();
+  const { session, viewingAccountId } = useAuth();
+  const permissions = usePermissions();
   return useMutation({
-    mutationFn: (input: CreateSubaccountInput) => getUser().createSubaccount(input),
+    mutationFn: (input: CreateSubaccountInput) => {
+      if (!session || viewingAccountId || !permissions.isSuccess || !permissions.data.create_sub_account) {
+        throw new Error('Only the main account can create subaccounts.');
+      }
+      return getUser().createSubaccount(input, { accountId: session.accountId });
+    },
+    retry: false,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['account', 'subaccounts'] }),
   });
 }

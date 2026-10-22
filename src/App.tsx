@@ -151,17 +151,6 @@ function Router() {
           <BrokerHome />
         </BrokerGuard>
       </Route>
-      {/* Public read-only Watcher View: opened via a shared link, authenticated by
-          the token in the URL, so it sits outside the miner AuthGuard. */}
-      <Route path="/login/watcher/:userId/:token">
-        {(params) => <WatcherView userId={params.userId} token={params.token} />}
-      </Route>
-      {/* Public multiwatcher view: a client-composed bundle of watcher tokens; the
-          mode plus the (account, token) pairs ride in the path tail (a wildcard so
-          the whole tail is captured, not just one segment). */}
-      <Route path="/login/multiwatcher/*">
-        {(params) => <MultiwatcherView rest={params['*'] ?? ''} />}
-      </Route>
       {/* Everything else requires a signed-in miner */}
       <Route>
         <AuthGuard>
@@ -172,15 +161,35 @@ function Router() {
   );
 }
 
+/** Check this boundary on every route entry, including navigation from an embedded watcher. */
+function PrivateApplication() {
+  if (window.self !== window.top) {
+    return <p>Open the dashboard directly to manage your account.</p>;
+  }
+  return (
+    <AuthProvider>
+      <BrokerAuthProvider>
+        <Router />
+      </BrokerAuthProvider>
+    </AuthProvider>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
-        <AuthProvider>
-          <BrokerAuthProvider>
-            <Router />
-          </BrokerAuthProvider>
-        </AuthProvider>
+        <Switch>
+          <Route path="/login/watcher/:userId/:token">
+            {(params) => <WatcherView userId={params.userId} token={params.token} />}
+          </Route>
+          <Route path="/login/multiwatcher/*">
+            {(params) => <MultiwatcherView rest={params['*'] ?? ''} />}
+          </Route>
+          <Route>
+            <PrivateApplication />
+          </Route>
+        </Switch>
       </ToastProvider>
     </QueryClientProvider>
   );

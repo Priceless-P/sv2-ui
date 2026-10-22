@@ -2,8 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
 import { AggregatedModeProvider, useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
-import { useHasSubaccounts } from '@/hooks/useSubaccounts';
-import { isAggregatedRestrictedRoute } from './nav';
+import { useHasSubaccounts, usePermissions } from '@/hooks/useSubaccounts';
+import { isAggregatedRestrictedRoute, isSubaccountRestrictedRoute } from './nav';
+import { useAccountScope } from '@/hooks/useAccountScope';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AggregatedBanner } from './AggregatedBanner';
@@ -44,10 +45,14 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { aggregated } = useAggregatedModeContext();
   const { hasSubaccounts } = useHasSubaccounts();
+  const { canViewSubaccounts } = useAccountScope();
+  const permissions = usePermissions();
+  const restricted = (aggregated && isAggregatedRestrictedRoute(location)) ||
+    (!canViewSubaccounts && isSubaccountRestrictedRoute(location));
 
   useEffect(() => {
-    if (aggregated && isAggregatedRestrictedRoute(location)) navigate('/home', { replace: true });
-  }, [aggregated, location, navigate]);
+    if (restricted && permissions.isSuccess) navigate('/home', { replace: true });
+  }, [restricted, permissions.isSuccess, navigate]);
 
   return (
     <DashboardFrame
@@ -56,7 +61,7 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
       sidebar={(props) => <Sidebar {...props} />}
       topBar={(onMenuClick) => <TopBar onMenuClick={onMenuClick} />}
     >
-      {children}
+      {restricted ? <p role="status" className="p-6 text-sm text-body-alt">{permissions.isError ? 'Unable to verify account permissions. Please reload to try again.' : 'Checking account permissions…'}</p> : children}
     </DashboardFrame>
   );
 }
