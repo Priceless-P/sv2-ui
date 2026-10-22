@@ -1,4 +1,6 @@
+import { downloadCsv as downloadCsvFile } from '@/lib/csvDownload';
 import { PayoutsEmptyState } from '@/components/payouts/PayoutsEmptyState';
+import { PayoutStatCards } from '@/components/payouts/PayoutStatCards';
 import { PayoutsExportModal } from '@/components/payouts/PayoutsExportModal';
 import { EMPTY_PAYOUT_FILTER_DRAFT, isPayoutDraftActive, PayoutsFilter, type PayoutFilterDraft } from '@/components/payouts/PayoutsFilter';
 import { PayoutsTable } from '@/components/payouts/PayoutsTable';
@@ -8,7 +10,6 @@ import { WorkersPagination } from '@/components/workers/WorkersPagination';
 import {
   filterPayouts,
   filterPayoutsByAccount,
-  payoutRowId,
   payoutsInRange,
   payoutsToCsv,
   searchPayouts,
@@ -29,15 +30,7 @@ import { subaccountName } from '@/lib/subaccountsTable';
 const PAGE_SIZE = 10;
 
 function downloadCsv(content: string): void {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'payouts.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCsvFile(content, 'payouts.csv');
 }
 
 /** The Payouts page: on-chain payout history with search, filter, pagination, and CSV export. */
@@ -53,7 +46,6 @@ export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, 
   const [filter, setFilter] = useState<PayoutFilterDraft>(EMPTY_PAYOUT_FILTER_DRAFT);
   const [page, setPage] = useState(1);
   const [exportOpen, setExportOpen] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const { toast, dismiss } = useToastControls();
 
   const now = Date.now();
@@ -68,16 +60,6 @@ export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, 
   }, [payouts, query, filter, now]);
   const pageData = paginate(visible, page, PAGE_SIZE);
 
-  const allSelected = visible.length > 0 && visible.every((p) => selected.has(payoutRowId(p)));
-  const someSelected = visible.some((p) => selected.has(payoutRowId(p)));
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(visible.map(payoutRowId)));
-  const toggleOne = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-
   // Export the chosen date range (independent of the table's search/filter) as CSV.
   // The CSV build is synchronous, so yield a frame first, otherwise React batches the
   // preparing and outcome toasts into one tick and the preparing toast never paints.
@@ -86,11 +68,7 @@ export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, 
     const pending = toast({ type: 'info', message: 'Preparing export...', description: 'Generating your CSV file.' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     try {
-      // Checked rows are an explicit pick, so they win over the chosen range; an
-      // intersection of the two could silently produce an empty file.
-      const rows = someSelected
-        ? visible.filter((p) => selected.has(payoutRowId(p)))
-        : payoutsInRange(payouts, range.startSec, range.endSec);
+      const rows = payoutsInRange(payouts, range.startSec, range.endSec);
       downloadCsv(payoutsToCsv(rows));
       dismiss(pending);
       toast({ type: 'success', message: 'Export complete', description: 'Payouts data has been exported as CSV.' });
@@ -145,7 +123,7 @@ export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, 
               onClick={() => setExportOpen((o) => !o)}
               aria-expanded={exportOpen}
               aria-haspopup="dialog"
-              className="inline-flex h-9 items-center gap-2 rounded-[32px] border border-black/20 bg-[hsl(var(--btn))] px-5 text-sm leading-5 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90"
+              className="inline-flex h-9 items-center gap-2 rounded-[32px] border border-black/20 bg-info px-5 text-sm leading-5 text-info-foreground transition-opacity hover:opacity-90"
             >
               <LiExport className="h-3.5 w-3.5" /> Export CSV
             </button>
@@ -153,6 +131,8 @@ export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, 
           </div>
         )}
       </header>
+
+      <PayoutStatCards payouts={payouts} isLoading={isLoading} isError={isError} aggregated={accountNames !== undefined} />
 
       {isLoading ? (
         <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />
@@ -193,12 +173,6 @@ export function PayoutsContent({ payouts, isLoading, isError, onRetry: refetch, 
             payouts={pageData.items}
             empty={tableEmpty}
             showAccount={accountNames !== undefined}
-            selectable={canExport}
-            selected={selected}
-            allSelected={allSelected}
-            someSelected={someSelected}
-            onToggleAll={toggleAll}
-            onToggleOne={toggleOne}
           />
           {visible.length > 0 && (
             <WorkersPagination page={pageData.page} totalPages={pageData.totalPages} onPage={setPage} />

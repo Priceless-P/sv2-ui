@@ -1,6 +1,7 @@
 import { downloadCsv } from '@/lib/utils';
 import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { SelectionActions } from '@/components/ui/SelectionActions';
 import { LiExport } from 'solar-icon-react/li';
 import { useSubaccounts, useSubaccountList, usePermissions } from '@/hooks/useSubaccounts';
 import { useAccountSwitcher } from '@/hooks/useAccountSwitcher';
@@ -185,7 +186,7 @@ export function SubaccountsPage() {
             <button
               type="button"
               onClick={() => void runExport()}
-              className="inline-flex h-9 items-center gap-2 rounded-[32px] border border-black/20 bg-[hsl(var(--btn))] px-5 text-sm leading-5 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90"
+              className="inline-flex h-9 items-center gap-2 rounded-[32px] border border-black/20 bg-info px-5 text-sm leading-5 text-info-foreground transition-opacity hover:opacity-90"
             >
               <LiExport className="h-3.5 w-3.5" /> Export CSV
             </button>
@@ -227,6 +228,8 @@ export function SubaccountsPage() {
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
             />
+            <SelectionActions count={visible.filter((subaccount) => selected.has(subaccount.id)).length}
+              onExport={() => void runExport()} onClear={() => setSelected(new Set())} />
             <SubaccountsTable
               subaccounts={pageData.items}
               empty={tableEmpty}

@@ -1,3 +1,8 @@
+import type { Payout } from '@/lib/payoutsTable';
+import { payoutProgress } from '@/lib/generatedBtcTable';
+import { PayoutProgressCard } from '@/components/generated-btc/PayoutProgressCard';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { createElement } from 'react';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -221,4 +226,69 @@ test('combined generated summaries sum accounts by day before averaging hashrate
   assert.equal(highestEarningDay(days)?.fpps_btc_generated, 4.5);
   assert.equal(highestEarningDay(days)?.entry_day, '2026-10-21');
   assert.equal(rows[0].hashrate, 10, 'account rows must remain unchanged');
+});
+
+const now = Date.parse('2026-10-21T15:00:00Z');
+function progressEntry(entry_day: string, sats: number): GeneratedBtcEntry {
+  return { entry_day, fpps_btc_generated: sats / 1e8, pplns_btc_generated: 5, btc_generated: 5 + sats / 1e8, hashrate: 1, pplns_hashrate: 1 };
+}
+function payout(day: string, amountSats: number, mode: Payout['mode'] = 'fpps', outputIndex = 0): Payout {
+  return { date: Date.parse(`${day}T12:00:00Z`) / 1000, amountSats, mode, outputIndex, txid: 'tx', toAddress: 'addr', fromAddress: '' };
+}
+
+test('matches the reference FPPS-only balance calculation within the 30-day UTC window', () => {
+  const progress = payoutProgress([
+    progressEntry('2026-09-21', 400_000), // Outside the window.
+    progressEntry('2026-09-22', 50_000), // Inclusive start.
+    progressEntry('2026-10-21', 200_000),
+    progressEntry('2026-10-22', 100_000), // Future earnings are excluded.
+  ], [payout('2026-10-21', 60_000), payout('2026-10-21', 40_000, 'pplns')], now);
+  assert.deepEqual(progress, { balanceSats: 190_000, remainingSats: 310_000, percent: 38 });
+});
+
+test('an older payout cannot absorb earnings generated on a later day', () => {
+  const progress = payoutProgress([progressEntry('2026-10-21', 200_000)], [payout('2026-10-20', 500_000)], now);
+  assert.equal(progress.balanceSats, 200_000);
+});
+
+test('processes the daily ledger chronologically and never carries a negative balance', () => {
+  const progress = payoutProgress([
+    progressEntry('2026-10-21', 50_000),
+    progressEntry('2026-10-19', 100_000),
+    progressEntry('2026-10-20', 20_000),
+  ], [payout('2026-10-20', 200_000)], now);
+  assert.equal(progress.balanceSats, 50_000);
+});
+
+test('rounds each daily earnings amount to satoshis and subtracts separate outputs of the same transaction', () => {
+  const progress = payoutProgress([progressEntry('2026-10-21', 200_000.4)], [
+    payout('2026-10-21', 10_000, 'fpps', 0),
+    payout('2026-10-21', 20_000, 'fpps', 1),
+  ], now);
+  assert.equal(progress.balanceSats, 170_000);
+});
+
+test('empty history starts at zero; reaching or exceeding the minimum clamps progress to 100 percent', () => {
+  assert.deepEqual(payoutProgress([], [], now), { balanceSats: 0, remainingSats: 500_000, percent: 0 });
+  for (const sats of [500_000, 700_000]) {
+    assert.deepEqual(payoutProgress([progressEntry('2026-10-21', sats)], [], now), { balanceSats: sats, remainingSats: 0, percent: 100 });
+  }
+});
+
+test('progress card distinguishes unknown payout data from a genuine zero balance', () => {
+  for (const data of [
+    { payouts: undefined, isLoading: true, isError: false },
+    { payouts: undefined, isLoading: false, isError: true },
+    { payouts: [payout('2026-10-21', 100)], isLoading: false, isError: true },
+  ]) {
+    const html = renderToStaticMarkup(createElement(PayoutProgressCard, { entries: [], data, isLoading: false, isError: false }));
+    assert.doesNotMatch(html, /role="progressbar"/);
+    assert.match(html, /Loading payout progress|Payout progress unavailable/);
+  }
+  const empty = renderToStaticMarkup(createElement(PayoutProgressCard, {
+    entries: [], data: { payouts: [], isLoading: false, isError: false }, isLoading: false, isError: false,
+  }));
+  assert.match(empty, /role="progressbar"/);
+  assert.match(empty, /aria-valuenow="0"/);
+  assert.match(empty, /0\.005 BTC more needed/);
 });

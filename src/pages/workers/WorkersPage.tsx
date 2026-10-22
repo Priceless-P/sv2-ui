@@ -1,7 +1,9 @@
+import { downloadCsv } from '@/lib/csvDownload';
 import type { Worker } from '@/api/types';
 import { Reading } from '@/components/ui/Reading';
 import { StatCard } from '@/components/ui/StatCard';
 import { TableToolbar } from '@/components/ui/TableToolbar';
+import { SelectionActions } from '@/components/ui/SelectionActions';
 import { useToast, useToastControls } from '@/components/ui/toast';
 import { WorkerBars } from '@/components/ui/WorkerBars';
 import { ConnectWorkersDrawer } from '@/components/workers/ConnectWorkersDrawer';
@@ -11,7 +13,8 @@ import { WorkersFilter } from '@/components/workers/WorkersFilter';
 import { WorkersNoResults } from '@/components/workers/WorkersNoResults';
 import { WorkersPagination } from '@/components/workers/WorkersPagination';
 import { WorkersTable } from '@/components/workers/WorkersTable';
-import { ACTIVE_WORKERS_HINT, OFFLINE_WORKER_HINT, WORKER_REJECTION_HINT, WORKER_ROSTER_HINT } from '@/lib/metricWindows';
+import { ACTIVE_WORKERS_HINT, OFFLINE_WORKER_HINT, WORKER_REJECTION_HINT, WORKER_ROSTER_HINT, LIVE_HASHRATE_HINT } from '@/lib/metricWindows';
+import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import { cn, exportFilename } from '@/lib/utils';
 import type { WorkersPageStats } from '@/lib/workersTable';
 import {
@@ -131,7 +134,7 @@ function ExportModePicker({
           <button
             type="button"
             onClick={() => onExport(mode)}
-            className="h-11 flex-1 rounded-[32px] bg-[hsl(var(--btn))] px-6 text-base font-medium leading-6 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90"
+            className="h-11 flex-1 rounded-[32px] bg-info px-6 text-base font-medium leading-6 text-info-foreground transition-opacity hover:opacity-90"
           >
             Export
           </button>
@@ -141,17 +144,6 @@ function ExportModePicker({
   );
 }
 
-function downloadCsv(content: string, filename: string): void {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 /** The Workers page: roster table with status tabs, search, sort, pagination, and CSV export. */
 export function WorkersContent({ workers, isLoading: loading, isError: failed, onRetry: retry, accounts, canConnect = false, canExport: allowExport = false }: {
@@ -281,7 +273,7 @@ export function WorkersContent({ workers, isLoading: loading, isError: failed, o
               disabled={!canExport}
               aria-expanded={exportOpen}
               aria-haspopup="dialog"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[hsl(var(--btn))] px-4 py-2 text-sm font-medium text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-info px-4 py-2 text-sm font-medium text-info-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               Export CSV <LiDownloadMinimalistic className="h-4 w-4" />
             </button>
@@ -341,13 +333,15 @@ export function WorkersContent({ workers, isLoading: loading, isError: failed, o
                   key={item.key}
                   type="button"
                   onClick={() => changeTab(item.key)}
-                  className={cn('inline-flex items-center gap-1 rounded-sm border-[0.5px] border-border px-3 py-1 text-sm font-medium leading-5 transition-colors', tab === item.key ? 'bg-[#262626] text-on-solid' : 'bg-card text-body-alt hover:text-foreground')}
+                  className={cn('inline-flex items-center gap-1 rounded-sm border-[0.5px] border-border px-3 py-1 text-sm font-medium leading-5 transition-colors', tab === item.key ? 'bg-[#262626] text-white' : 'bg-card text-body-alt hover:text-foreground')}
                 >
                   {item.label}
                   <span className={cn('rounded-full border-[0.5px] border-border px-1 text-xs leading-4', tab === item.key ? 'bg-card text-foreground' : 'bg-btn-secondary text-foreground')}>{counts[item.key]}</span>
                 </button>)}
               </div>}
             />
+            {allowExport && <SelectionActions count={sorted.filter((worker) => selected.has(workerRowId(worker))).length}
+              onExport={() => void runExport('all')} onClear={() => setSelected(new Set())} />}
             {sorted.length === 0 ? (
               <WorkersNoResults
                 mode={query.trim() ? 'search' : 'filter'}
@@ -385,21 +379,18 @@ export function WorkersContent({ workers, isLoading: loading, isError: failed, o
   );
 }
 
-/** Total / Active / Offline / Rejection-rate cards above the workers table. */
+/** Active/total workers, offline workers, ten-minute hashrate, and rejection rate. */
 function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
   const hasWorkers = stats.total > 0;
   const rated = stats.rejectionRate !== null;
   const rejection = rated ? (stats.rejectionRate! * 100).toFixed(1) : '--';
+  const scale = pickHashrateScale([stats.hashrate10m ?? 0]);
 
   return (
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCard variant="workers" title="Total workers" hint={WORKER_ROSTER_HINT} caption="Seen during the last 24 hours">
-        <Reading value={stats.total} />
-      </StatCard>
-
       <StatCard variant="workers"
         title="Active workers"
-        hint={ACTIVE_WORKERS_HINT}
+        hint={`${ACTIVE_WORKERS_HINT} ${WORKER_ROSTER_HINT}`}
         captionTone={hasWorkers ? 'strong' : 'muted'}
         caption={
           <span className="flex flex-col gap-2">
@@ -410,7 +401,7 @@ function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
           </span>
         }
       >
-        <Reading value={stats.active} />
+        <Reading value={stats.active} unit={`/ ${stats.total} total`} unitSize="base" />
       </StatCard>
 
       <StatCard variant="workers"
@@ -420,6 +411,14 @@ function WorkersStatCards({ stats }: { stats: WorkersPageStats }) {
         caption={stats.offline > 0 ? 'Inactive in the last 10 minutes' : 'All workers are active'}
       >
         <Reading value={stats.offline} />
+      </StatCard>
+
+      <StatCard variant="workers"
+        title="Average hashrate (10m)"
+        hint={LIVE_HASHRATE_HINT}
+        caption="Combined across all workers"
+      >
+        <Reading value={stats.hashrate10m === null ? '--' : formatAxisValue(stats.hashrate10m, scale.divisor)} unit={stats.hashrate10m === null ? undefined : scale.unit} />
       </StatCard>
 
       <StatCard variant="workers"
