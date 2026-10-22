@@ -1,5 +1,14 @@
 import type { Subaccount, SubaccountFees, WatcherLink, WatcherScope } from '@/api/types';
 import { truncateMiddle } from '@/lib/payoutsTable';
+import { csvCell } from './csvDownload';
+
+/** Export link metadata without writing access tokens or token-bearing URLs into a report. */
+export function watcherLinksToCsv(links: WatcherLink[], sessionAccountId: string | null, subaccounts: Subaccount[]): string {
+  return ['id,account_id,account,scopes,created_at,expires_at,last_used_at',
+    ...links.map((link) => [link.id, link.user_id, accountLabel(link.user_id, sessionAccountId, subaccounts) ?? '',
+      link.scopes.join(';'), link.created_at, link.expires_at ?? '', link.last_used_at ?? ''].map(csvCell).join(',')),
+  ].join('\n');
+}
 
 /** Every scope the API accepts, in the order the permission picker lists them. */
 export const ALL_WATCHER_SCOPES: WatcherScope[] = [
@@ -240,6 +249,30 @@ export type WatcherSort = 'newest' | 'oldest';
 export type WatcherDatePreset = '24h' | '7d' | '30d';
 const PRESET_DAYS: Record<WatcherDatePreset, number> = { '24h': 1, '7d': 7, '30d': 30 };
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface WatcherLinksStats {
+  active: number;
+  expiringSoon: number;
+  neverUsed: number;
+  accountsCovered: number;
+}
+
+/** Summaries cover all active links, independently of table search and filters. */
+export function deriveWatcherLinksStats(links: WatcherLink[], nowMs: number): WatcherLinksStats {
+  let active = 0;
+  let expiringSoon = 0;
+  let neverUsed = 0;
+  const accounts = new Set<string>();
+  for (const link of links) {
+    const expires = link.expires_at === null ? Infinity : Date.parse(link.expires_at);
+    if (!(expires > nowMs)) continue;
+    active += 1;
+    if (expires <= nowMs + 7 * DAY_MS) expiringSoon += 1;
+    if (link.last_used_at === null) neverUsed += 1;
+    accounts.add(link.user_id);
+  }
+  return { active, expiringSoon, neverUsed, accountsCovered: accounts.size };
+}
 
 /** The cutoff for a date preset, relative to `nowMs`. */
 export function watcherSinceForPreset(preset: WatcherDatePreset, nowMs: number): number {

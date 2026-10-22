@@ -58,6 +58,21 @@ export function highestPerAccount(links: WatcherLink[]): WatcherLink[] {
   return [...best.values()];
 }
 
+/** Prefer the mode covering the most selected accounts; prefer both surfaces on ties. */
+export function initialMultiwatcherSelection(links: WatcherLink[]): { mode: MultiwatcherMode; ids: string[] } {
+  const choices: MultiwatcherMode[] = ['both', 'hashrate', 'generated_btc'];
+  let mode: MultiwatcherMode = 'both';
+  let chosen: WatcherLink[] = [];
+  for (const candidate of choices) {
+    const eligible = highestPerAccount(eligibleLinks(links, candidate));
+    if (eligible.length > chosen.length) {
+      mode = candidate;
+      chosen = eligible;
+    }
+  }
+  return { mode, ids: chosen.map((link) => link.id) };
+}
+
 /** The shareable multiwatcher URL: /login/multiwatcher/{mode}/{userId}/{token}/... */
 export function multiwatcherUrl(origin: string, mode: MultiwatcherMode, links: WatcherLink[]): string {
   const base = origin.replace(/\/+$/, '');

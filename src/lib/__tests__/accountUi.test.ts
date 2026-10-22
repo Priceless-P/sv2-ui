@@ -7,6 +7,9 @@ import { AuthContext, type AuthContextValue } from '@/auth/AuthProvider';
 import { createSession } from '@/auth/session';
 import { SecurityTab } from '@/components/settings/SecurityTab';
 import { ToastProvider } from '@/components/ui/toast';
+import { WatcherLinksTable } from '@/components/watcher-links/WatcherLinksTable';
+import { TableToolbar } from '@/components/ui/TableToolbar';
+import type { WatcherLink } from '@/api/types';
 import { useAccountScope } from '@/hooks/useAccountScope';
 
 function ScopeProbe() {
@@ -61,3 +64,26 @@ test('change password is enabled for a loaded main account and disabled in a sub
   }
 });
 
+test('watcher-link selection reflects row and partially selected header state', () => {
+  const links: WatcherLink[] = ['first', 'second'].map((id) => ({
+    id, user_id: 'owner', token: null, token_prefix: 'prefix', last_used_at: null,
+    owner_email: 'owner@example.com', owner_first_name: null, scopes: ['workers_read'],
+    created_at: '2026-10-21T12:00:00Z', expires_at: null,
+  }));
+  const html = renderToStaticMarkup(createElement(ToastProvider, null, createElement(WatcherLinksTable, {
+    links, sessionAccountId: 'owner', subaccounts: [], origin: 'https://example.com', onView: () => {},
+    selected: new Set(['first']), someSelected: true, onToggleAll: () => {}, onToggleOne: () => {},
+  })));
+  assert.match(html, /aria-checked="mixed" aria-label="Select all watcher links"/);
+  assert.match(html, /aria-checked="true" aria-label="Select watcher link first"/);
+  assert.match(html, /aria-checked="false" aria-label="Select watcher link second"/);
+});
+
+test('table toolbars retain their accessible label without repeating the page heading', () => {
+  const html = renderToStaticMarkup(createElement(TableToolbar, {
+    title: 'Workers', query: '', onQuery: () => {}, searchPlaceholder: 'Search workers',
+    filterActive: false, renderFilter: () => null,
+  }));
+  assert.match(html, /aria-label="Workers"/);
+  assert.doesNotMatch(html, /<h[1-6]/);
+});

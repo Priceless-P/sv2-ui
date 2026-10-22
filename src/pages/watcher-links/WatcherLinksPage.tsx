@@ -4,7 +4,9 @@ import { useAuth } from '@/auth';
 import type { WatcherLink } from '@/api/types';
 import { useWatcherLinks, useCreateWatcherLink, useRevokeWatcherLink } from '@/hooks/useWatcherLinks';
 import { useSubaccountList } from '@/hooks/useSubaccounts';
-import { searchWatcherLinks, applyWatcherFilter } from '@/lib/watcherLinks';
+import { searchWatcherLinks, applyWatcherFilter, watcherLinksToCsv } from '@/lib/watcherLinks';
+import { downloadCsv } from '@/lib/csvDownload';
+import { SelectionActions } from '@/components/ui/SelectionActions';
 import {
   EMPTY_WATCHER_DRAFT,
   isWatcherDraftActive,
@@ -19,6 +21,7 @@ import { CreateWatcherLinkPanel } from '@/components/watcher-links/CreateWatcher
 import { WatcherLinkDetailsPanel } from '@/components/watcher-links/WatcherLinkDetailsPanel';
 import { AggregateWatcherLinksPanel } from '@/components/watcher-links/AggregateWatcherLinksPanel';
 import { WorkersPagination } from '@/components/workers/WorkersPagination';
+import { WatcherPermissionsGuide } from '@/components/watcher-links/WatcherPermissionsGuide';
 
 const PAGE_SIZE = 10;
 
@@ -48,7 +51,9 @@ export function WatcherLinksPage() {
   const [filter, setFilter] = useState<WatcherFilterDraft>(EMPTY_WATCHER_DRAFT);
   const [createOpen, setCreateOpen] = useState(false);
   const [aggregateOpen, setAggregateOpen] = useState(false);
+  const [aggregateSelection, setAggregateSelection] = useState<WatcherLink[] | null>(null);
   const [viewing, setViewing] = useState<WatcherLink | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const create = useCreateWatcherLink();
   const revoke = useRevokeWatcherLink();
 
@@ -58,6 +63,22 @@ export function WatcherLinksPage() {
     return applyWatcherFilter(found, watcherDraftToFilter(filter, Date.now()));
   }, [links, query, filter, sessionAccountId, subaccounts, origin]);
   const pageData = paginate(visible, page, PAGE_SIZE);
+  const allSelected = visible.length > 0 && visible.every((link) => selected.has(link.id));
+  const someSelected = visible.some((link) => selected.has(link.id));
+  const selectedLinks = visible.filter((link) => selected.has(link.id));
+  const toggleOne = (id: string) => setSelected((previous) => {
+    const next = new Set(previous);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected((previous) => {
+    const next = new Set(previous);
+    for (const link of visible) {
+      if (allSelected) next.delete(link.id);
+      else next.add(link.id);
+    }
+    return next;
+  });
 
   // A narrower search or filter can shrink the result set, so jump back to page 1.
   const changeQuery = (next: string) => {
@@ -110,7 +131,7 @@ export function WatcherLinksPage() {
           <div className="flex shrink-0 flex-col gap-3 sm:flex-row">
             <button
               type="button"
-              onClick={() => setAggregateOpen(true)}
+              onClick={() => { setAggregateSelection(null); setAggregateOpen(true); }}
               className="inline-flex h-9 items-center justify-center gap-2 rounded-[32px] border-[0.5px] border-black/20 bg-btn-secondary px-5 text-sm leading-5 text-foreground transition-opacity hover:opacity-80"
             >
               Aggregate watcher links
@@ -125,6 +146,8 @@ export function WatcherLinksPage() {
           </div>
         )}
       </header>
+
+      <WatcherPermissionsGuide />
 
       {isLoading ? (
         <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />
@@ -155,6 +178,12 @@ export function WatcherLinksPage() {
             onApplyFilter={applyFilter}
             onResetFilter={resetFilter}
           />
+          <SelectionActions count={selectedLinks.length}
+            onExport={() => downloadCsv(watcherLinksToCsv(selectedLinks, sessionAccountId, subaccounts), 'watcher_links.csv')}
+            onClear={() => setSelected(new Set())}>
+            <button type="button" onClick={() => { setAggregateSelection(selectedLinks); setAggregateOpen(true); }}
+              className="rounded-full border border-border bg-card px-4 py-1.5 text-sm text-foreground hover:bg-muted">Create aggregated link</button>
+          </SelectionActions>
           <WatcherLinksTable
             links={pageData.items}
             sessionAccountId={sessionAccountId}
@@ -162,6 +191,11 @@ export function WatcherLinksPage() {
             origin={origin}
             onView={setViewing}
             empty={tableEmpty}
+            selected={selected}
+            allSelected={allSelected}
+            someSelected={someSelected}
+            onToggleAll={toggleAll}
+            onToggleOne={toggleOne}
           />
           {visible.length > 0 && (
             <WorkersPagination page={pageData.page} totalPages={pageData.totalPages} onPage={setPage} />
@@ -197,7 +231,8 @@ export function WatcherLinksPage() {
 
       {aggregateOpen && (
         <AggregateWatcherLinksPanel
-          links={links}
+          links={aggregateSelection ?? links}
+          preselect={aggregateSelection !== null}
           sessionAccountId={sessionAccountId}
           subaccounts={subaccounts}
           origin={origin}

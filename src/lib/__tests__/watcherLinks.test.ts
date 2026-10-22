@@ -27,7 +27,20 @@ import {
   EMPTY_WATCHER_FILTER,
   isWatcherFilterActive,
   applyWatcherFilter,
+  watcherLinksToCsv,
+  deriveWatcherLinksStats,
 } from '@/lib/watcherLinks';
+
+test('watcher CSV exports selected metadata without tokens or URLs and escapes account names', () => {
+  const csv = watcherLinksToCsv([link({ id: 'chosen', user_id: 'sub', scopes: ['workers_read', 'earnings_read'] })], 'owner', [
+    { id: 'sub', sub_account: '=Formula, Farm', token: 'secret', fpps_token: null, hashrate: '0', bitcoin_addresses: {} },
+  ]);
+  const lines = csv.split('\n');
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^id,account_id,account,scopes/);
+  assert.match(lines[1], /chosen,sub,"'=Formula, Farm",workers_read;earnings_read/);
+  assert.doesNotMatch(csv, /KNWXZX|secret|http/);
+});
 
 const FULL_TOKEN = 'KNWXZXKY5ZL7HZM22RFGOPRMOVUGJ2XZ';
 
@@ -57,6 +70,26 @@ function sub(over: Partial<Subaccount> = {}): Subaccount {
     ...over,
   };
 }
+
+test('watcher summaries exclude expired links and count each active account once', () => {
+  const now = Date.parse('2026-10-21T12:00:00Z');
+  const stats = deriveWatcherLinksStats([
+    link({ user_id: 'a' }),
+    link({ user_id: 'a', expires_at: '2026-10-22T12:00:00Z', last_used_at: '2026-10-20T00:00:00Z' }),
+    link({ user_id: 'b', expires_at: '2026-10-28T12:00:00Z' }),
+    link({ user_id: 'c', expires_at: '2026-10-29T12:00:00Z', token: null }),
+    link({ user_id: 'expired', expires_at: '2026-10-21T11:59:59Z' }),
+    link({ user_id: 'boundary', expires_at: '2026-10-21T12:00:00Z' }),
+  ], now);
+  assert.deepEqual(stats, { active: 4, expiringSoon: 2, neverUsed: 3, accountsCovered: 3 });
+});
+
+test('watcher summaries handle an empty list and invalid expiry timestamps', () => {
+  const now = Date.parse('2026-10-21T12:00:00Z');
+  const empty = { active: 0, expiringSoon: 0, neverUsed: 0, accountsCovered: 0 };
+  assert.deepEqual(deriveWatcherLinksStats([], now), empty);
+  assert.deepEqual(deriveWatcherLinksStats([link({ expires_at: 'invalid' })], now), empty);
+});
 
 test('scopeLabel maps every API scope to its display label', () => {
   assert.equal(scopeLabel('hashrate_read'), 'Hashrate');

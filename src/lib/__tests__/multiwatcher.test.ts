@@ -11,7 +11,26 @@ import {
   highestPerAccount,
   multiwatcherUrl,
   parseMultiwatcherPath,
+  initialMultiwatcherSelection,
 } from '@/lib/multiwatcher';
+
+test('selected watcher links initialize the mode covering the most accounts without adding unselected keys', () => {
+  const selected = [
+    link({ id: 'a', user_id: 'a', token: 'A', scopes: ['hashrate_read', 'earnings_read'] }),
+    link({ id: 'b', user_id: 'b', token: 'B', scopes: ['hashrate_read'] }),
+    link({ id: 'hidden', user_id: 'hidden', token: null, scopes: ['hashrate_read'] }),
+  ];
+  assert.deepEqual(initialMultiwatcherSelection(selected), { mode: 'hashrate', ids: ['a', 'b'] });
+  assert.deepEqual(initialMultiwatcherSelection([selected[0]]), { mode: 'both', ids: ['a'] });
+});
+
+test('selected watcher links use one eligible key per account and handle incompatible scopes', () => {
+  assert.deepEqual(initialMultiwatcherSelection([
+    link({ id: 'low', user_id: 'a', scopes: ['earnings_read'] }),
+    link({ id: 'high', user_id: 'a', scopes: ['earnings_read', 'fees_read'] }),
+  ]), { mode: 'generated_btc', ids: ['high'] });
+  assert.deepEqual(initialMultiwatcherSelection([link({ scopes: ['workers_read'] })]), { mode: 'both', ids: [] });
+});
 
 function link(over: Partial<WatcherLink> = {}): WatcherLink {
   return {

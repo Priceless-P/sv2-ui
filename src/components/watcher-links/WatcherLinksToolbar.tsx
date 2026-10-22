@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import type { Subaccount } from '@/api/types';
 import { WatcherLinksFilter, isWatcherDraftActive, type WatcherFilterDraft } from './WatcherLinksFilter';
 
-/** Table header bar: the "Watcher links" title, the search box, and the Filter popover. */
+/** Watcher-link search and filter controls. */
 export function WatcherLinksToolbar({
   query,
   onQuery,
@@ -27,9 +27,7 @@ export function WatcherLinksToolbar({
 
   return (
     <div className="relative flex flex-col gap-3 rounded-t-3xl border-[0.5px] border-b-0 border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
-      <h3 className="!font-body text-lg font-bold leading-7 text-foreground">Watcher links</h3>
-
-      <div className="flex items-center gap-3">
+      <div className="flex w-full items-center justify-end gap-3">
         <div className="relative flex-1 sm:flex-none">
           <LiMagnifer className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-body-alt" />
           <span aria-hidden className="pointer-events-none absolute left-[42px] top-1/2 h-6 w-px -translate-y-1/2 bg-border" />
