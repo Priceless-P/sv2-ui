@@ -1,6 +1,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { GripVertical } from 'lucide-react';
 import { LiTuning4, LiRouting2 } from 'solar-icon-react/li';
+import { DashboardHomeView } from '@/components/home/DashboardHomeView';
 import { LiveHashrateCard } from '@/components/home/LiveHashrateCard';
 import { KybNotice } from '@/components/home/KybNotice';
 import { ConnectWorkersCard } from '@/components/home/ConnectWorkersCard';
@@ -224,7 +225,7 @@ export function DashboardHome() {
   }
 
   return (
-    <div className="space-y-3">
+    <>
       {customizing && (
         <div className="fixed left-1/2 top-20 z-40 -translate-x-1/2">
           <button
@@ -240,11 +241,8 @@ export function DashboardHome() {
         </div>
       )}
 
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold leading-9 tracking-[-1px] text-heading">Welcome back</h2>
-          <p className="text-sm leading-5 text-body-alt">Mining data and earnings overview.</p>
-        </div>
+
+      <DashboardHomeView actions={
         <div className="relative flex shrink-0 items-center gap-2">
           {!aggregated && (
             <button type="button" onClick={() => setTourOpen(true)} className={HEADER_BUTTON}>
@@ -267,14 +265,10 @@ export function DashboardHome() {
           </button>
           {panelOpen && <CustomizeDashboardPanel mode={mode} layout={layout} onToggle={toggle} onReset={reset} />}
         </div>
-      </header>
 
-      <KybNotice />
-
-      <div className="space-y-1.5">{rendered}</div>
-
-      <GettingStartedCard />
-      {tourOpen && <ProductTour onClose={() => setTourOpen(false)} />}
-    </div>
+      } notice={<KybNotice />} footer={<><GettingStartedCard />{tourOpen && <ProductTour onClose={() => setTourOpen(false)} />}</>}>
+        {rendered}
+      </DashboardHomeView>
+    </>
   );
 }

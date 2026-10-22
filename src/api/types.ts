@@ -179,7 +179,7 @@ export interface SubaccountShareStats {
 }
 
 /**
- * Pool + broker fee rates expressed as fractions (0.02 = 2%).
+ * Pool + broker fee rates expressed as percentages (2 = 2%).
  * From GET /api/user/fees and GET /api/user/sub_account/{id}/fees.
  */
 export interface SubaccountFees {

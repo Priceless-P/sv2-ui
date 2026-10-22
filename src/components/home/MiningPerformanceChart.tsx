@@ -5,6 +5,7 @@ import { useAccountHashrateHistory, useAggregatedHashrateHistory } from '@/hooks
 import { useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { cn } from '@/lib/utils';
 import type { HashratePoint, HashrateRange } from '@/api/types';
+import { downsampleHashrate } from '@/lib/hashrateHistory';
 import { CalendarSheet } from '@/components/payouts/CalendarSheet';
 import { InfoHint } from '@/components/ui/InfoHint';
 import type { DateRange } from '@/lib/payoutsTable';
@@ -53,7 +54,6 @@ function latest(points: HashratePoint[], key: Series['key']): number | null {
 export function MiningPerformanceChart() {
   const [range, setRange] = useState<HashrateRange>('24H');
   const [custom, setCustom] = useState<DateRange | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
 
   // A chosen custom window drives the query; otherwise the active preset does.
   const customWindow = custom
@@ -67,13 +67,50 @@ export function MiningPerformanceChart() {
   // fetches the main series, so keeping this one enabled would request it twice.
   const single = useAccountHashrateHistory(range, customWindow, !aggregated);
   const combined = useAggregatedHashrateHistory(range, customWindow, aggregated);
-  const { data, isLoading } = aggregated ? combined : single;
-  const points: HashratePoint[] = data ?? [];
+  const { data, isLoading, isError } = aggregated ? combined : single;
+
+  return (
+    <MiningPerformanceChartView
+      points={data ?? []}
+      isLoading={isLoading}
+      isError={isError}
+      range={range}
+      custom={custom}
+      onRange={setRange}
+      onCustom={setCustom}
+    />
+  );
+}
+
+/**
+ * Shared dashboard chart UI. Callers own the query and pass only the data their
+ * current credential is allowed to read.
+ */
+export function MiningPerformanceChartView({
+  points: rawPoints,
+  isLoading,
+  isError = false,
+  range,
+  custom,
+  onRange,
+  onCustom,
+}: {
+  points: HashratePoint[];
+  isLoading: boolean;
+  isError?: boolean;
+  range: HashrateRange;
+  custom: DateRange | null;
+  onRange: (range: HashrateRange) => void;
+  onCustom: (range: DateRange | null) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Token-only callers supply raw history, which can contain thousands of samples.
+  const points = downsampleHashrate(rawPoints, 300);
   const isCustom = custom !== null;
 
   const selectPreset = (r: HashrateRange) => {
-    setCustom(null);
-    setRange(r);
+    onCustom(null);
+    onRange(r);
   };
 
   // One unit for the whole axis: the design prints it once above the plot and leaves the
@@ -91,10 +128,8 @@ export function MiningPerformanceChart() {
   // line and one legend entry instead of a flat zero series pinned to the axis.
   const series = ALL_SERIES.filter((s) => points.some((p) => (p[s.key] ?? 0) > 0));
 
-  // Two different empty cases. No samples at all is the first-run state and drops the
-  // range control, matching the design. Samples that are all zero means the account has
-  // history but nothing landed in THIS window, so the control has to stay reachable or
-  // the miner cannot get back to a range that does have data.
+  // An empty response can mean only this window has no samples. Keep the range
+  // controls reachable so another preset or custom window can still be selected.
   const hasSamples = points.length > 0;
   const hasPlot = hasSamples && peak > 0;
 
@@ -106,51 +141,49 @@ export function MiningPerformanceChart() {
       )}
     >
       <div className={cn('flex w-full', hasSamples ? 'items-center justify-between' : 'flex-col gap-4')}>
-        <div className="flex w-full items-center justify-between">
+        <div className="flex w-full flex-wrap items-center justify-between gap-3">
           <span className="inline-flex items-center gap-2">
             <h3 className="!font-body text-lg font-semibold leading-7 tracking-normal text-heading-alt">
               Mining Performance
             </h3>
             <InfoHint text={HASHRATE_HISTORY_HINT} />
           </span>
-          {hasSamples && (
-            <div className="flex items-center gap-2 rounded-sm border-[0.5px] border-border bg-muted p-0.5">
-              {RANGES.map((r) => {
-                const active = !isCustom && range === r;
-                return (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => selectPreset(r)}
-                    aria-pressed={active}
-                    className={cn(
-                      'flex w-9 flex-col items-center justify-center px-1 py-0.5 text-center text-sm leading-5 transition-colors',
-                      active
-                        ? `rounded-sm bg-background text-foreground ${ACTIVE_CHIP_SHADOW}`
-                        : 'rounded text-body-alt hover:text-foreground',
-                    )}
-                  >
-                    {r}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                aria-pressed={isCustom}
-                className={cn(
-                  'flex flex-col items-center justify-center px-1 py-0.5 text-center text-sm leading-5 transition-colors',
-                  isCustom
-                    ? `rounded-sm bg-background text-foreground ${ACTIVE_CHIP_SHADOW}`
-                    : 'rounded text-body-alt hover:text-foreground',
-                )}
-              >
-                Custom
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 rounded-sm border-[0.5px] border-border bg-muted p-0.5">
+            {RANGES.map((r) => {
+              const active = !isCustom && range === r;
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => selectPreset(r)}
+                  aria-pressed={active}
+                  className={cn(
+                    'flex w-9 flex-col items-center justify-center px-1 py-0.5 text-center text-sm leading-5 transition-colors',
+                    active
+                      ? `rounded-sm bg-background text-foreground ${ACTIVE_CHIP_SHADOW}`
+                      : 'rounded text-body-alt hover:text-foreground',
+                  )}
+                >
+                  {r}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              aria-pressed={isCustom}
+              className={cn(
+                'flex flex-col items-center justify-center px-1 py-0.5 text-center text-sm leading-5 transition-colors',
+                isCustom
+                  ? `rounded-sm bg-background text-foreground ${ACTIVE_CHIP_SHADOW}`
+                  : 'rounded text-body-alt hover:text-foreground',
+              )}
+            >
+              Custom
+            </button>
+          </div>
         </div>
-        {/* The empty state rules off the title instead of showing controls with nothing to act on. */}
+        {/* Separate the controls from the empty state. */}
         {!hasSamples && <div className="h-px w-full bg-border" />}
       </div>
 
@@ -159,13 +192,15 @@ export function MiningPerformanceChart() {
           anchorClassName="right-8 top-16"
           onCancel={() => setPickerOpen(false)}
           onDone={(r) => {
-            setCustom(r);
+            onCustom(r);
             setPickerOpen(false);
           }}
         />
       )}
 
-      {isLoading ? (
+      {isError ? (
+        <p className="text-center text-sm text-body-alt">Mining performance data is unavailable right now.</p>
+      ) : isLoading ? (
         <div className="h-[220px] w-full animate-pulse bg-muted" />
       ) : !hasPlot ? (
         <div className="flex flex-col items-center gap-2">

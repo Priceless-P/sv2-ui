@@ -36,6 +36,25 @@ export const API_BASE =
   (import.meta as { env?: Record<string, string | undefined> }).env?.VITE_DMND_API_BASE ??
   'https://staging-user-dashboard-server.dmnd.work';
 
+/** Full roster pagination shared by session and token-only clients. Callers own authentication. */
+export async function getAllWorkers(
+  fetchPage: (params: Record<string, string>) => Promise<WorkersResponse>,
+): Promise<Worker[]> {
+  const workers: Worker[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = null;
+  for (;;) {
+    const params: Record<string, string> = { limit: '1000' };
+    if (cursor) params.cursor = cursor;
+    const page = await fetchPage(params);
+    workers.push(...requireArray<Worker>(page.workers));
+    if (!page.next_cursor || page.workers.length === 0 || seen.has(page.next_cursor)) break;
+    seen.add(page.next_cursor);
+    cursor = page.next_cursor;
+  }
+  return workers;
+}
+
 /** Default retry profile. Stateful authentication calls override this below. */
 const DEFAULT_PROFILE = Object.freeze({
   maxAttempts: 3,
@@ -485,27 +504,12 @@ export function createUser(options: DmndClientOptions = {}): DmndClient {
     getShareStats(req) {
       return request<SubaccountShareStats>({ method: 'GET', path: '/api/user/share_stats' }, opts, req);
     },
-    async getAllWorkers(req) {
-      // The roster is paginated (default 200, max 1000). Follow next_cursor to the end
-      // so the roster is the full list however large the account is; a repeated or
-      // already-seen cursor means the server is looping and ends the walk.
-      const all: Worker[] = [];
-      const seen = new Set<string>();
-      let cursor: string | null = null;
-      for (;;) {
-        const params = new URLSearchParams({ limit: '1000' });
-        if (cursor) params.set('cursor', cursor);
-        const res = await request<WorkersResponse>(
-          { method: 'GET', path: `/api/workers/all?${params.toString()}` },
-          opts,
-          req,
-        );
-        all.push(...res.workers);
-        if (!res.next_cursor || res.workers.length === 0 || seen.has(res.next_cursor)) break;
-        seen.add(res.next_cursor);
-        cursor = res.next_cursor;
-      }
-      return all;
+    getAllWorkers(req) {
+      return getAllWorkers((params) => request<WorkersResponse>(
+        { method: 'GET', path: `/api/workers/all?${new URLSearchParams(params).toString()}` },
+        opts,
+        req,
+      ));
     },
     getPayouts(query = {}, req = {}) {
       return requestAllPayouts('/api/v1/user/payouts', query, opts, req);

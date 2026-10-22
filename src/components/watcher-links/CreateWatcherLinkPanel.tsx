@@ -10,6 +10,7 @@ import {
   scopeLabel,
   WATCHER_PRESETS,
   presetScopes,
+  watcherAccountIdentity,
   type WatcherPreset,
 } from '@/lib/watcherLinks';
 import { OtpField } from '@/components/ui/input-otp';
@@ -179,7 +180,12 @@ export function CreateWatcherLinkPanel({
         className="relative flex max-h-full w-full max-w-[472px] flex-col overflow-y-auto bg-background shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)]"
       >
         {created ? (
-          <WatcherLinkCreated link={created} origin={origin} onClose={onClose} />
+          <WatcherLinkCreated
+            link={created}
+            origin={origin}
+            identity={watcherAccountIdentity(created.user_id, sessionAccountId, subaccounts)}
+            onClose={onClose}
+          />
         ) : (
           <>
             <div className="flex items-start justify-between gap-4 border-b-[0.5px] border-border p-6 sm:p-8">

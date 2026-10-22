@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { Link } from 'wouter';
-import { LiHamburgerMenu, LiCloseCircle } from 'solar-icon-react/li';
+import { LiCloseCircle } from 'solar-icon-react/li';
 import { BdEye } from 'solar-icon-react/bd';
 import type { HashrateRange } from '@/api/types';
-import { parseWatcherPath } from '@/lib/watcherLinks';
+import { parseWatcherPath, readWatcherAccountIdentity } from '@/lib/watcherLinks';
 import { useAppliedTheme } from '@/hooks/useTheme';
 import {
   useWatcherHashrate,
@@ -12,42 +12,52 @@ import {
   useWatcherGeneratedBtc,
   useWatcherPayouts,
   useWatcherFees,
+  useWatcherShareStats,
   useWatcherPplnsProjection,
   type CustomWindow,
 } from '@/hooks/useWatcherView';
 import { hasPayablePplnsWork } from '@/lib/pplnsProjection';
+import { hashrateChangeFrom24HoursAgo, hashrateComparisonWindow } from '@/lib/hashrateHistory';
 import { PplnsProjectionPanel } from '@/components/pplns-projection/PplnsProjectionPanel';
-import { WatcherHashratePanel } from '@/components/watcher-links/view/WatcherHashratePanel';
-import { WatcherPerformanceChart } from '@/components/watcher-links/view/WatcherPerformanceChart';
-import { WatcherWorkersSection } from '@/components/watcher-links/view/WatcherWorkersSection';
-import { WatcherGeneratedBtcSection } from '@/components/watcher-links/view/WatcherGeneratedBtcSection';
-import { WatcherPayoutsSection } from '@/components/watcher-links/view/WatcherPayoutsSection';
-import { WatcherFeesSection } from '@/components/watcher-links/view/WatcherFeesSection';
-import {
-  WatcherSidebar,
-  WATCHER_SECTIONS,
-  type WatcherSection,
-} from '@/components/watcher-links/view/WatcherSidebar';
+import { DashboardFrame } from '@/components/dashboard/DashboardShell';
+import { SidebarView, SidebarNavItem, SidebarNavigation, AccountIdentityRow } from '@/components/dashboard/Sidebar';
+import { TopBarView } from '@/components/dashboard/TopBar';
+import { NAV_GROUPS, titleForPath } from '@/components/dashboard/nav';
+import { DashboardHomeView } from '@/components/home/DashboardHomeView';
+import { LiveHashrateCardView } from '@/components/home/LiveHashrateCard';
+import { MiningPerformanceChartView } from '@/components/home/MiningPerformanceChart';
+import { WorkerStatCardsView, WatcherDataCard, TodayEarningsCard, PoolFeeCard } from '@/components/home/WorkerStatCards';
+import { WorkersContent } from '@/pages/workers/WorkersPage';
+import { GeneratedBtcContent } from '@/pages/generated-btc/GeneratedBtcPage';
+import { PayoutsContent } from '@/pages/payouts/PayoutsPage';
+
+const SECTION_PATHS = {
+  home: '/home',
+  workers: '/workers',
+  generated: '/generated-bitcoin',
+  payouts: '/payouts',
+  pplns: '/pplns-projection',
+} as const;
+type WatcherSection = keyof typeof SECTION_PATHS;
 
 /** True when a query failed because the token does not grant that scope (or is invalid). */
 function isUnauthorized(error: unknown): boolean {
   return error instanceof Error && /no longer valid|401/.test(error.message);
 }
 
-/** The data names for the banner subtitle, e.g. "hashrate, workers and earnings". */
-const SECTION_NOUNS: Record<WatcherSection, string> = {
-  home: 'hashrate',
-  workers: 'workers',
-  generated: 'earnings',
-  payouts: 'payouts',
-  fees: 'fees',
-  pplns: 'PPLNS projection',
-};
-
-function joinNouns(sections: WatcherSection[]): string {
-  const nouns = sections.map((s) => SECTION_NOUNS[s]);
+/** Human-readable list of the data this token can read. */
+function joinNouns(nouns: string[]): string {
   if (nouns.length <= 1) return nouns[0] ?? '';
   return `${nouns.slice(0, -1).join(', ')} and ${nouns[nouns.length - 1]}`;
+}
+
+function subscribeToAccountLabel(onChange: () => void) {
+  window.addEventListener('hashchange', onChange);
+  window.addEventListener('popstate', onChange);
+  return () => {
+    window.removeEventListener('hashchange', onChange);
+    window.removeEventListener('popstate', onChange);
+  };
 }
 
 /**
@@ -62,229 +72,164 @@ export function WatcherView({ userId, token }: { userId: string; token: string }
   useAppliedTheme();
   const parsed = parseWatcherPath(userId, token);
   if (!parsed) return <WatcherInvalid />;
-  return <WatcherViewInner accountId={parsed.userId} token={parsed.token} />;
+  return <WatcherViewInner key={`${parsed.userId}:${parsed.token}`} accountId={parsed.userId} token={parsed.token} />;
 }
 
 function WatcherViewInner({ accountId, token }: { accountId: string; token: string }) {
+  const hash = useSyncExternalStore(subscribeToAccountLabel, () => window.location.hash, () => '');
+  const accountIdentity = readWatcherAccountIdentity(hash, accountId);
   const [range, setRange] = useState<HashrateRange>('24H');
   const [custom, setCustom] = useState<CustomWindow | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const [chosen, setChosen] = useState<WatcherSection | null>(null);
-  const [noticeOpen, setNoticeOpen] = useState(true);
 
   const hashrate = useWatcherHashrate(token);
   const history = useWatcherHashrateHistory(token, range, custom);
+  const now = Date.now();
+  const comparisonWindow = hashrateComparisonWindow(hashrate.data?.observed_at, now);
+  const comparisonHistory = useWatcherHashrateHistory(token, '24H', comparisonWindow ? {
+    fromMs: Date.parse(comparisonWindow.from), toMs: Date.parse(comparisonWindow.to),
+  } : null, hashrate.isSuccess && comparisonWindow !== null);
+  const change = hashrateChangeFrom24HoursAgo(hashrate.data?.total_hashrate ?? 0, hashrate.data?.observed_at, comparisonHistory.data ?? [], now);
   const workers = useWatcherWorkers(token);
   // Each section is attempted (not gated on a scope flag) so a link that only grants one
   // scope still renders that section instead of looking like a dead link.
   const generated = useWatcherGeneratedBtc(token, true, accountId);
   const payouts = useWatcherPayouts(token, true, accountId);
   const fees = useWatcherFees(token, true);
+  const shareStats = useWatcherShareStats(token, true);
   const pplns = useWatcherPplnsProjection(accountId, token, true);
 
   // A scope is granted unless its probe came back unauthorised; while a probe is still
   // loading we cannot yet tell, so navigation waits for it to settle before deciding
   // the link is dead.
   const granted = (q: { isError: boolean; error: unknown }) => !(q.isError && isUnauthorized(q.error));
+  const canViewHashrate = granted(hashrate);
+  const canViewRejects = granted(shareStats);
+  const canViewFees = granted(fees);
+  const canViewProjection = granted(pplns) && hasPayablePplnsWork(pplns.data);
   const settled =
-    !hashrate.isLoading && !workers.isLoading && !generated.isLoading && !payouts.isLoading && !fees.isLoading && !pplns.isLoading;
+    !hashrate.isLoading &&
+    !workers.isLoading &&
+    !generated.isLoading &&
+    !payouts.isLoading &&
+    !fees.isLoading &&
+    !shareStats.isLoading &&
+    !pplns.isLoading;
   const sections: WatcherSection[] = [
-    granted(hashrate) ? 'home' : null,
+    canViewHashrate || canViewRejects || canViewFees || granted(workers) || granted(payouts) ? 'home' : null,
     granted(workers) ? 'workers' : null,
     granted(generated) ? 'generated' : null,
     granted(payouts) ? 'payouts' : null,
-    granted(fees) ? 'fees' : null,
-    granted(pplns) && hasPayablePplnsWork(pplns.data) ? 'pplns' : null,
+    canViewProjection ? 'pplns' : null,
   ].filter((s): s is WatcherSection => s !== null);
+  const readableData = [
+    canViewHashrate ? 'hashrate' : null,
+    canViewRejects ? 'rejection statistics' : null,
+    canViewFees ? 'fees' : null,
+    granted(workers) ? 'workers' : null,
+    granted(generated) ? 'earnings' : null,
+    granted(payouts) ? 'payouts' : null,
+    canViewProjection ? 'PPLNS projection' : null,
+  ].filter((name): name is string => name !== null);
 
   const active: WatcherSection = chosen && sections.includes(chosen) ? chosen : sections[0] ?? 'home';
 
-  // Escape closes the mobile navigation drawer.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDrawerOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
-
-  // Only once every probe has settled can we conclude the link grants nothing readable.
+  // Probes must settle before showing content: loading must not imply permission.
   if (settled && sections.length === 0) return <WatcherInvalid />;
 
-  const select = (s: WatcherSection) => {
-    setChosen(s);
-    setDrawerOpen(false);
-  };
+  const today = new Date().toISOString().slice(0, 10);
+  const earnings = payouts.isSuccess
+    ? payouts.data.filter((p) => new Date(p.date * 1000).toISOString().slice(0, 10) === today).reduce((sum, p) => sum + p.amountSats, 0) / 1e8
+    : undefined;
+  const name = accountIdentity?.kind === 'main' ? 'Main account' : accountIdentity?.name ?? 'Watcher access';
+  const subtitle = accountIdentity ? (accountIdentity.kind === 'subaccount' ? 'Subaccount' : undefined) : 'Read only';
+  const activePath = SECTION_PATHS[active];
+  const hasWatcherData = canViewRejects;
+  const inlineEarnings = !granted(workers) && granted(payouts);
+  const inlineFee = !granted(workers) && canViewFees;
+  const neighboringCards = Number(hasWatcherData) + Number(inlineEarnings) + Number(inlineFee);
+  const overviewCount = Number(canViewHashrate) + neighboringCards;
+  // Keep live hashrate wider while distributing the remaining space evenly.
+  const overviewColumns = canViewHashrate && neighboringCards > 0
+    ? neighboringCards === 1 ? 'lg:grid-cols-[3fr_2fr]'
+      : neighboringCards === 2 ? 'lg:grid-cols-[18fr_11fr_11fr]'
+        : 'lg:grid-cols-[27fr_11fr_11fr_11fr]'
+    : overviewCount === 3 ? 'lg:grid-cols-3' : overviewCount === 2 ? 'lg:grid-cols-2' : '';
+  const feeCard = canViewFees ? <PoolFeeCard data={fees.data} isLoading={fees.isLoading} isError={fees.isError} /> : undefined;
 
   return (
-    <div className="dmnd-app flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
-      {/* The Info Prompt banner (warning variant), matching the design's top strip.
-          Mobile is a separate drawn variant: the copy drops a size and the Close
-          control moves below the text, indented to line up with it. */}
-      {noticeOpen && (
-        <div className="flex shrink-0 flex-col bg-toast-warning px-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-start gap-1">
-            {/* The icon sits 2px low so it lines up with the title's cap height. */}
-            <BdEye className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-            <div className="flex min-w-0 flex-col">
-              <p className="text-sm font-bold leading-5 text-foreground">Watcher View</p>
-              <p className="text-xs leading-4 text-foreground sm:text-sm sm:leading-5">
-                {sections.length > 0 ? `Read-only access to ${joinNouns(sections)} data` : 'Read-only access'}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setNoticeOpen(false)}
-            aria-label="Dismiss watcher notice"
-            className="ml-6 mt-1 self-start text-xs font-semibold leading-5 text-foreground transition-opacity hover:opacity-70 sm:ml-0 sm:mt-0 sm:self-auto"
-          >
-            Close
-          </button>
-        </div>
-      )}
-
-      <div className="flex min-h-0 flex-1">
-        <aside className="hidden lg:block">
-          <WatcherSidebar
-            sections={sections}
-            active={active}
-            onSelect={select}
+    <DashboardFrame
+      navigationKey={active}
+      sidebar={({ collapsed, ...controls }) => (
+        <SidebarView {...controls} collapsed={collapsed} account={<AccountIdentityRow name={name} subtitle={subtitle} collapsed={collapsed} subaccount={accountIdentity?.kind === 'subaccount'} />}>
+          <SidebarNavigation
             collapsed={collapsed}
-            onToggleCollapse={() => setCollapsed((c) => !c)}
+            groups={settled ? NAV_GROUPS.map((group) => ({ ...group, items: group.items.filter((item) => sections.some((section) => SECTION_PATHS[section] === item.href)) })) : []}
+            renderItem={(item) => (
+              <SidebarNavItem item={item} active={item.href === activePath} collapsed={collapsed} onSelect={() => {
+                const section = sections.find((s) => SECTION_PATHS[s] === item.href);
+                if (section) setChosen(section);
+                controls.onNavigate();
+              }} />
+            )}
           />
-        </aside>
-
-        {drawerOpen && (
-          <div className="fixed inset-0 z-50 lg:hidden">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setDrawerOpen(false)} aria-hidden />
-            <div className="relative h-full w-60">
-              <WatcherSidebar
-                sections={sections}
-                active={active}
-                onSelect={select}
-                collapsed={false}
-                onToggleCollapse={() => setDrawerOpen(false)}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Top bar: the current section name (the design's breadcrumb), plus the
-              mobile trigger for the navigation drawer. */}
-          <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-3 sm:px-4 lg:px-6">
-            <button
-              type="button"
-              onClick={() => setDrawerOpen(true)}
-              aria-label="Open navigation"
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-body-alt transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+        </SidebarView>
+      )}
+      topBar={(onMenuClick) => <TopBarView title={titleForPath(activePath)} subtitle={accountIdentity?.kind === 'subaccount' ? name : undefined} onMenuClick={onMenuClick} actions={
+        <span className="hidden items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs text-body-alt sm:inline-flex"><BdEye className="h-4 w-4 text-warning" />Read-only watcher</span>
+      } />}
+    >
+      {!settled ? <div aria-label="Loading watcher permissions" className="h-80 animate-pulse rounded-xl border border-border bg-muted" /> : <>
+        {active === 'home' && (
+          <DashboardHomeView title="Welcome" subtitle={`Read-only access to ${joinNouns(readableData)} data.`}>
+            {overviewCount > 0 && (
+              <div className={`grid grid-cols-1 gap-3 ${overviewColumns}`}>
+                {canViewHashrate && (
+                  <div className="min-w-0">
+                    <LiveHashrateCardView data={hashrate.data} isLoading={hashrate.isLoading} isError={hashrate.isError} change={change} />
+                  </div>
+                )}
+                {hasWatcherData && (
+                  <div className="grid min-w-0">
+                    <WatcherDataCard
+                      shares={canViewRejects ? { data: shareStats.data, isLoading: shareStats.isLoading, isError: shareStats.isError } : undefined}
+                    />
+                  </div>
+                )}
+                {inlineEarnings && <div className="grid min-w-0">
+                  <TodayEarningsCard earnings={earnings} />
+                </div>}
+                {inlineFee && <div className="grid min-w-0">{feeCard}</div>}
+              </div>
+            )}
+            {granted(workers) && <WorkerStatCardsView
+              workers={workers.isSuccess ? workers.data : undefined}
+              hashrate={hashrate.isSuccess ? hashrate.data : undefined}
+              earnings={earnings}
+              showWorkers={granted(workers)}
+              showHashrate={canViewHashrate}
+              showRejection={false}
+              showEarnings={granted(payouts)}
             >
-              <LiHamburgerMenu className="h-5 w-5" />
-            </button>
-            <span className="text-sm text-body-alt">{WATCHER_SECTIONS[active].label}</span>
-          </div>
-
-          <main className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-[1600px] px-2 py-4 sm:px-3 lg:px-4 lg:py-5">
-              {active === 'home' && (
-                <section className="space-y-4">
-                  <div>
-                    <h1 className="text-xl font-semibold text-heading">Hashrate</h1>
-                    <p className="mt-1 text-sm text-body-alt">Mining data overview.</p>
-                  </div>
-                  <WatcherHashratePanel
-                    snapshot={hashrate.data ?? null}
-                    isLoading={hashrate.isLoading}
-                    isError={hashrate.isError && !isUnauthorized(hashrate.error)}
-                  />
-                  <WatcherPerformanceChart
-                    points={history.data ?? []}
-                    isLoading={history.isLoading}
-                    range={range}
-                    onRange={(r) => {
-                      setRange(r);
-                      setCustom(null); // choosing a preset clears any custom window
-                    }}
-                    custom={custom}
-                    onCustom={setCustom}
-                  />
-                </section>
-              )}
-
-              {active === 'workers' && (
-                <section className="space-y-4">
-                  <div>
-                    <h1 className="text-xl font-semibold text-heading">Workers</h1>
-                    <p className="mt-1 text-sm text-body-alt">
-                      Monitor connected machines, share activity, and worker health.
-                    </p>
-                  </div>
-                  <WatcherWorkersSection
-                    workers={workers.data ?? []}
-                    isLoading={workers.isLoading}
-                    isError={workers.isError && !isUnauthorized(workers.error)}
-                  />
-                </section>
-              )}
-
-              {active === 'generated' && (
-                <section className="space-y-4">
-                  <div>
-                    <h1 className="text-xl font-semibold text-heading">Generated BTC</h1>
-                    <p className="mt-1 text-sm text-body-alt">Daily Bitcoin generated from accepted shares.</p>
-                  </div>
-                  <WatcherGeneratedBtcSection
-                    entries={generated.data ?? []}
-                    isLoading={generated.isLoading}
-                    isError={generated.isError && !isUnauthorized(generated.error)}
-                  />
-                </section>
-              )}
-
-              {active === 'fees' && (
-                <section className="space-y-4">
-                  <div>
-                    <h1 className="text-xl font-semibold text-heading">Fees</h1>
-                    <p className="mt-1 text-sm text-body-alt">View the current pool fee for this account.</p>
-                  </div>
-                  <WatcherFeesSection
-                    fees={fees.data ?? null}
-                    isLoading={fees.isLoading}
-                    isError={fees.isError && !isUnauthorized(fees.error)}
-                  />
-                </section>
-              )}
-
-              {active === 'payouts' && (
-                <section className="space-y-4">
-                  <div>
-                    <h1 className="text-xl font-semibold text-heading">Payouts</h1>
-                    <p className="mt-1 text-sm text-body-alt">Confirmed on-chain payouts for this account.</p>
-                  </div>
-                  <WatcherPayoutsSection
-                    payouts={payouts.data ?? []}
-                    isLoading={payouts.isLoading}
-                    isError={payouts.isError && !isUnauthorized(payouts.error)}
-                  />
-                </section>
-              )}
-
-              {active === 'pplns' && (
-                <section>
-                  <PplnsProjectionPanel
-                    projection={pplns.data}
-                    isLoading={pplns.isLoading}
-                    isError={pplns.isError && !isUnauthorized(pplns.error)}
-                  />
-                </section>
-              )}
-            </div>
-          </main>
-        </div>
-      </div>
-    </div>
+              {feeCard}
+            </WorkerStatCardsView>}
+            {canViewHashrate && <MiningPerformanceChartView
+              points={history.data ?? []}
+              isLoading={history.isLoading}
+              isError={history.isError}
+              range={range}
+              onRange={setRange}
+              custom={custom ? { startSec: custom.fromMs / 1000, endSec: custom.toMs / 1000 } : null}
+              onCustom={(window) => setCustom(window ? { fromMs: window.startSec * 1000, toMs: window.endSec * 1000 } : null)}
+            />}
+          </DashboardHomeView>
+        )}
+        {active === 'workers' && <WorkersContent workers={workers.data ?? []} isLoading={workers.isLoading} isError={workers.isError} onRetry={workers.refetch} />}
+        {active === 'generated' && <GeneratedBtcContent entries={generated.data ?? []} isLoading={generated.isLoading} isError={generated.isError} onRetry={generated.refetch} />}
+        {active === 'payouts' && <PayoutsContent payouts={payouts.data ?? []} isLoading={payouts.isLoading} isError={payouts.isError} onRetry={payouts.refetch} />}
+        {active === 'pplns' && <PplnsProjectionPanel projection={pplns.data} isLoading={pplns.isLoading} isError={pplns.isError} showStats />}
+      </>}
+    </DashboardFrame>
   );
 }
 

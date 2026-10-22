@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LiCloseCircle, LiCopy, LiCheckCircle, LiSquareShareLine } from 'solar-icon-react/li';
 import type { Subaccount, WatcherLink } from '@/api/types';
-import { accountLabel, formatWatcherDateTime, scopeLabels, truncateToken, watcherLinkUrl, watcherUrlLabel } from '@/lib/watcherLinks';
+import { accountLabel, formatWatcherDateTime, scopeLabels, truncateToken, watcherAccountIdentity, watcherLinkUrl, watcherUrlLabel } from '@/lib/watcherLinks';
 import { RevokeWatcherLinkConfirm } from './RevokeWatcherLinkConfirm';
 
 /** A labelled row with the value and a copy button, as used for the token and URL. */
@@ -70,7 +70,8 @@ export function WatcherLinkDetailsPanel({
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const url = watcherLinkUrl(origin, link.user_id, link.token);
+  const identity = watcherAccountIdentity(link.user_id, sessionAccountId, subaccounts);
+  const url = watcherLinkUrl(origin, link.user_id, link.token, identity);
   const account = accountLabel(link.user_id, sessionAccountId, subaccounts);
 
   if (confirming) {
@@ -108,7 +109,7 @@ export function WatcherLinkDetailsPanel({
           </button>
         </div>
 
-        <div className="flex flex-col gap-6 p-6 sm:p-8">
+        <div className="flex flex-col gap-4 p-6 sm:p-8">
           <div className="flex flex-col gap-2">
             <span className="text-xs text-body-alt">Account</span>
             <span className="text-sm text-foreground">{account ?? '--'}</span>
@@ -147,7 +148,7 @@ export function WatcherLinkDetailsPanel({
           </div>
         </div>
 
-        <div className="mt-auto flex flex-col gap-3 border-t-[0.5px] border-border p-6 sm:p-8">
+        <div className="mt-auto flex flex-col gap-3 border-t-[0.5px] border-border p-4 sm:p-8">
           <div>
             <p className="text-base font-medium text-foreground">Revoke watcher link</p>
             <p className="mt-1 text-sm text-body-alt">This watcher link will stop working immediately.</p>

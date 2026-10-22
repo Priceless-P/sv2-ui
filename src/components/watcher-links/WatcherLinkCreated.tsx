@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { LiCloseCircle, LiCopy, LiCheckCircle, LiSquareShareLine, LiDangerTriangle } from 'solar-icon-react/li';
 import type { CreatedWatcherLink } from '@/api/types';
-import { scopeLabels, watcherLinkUrl } from '@/lib/watcherLinks';
+import { scopeLabels, watcherLinkUrl, type WatcherAccountIdentity } from '@/lib/watcherLinks';
 
 /** One labelled value with a copy button; used for the token, URL, and curl command. */
 function CopyRow({ label, value, href }: { label: string; value: string; href?: string }) {
@@ -42,8 +42,13 @@ function CopyRow({ label, value, href }: { label: string; value: string; href?: 
 /**
  * Creation reveals the secret and shareable URL; available secrets remain in the owner's listing.
  */
-export function WatcherLinkCreated({ link, origin, onClose }: { link: CreatedWatcherLink; origin: string; onClose: () => void }) {
-  const url = watcherLinkUrl(origin, link.user_id, link.token);
+export function WatcherLinkCreated({ link, origin, identity, onClose }: {
+  link: CreatedWatcherLink;
+  origin: string;
+  identity: WatcherAccountIdentity | null;
+  onClose: () => void;
+}) {
+  const url = watcherLinkUrl(origin, link.user_id, link.token, identity);
   return (
     <>
       <div className="flex items-start justify-between gap-4 border-b-[0.5px] border-border p-6 sm:p-8">

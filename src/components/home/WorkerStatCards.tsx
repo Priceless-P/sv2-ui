@@ -1,58 +1,14 @@
-import type { ReactNode } from 'react';
-import { InfoHint } from '@/components/ui/InfoHint';
-import { cn } from '@/lib/utils';
-import { Reading } from '@/components/ui/Reading';
+import type { Worker, HashrateSnapshot, SubaccountShareStats, SubaccountFees } from '@/api/types';
+import { Children, type ReactNode } from 'react';
+import { StatCard } from '@/components/ui/StatCard';
+import { formatFeePercent, totalPoolFee } from '@/lib/watcherLinks';
 import { WorkerBars } from '@/components/ui/WorkerBars';
 import { useAccountAllWorkers, useAccountHashrate, useAccountShareStats, useTodayEarnings } from '@/hooks/useAccountData';
 import { deriveWorkerStats } from '@/lib/workerStats';
-import { BTC_DISPLAY_DP } from '@/lib/utils';
+import { BTC_DISPLAY_DP, cn } from '@/lib/utils';
 import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import type { AggregatedStats } from '@/lib/aggregatedStats';
 import { ACCOUNT_REJECTION_HINT, ACTIVE_WORKERS_HINT, WORKER_METRICS_HINT } from '@/lib/metricWindows';
-
-/**
- * A stat card. The reading is one big numeral in the heading face with the unit
- * trailing it at body size, which is why value and unit are separate props rather
- * than one formatted string. `captionTone` follows the design's split between an empty
- * hint and a live caption.
- */
-function StatCard({
-  title,
-  value,
-  unit,
-  unitSize = 'lg',
-  caption,
-  captionTone = 'muted',
-  meter,
-  hint,
-  tour,
-}: {
-  title: string;
-  value: string | number;
-  unit?: string;
-  unitSize?: 'base' | 'lg';
-  caption: string;
-  captionTone?: 'muted' | 'strong';
-  meter?: ReactNode;
-  hint?: string;
-  tour?: string;
-}) {
-  return (
-    <div data-tour={tour} className="flex flex-col justify-between gap-1.5 border-[0.5px] border-border bg-card p-3 lg:p-4">
-      <div className="flex items-center gap-2">
-        <span className="text-sm leading-5 text-body-alt">{title}</span>
-        {hint && <InfoHint text={hint} />}
-      </div>
-      <Reading value={value} unit={unit} size="md" unitSize={unitSize} />
-      <div className="flex flex-col gap-2">
-        {meter}
-        <p className={cn('text-sm leading-5', captionTone === 'strong' ? 'text-foreground' : 'text-body-alt')}>
-          {caption}
-        </p>
-      </div>
-    </div>
-  );
-}
 
 function formatBtc(btc: number): string {
   if (btc === 0) return '0 BTC';
@@ -71,7 +27,24 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
   const { data: shareStats } = useAccountShareStats(aggregated === undefined);
   const { data: hashrate } = useAccountHashrate(aggregated === undefined);
   const { data: earnings } = useTodayEarnings(aggregated === undefined);
+  return <WorkerStatCardsView workers={workers} shareStats={shareStats} hashrate={hashrate} earnings={earnings} aggregated={aggregated} />;
+}
+
+/** Data-only dashboard metrics. Visibility is explicit so public views cannot imply access to another scope. */
+export function WorkerStatCardsView({ workers, shareStats, hashrate, earnings, aggregated, showWorkers = true, showHashrate = true, showRejection = true, showEarnings = true, children }: {
+  workers?: Worker[];
+  shareStats?: SubaccountShareStats;
+  hashrate?: HashrateSnapshot;
+  earnings?: number;
+  aggregated?: AggregatedStats;
+  showWorkers?: boolean;
+  showHashrate?: boolean;
+  showRejection?: boolean;
+  showEarnings?: boolean;
+  children?: ReactNode;
+}) {
   const roster = workers ?? [];
+  const workersKnown = aggregated !== undefined || workers !== undefined;
   const single = deriveWorkerStats(roster);
   const shareTotal = (shareStats?.accepted ?? 0) + (shareStats?.rejected ?? 0);
   const singleRejection = shareTotal > 0 ? (shareStats?.rejected ?? 0) / shareTotal : null;
@@ -79,39 +52,38 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
   // can never show one account's numbers while the rest of the page shows the total.
   const stats = aggregated
     ? {
-        activeCount: aggregated.activeWorkers,
-        totalCount: aggregated.totalWorkers,
-        offlineCount: aggregated.offlineWorkers,
-        rejectionRate: aggregated.rejectionRate,
-      }
+      activeCount: aggregated.activeWorkers,
+      totalCount: aggregated.totalWorkers,
+      offlineCount: aggregated.offlineWorkers,
+      rejectionRate: aggregated.rejectionRate,
+    }
     : { ...single, rejectionRate: singleRejection };
   const todayEarnings = aggregated ? aggregated.todayEarnings : earnings;
-  const totalHashrate = aggregated ? aggregated.combinedHashrate : (hashrate?.total_hashrate ?? 0);
+  const totalHashrate = aggregated ? aggregated.combinedHashrate : hashrate?.total_hashrate;
   // No active worker means no rate to divide, which is unknown rather than zero.
-  const perWorker = stats.activeCount > 0 ? totalHashrate / stats.activeCount : null;
+  const perWorker = workersKnown && stats.activeCount > 0 && totalHashrate !== undefined ? totalHashrate / stats.activeCount : null;
   const perWorkerScale = pickHashrateScale([perWorker ?? 0]);
   const hasWorkers = stats.totalCount > 0;
   const hasMined = stats.rejectionRate !== null;
   const rejection = stats.rejectionRate === null ? '--' : (stats.rejectionRate * 100).toFixed(2);
-  const earningsValue = todayEarnings === undefined ? '--' : formatBtc(todayEarnings);
-  const earningsKnown = todayEarnings !== undefined;
+  const cardCount = Number(showWorkers) + Number(showWorkers && showHashrate) + Number(showRejection) + Number(showEarnings) + Children.toArray(children).length;
 
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-      <StatCard
+    <div className={cn('grid grid-cols-1 gap-2', cardCount > 1 && 'sm:grid-cols-2', cardCount === 3 && 'lg:grid-cols-3', cardCount === 4 && 'lg:grid-cols-4')}>
+      {showWorkers && <StatCard
         tour="stats-workers"
         title="Active workers"
-        value={stats.activeCount}
-        unit={`/${stats.totalCount}`}
+        value={workersKnown ? stats.activeCount : '--'}
+        unit={workersKnown ? `/${stats.totalCount}` : undefined}
         unitSize="base"
         meter={aggregated && hasWorkers ? <WorkerBars active={stats.activeCount} total={stats.totalCount} /> : undefined}
         // Once workers exist, show the live split; before that, the empty hint.
         caption={
-          hasWorkers ? `${stats.activeCount} active • ${stats.offlineCount} offline` : 'Connected workers will appear here.'
+          !workersKnown ? 'Worker statistics unavailable.' : hasWorkers ? `${stats.activeCount} active • ${stats.offlineCount} offline` : 'Connected workers will appear here.'
         }
         hint={ACTIVE_WORKERS_HINT}
-      />
-      <StatCard
+      />}
+      {showWorkers && showHashrate && <StatCard
         tour="stats-workers"
         title="Average hashrate"
         value={perWorker === null ? '--' : formatAxisValue(perWorker, perWorkerScale.divisor)}
@@ -120,12 +92,12 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
         captionTone={perWorker === null ? 'muted' : 'strong'}
         caption={
           perWorker === null
-            ? 'Shown once a worker is active.'
+            ? 'Average hashrate of all active workers'
             : `Averaged over ${stats.activeCount} active worker${stats.activeCount === 1 ? '' : 's'}`
         }
         hint={WORKER_METRICS_HINT}
-      />
-      <StatCard
+      />}
+      {showRejection && <StatCard
         tour="stats-earnings"
         title="Rejection rate"
         value={rejection}
@@ -133,31 +105,90 @@ export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }
         captionTone={hasMined ? 'strong' : 'muted'}
         caption={hasMined ? 'Last 24 hours across all shares.' : 'Rejected share rate will appear after mining starts.'}
         hint={ACCOUNT_REJECTION_HINT}
-      />
-      <StatCard
-        tour="stats-earnings"
-        title="Today's earnings"
-        value={earningsKnown ? earningsValue.replace(' BTC', '') : '--'}
-        unit={earningsKnown ? 'BTC' : undefined}
-        captionTone={earningsKnown && todayEarnings > 0 ? 'strong' : 'muted'}
-        // Aggregated mode sums each subaccount's today_generated_btc (accrued, not yet
-        // paid out), a different figure than single mode's on-chain-paid total, so the
-        // caption can't claim "paid out" for both.
-        caption={
-          aggregated
-            ? todayEarnings !== undefined && todayEarnings > 0
-              ? 'Generated today across all accounts.'
-              : 'Earnings generated today across all accounts.'
-            : todayEarnings !== undefined && todayEarnings > 0
-              ? 'Paid out on-chain today.'
-              : 'Earnings paid out on-chain today.'
-        }
-        hint={
-          aggregated
-            ? 'Bitcoin generated today across the accounts in this view.'
-            : 'Confirmed payouts sent to your payout address today.'
-        }
-      />
+      />}
+      {showEarnings && <TodayEarningsCard earnings={todayEarnings} aggregated={aggregated !== undefined} />}
+      {children}
     </div>
+  );
+}
+
+/** Shared earnings card, also used independently in the watcher overview row. */
+export function TodayEarningsCard({ earnings: todayEarnings, aggregated = false }: {
+  earnings?: number;
+  aggregated?: boolean;
+}) {
+  const earningsKnown = todayEarnings !== undefined;
+  const earningsValue = earningsKnown ? formatBtc(todayEarnings) : '--';
+  return (
+    <StatCard
+      tour="stats-earnings"
+      title="Today's earnings"
+      value={earningsKnown ? earningsValue.replace(' BTC', '') : '--'}
+      unit={earningsKnown ? 'BTC' : undefined}
+      captionTone={earningsKnown && todayEarnings > 0 ? 'strong' : 'muted'}
+      // Aggregated mode sums accrued earnings, so it must not claim "paid out".
+      caption={
+        aggregated
+          ? todayEarnings !== undefined && todayEarnings > 0
+            ? 'Generated today across all accounts.'
+            : 'Earnings generated today across all accounts.'
+          : todayEarnings !== undefined && todayEarnings > 0
+            ? 'Paid out on-chain today.'
+            : 'Earnings paid out on-chain today.'
+      }
+      hint={
+        aggregated
+          ? 'Bitcoin generated today across the accounts in this view.'
+          : 'Confirmed payouts sent to your payout address today.'
+      }
+    />
+  );
+}
+
+/** Only supplied (token-permitted) readings appear in this combined card. */
+export function WatcherDataCard({ shares }: {
+  shares?: { data?: SubaccountShareStats | null; isLoading: boolean; isError: boolean };
+}) {
+  const stats = shares?.data;
+  const total = stats ? stats.accepted + stats.rejected : 0;
+  const sharesKnown = !!stats && !shares?.isLoading && !shares?.isError;
+  const caption = shares?.isLoading ? 'Loading share statistics…' : shares && !sharesKnown ? 'Share statistics unavailable.' : undefined;
+
+  return (
+    <StatCard title="Watcher data" caption={caption} hint={shares ? ACCOUNT_REJECTION_HINT : undefined}>
+      <dl className="divide-y divide-border text-sm">
+        {shares && <>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 first:pt-0 last:pb-0">
+            <dt className="text-body-alt">Rejection rate</dt>
+            <dd className="font-medium tabular-nums text-foreground">{sharesKnown && total > 0 ? `${((stats.rejected / total) * 100).toFixed(2)}%` : '--'}</dd>
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 first:pt-0 last:pb-0">
+            <dt className="text-body-alt">Accepted shares</dt>
+            <dd className="font-medium tabular-nums text-foreground">{sharesKnown ? stats.accepted.toLocaleString() : '--'}</dd>
+          </div>
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 py-2 first:pt-0 last:pb-0">
+            <dt className="text-body-alt">Rejected shares</dt>
+            <dd className="font-medium tabular-nums text-foreground">{sharesKnown ? stats.rejected.toLocaleString() : '--'}</dd>
+          </div>
+        </>}
+      </dl>
+    </StatCard>
+  );
+}
+
+/** Home metric card; API fees are already percentages. */
+export function PoolFeeCard({ data, isLoading, isError }: {
+  data?: SubaccountFees | null;
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  const known = !!data && !isLoading && !isError;
+  return (
+    <StatCard
+      title="Pool fee"
+      value={known ? formatFeePercent(totalPoolFee(data)) : '--'}
+      unit={known ? '%' : undefined}
+      caption={isLoading ? 'Loading fees…' : !known ? 'Fee rates unavailable.' : 'Charged by the Pool'}
+    />
   );
 }

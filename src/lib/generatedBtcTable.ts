@@ -1,5 +1,5 @@
 import type { GeneratedBtcEntry } from '@/api/types';
-import { BTC_DISPLAY_DP } from '@/lib/utils';
+import { BTC_DISPLAY_DP, formatHashrate } from '@/lib/utils';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -115,8 +115,8 @@ function csvCell(value: string): string {
 }
 
 /**
- * A stable identity for one generated-BTC row, used as the React key and as the
- * selection key so the two can never disagree. In aggregated mode the same calendar
+ * A stable identity for one generated-BTC row, used as its React key.
+ * In aggregated mode the same calendar
  * day appears once per account, so the day alone is not unique.
  */
 export function generatedBtcRowId(e: { entry_day: string; account?: string }): string {
@@ -157,14 +157,15 @@ export function filterGeneratedBtcByAccount(entries: GeneratedBtcEntry[], accoun
   return entries.filter((e) => e.account != null && accounts.includes(e.account));
 }
 
-/**
- * Case-insensitive substring match on the owning account's name; a blank query passes
- * all. Rows carry no worker field (a generated-BTC entry is a per-day, per-account
- * total, not per-worker), so unlike the Workers/Payouts search this cannot also match a
- * worker name — only the account dimension is backed.
- */
+/** Search displayed row values (plus ISO dates); a blank query passes all. */
 export function searchGeneratedBtc(entries: GeneratedBtcEntry[], query: string): GeneratedBtcEntry[] {
   const q = query.trim().toLowerCase();
   if (!q) return entries;
-  return entries.filter((e) => e.account?.toLowerCase().includes(q));
+  return entries.filter((e) => [
+    e.entry_day,
+    formatGeneratedDate(e.entry_day),
+    e.account ?? '',
+    formatHashrate(e.hashrate),
+    `${formatBtc(e.fpps_btc_generated)} BTC`,
+  ].some((value) => value.toLowerCase().includes(q)));
 }

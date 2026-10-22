@@ -9,8 +9,10 @@ import {
   formatWatcherDate,
   truncateToken,
   visibleScopeChips,
+  watcherAccountIdentity,
   watcherLinkUrl,
   watcherUrlLabel,
+  type WatcherAccountIdentity,
 } from '@/lib/watcherLinks';
 import type { Subaccount } from '@/api/types';
 
@@ -80,14 +82,16 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 function WatcherLinkCard({
   link,
   account,
+  identity,
   origin,
 }: {
   link: WatcherLink;
   account: string | null;
+  identity: WatcherAccountIdentity | null;
   origin: string;
 }) {
   const { chips, overflow } = visibleScopeChips(link.scopes);
-  const url = watcherLinkUrl(origin, link.user_id, link.token);
+  const url = watcherLinkUrl(origin, link.user_id, link.token, identity);
   return (
     <div className="flex flex-col border-x-[0.5px] border-b-[0.5px] border-border px-3 py-2">
       <div className="flex min-h-[47px] items-center gap-6">
@@ -195,7 +199,8 @@ export function WatcherLinksTable({
           {links.map((l) => {
             const account = accountLabel(l.user_id, sessionAccountId, subaccounts);
             const { chips, overflow } = visibleScopeChips(l.scopes);
-            const url = watcherLinkUrl(origin, l.user_id, l.token);
+            const identity = watcherAccountIdentity(l.user_id, sessionAccountId, subaccounts);
+            const url = watcherLinkUrl(origin, l.user_id, l.token, identity);
             return (
               <tr key={l.id} className="border-b-[0.5px] border-border last:border-0">
                 <td className="whitespace-nowrap px-4 py-3 text-foreground">{account ?? '--'}</td>
@@ -269,6 +274,7 @@ export function WatcherLinksTable({
             key={l.id}
             link={l}
             account={accountLabel(l.user_id, sessionAccountId, subaccounts)}
+            identity={watcherAccountIdentity(l.user_id, sessionAccountId, subaccounts)}
             origin={origin}
           />
         ))}

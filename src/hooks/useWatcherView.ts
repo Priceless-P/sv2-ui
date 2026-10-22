@@ -42,10 +42,11 @@ export interface CustomWindow {
  * over the preset range (the Custom calendar selection); otherwise the preset maps to a
  * rolling window ending now.
  */
-export function useWatcherHashrateHistory(token: string, range: HashrateRange, custom?: CustomWindow | null) {
+export function useWatcherHashrateHistory(token: string, range: HashrateRange, custom?: CustomWindow | null, enabled = true) {
   const client = useClient(token);
   return useQuery({
     queryKey: ['watcher', token, 'history', custom ? `custom:${custom.fromMs}-${custom.toMs}` : range],
+    enabled,
     queryFn: ({ signal }) => {
       const { from, to } = custom
         ? { from: new Date(custom.fromMs).toISOString(), to: new Date(custom.toMs).toISOString() }
@@ -58,12 +59,12 @@ export function useWatcherHashrateHistory(token: string, range: HashrateRange, c
   });
 }
 
-/** The worker roster for the watcher token (gated on workers scope by the caller). */
+/** Complete paginated roster, fetched with the watcher token rather than a dashboard session. */
 export function useWatcherWorkers(token: string) {
   const client = useClient(token);
   return useQuery({
     queryKey: ['watcher', token, 'workers'],
-    queryFn: ({ signal }) => client.getWorkers(signal).then((r) => r.workers),
+    queryFn: ({ signal }) => client.getAllWorkers(signal),
     refetchInterval: WATCHER_POLL_MS,
     staleTime: WATCHER_POLL_MS,
     refetchOnWindowFocus: false,
@@ -107,6 +108,20 @@ export function useWatcherFees(token: string, enabled: boolean) {
     queryFn: ({ signal }) => client.getFees(signal),
     enabled,
     staleTime: WATCHER_POLL_MS,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+}
+
+/** Aggregate 24-hour share counts exposed by the rejects scope. */
+export function useWatcherShareStats(token: string, enabled: boolean) {
+  const client = useClient(token);
+  return useQuery({
+    queryKey: ['watcher', token, 'share-stats'],
+    queryFn: ({ signal }) => client.getShareStats(signal),
+    enabled,
+    staleTime: WATCHER_POLL_MS,
+    refetchInterval: WATCHER_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
   });

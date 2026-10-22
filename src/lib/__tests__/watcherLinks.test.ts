@@ -9,6 +9,8 @@ import {
   WATCHER_PRESETS,
   presetScopes,
   accountLabel,
+  watcherAccountIdentity,
+  readWatcherAccountIdentity,
   parseWatcherPath,
   watcherLinkUrl,
   watcherUrlLabel,
@@ -105,6 +107,45 @@ test('watcherLinkUrl builds the real /login/watcher/{user_id}/{token} link on th
     watcherLinkUrl('https://dash.example.com/', '-739', FULL_TOKEN),
     `https://dash.example.com/login/watcher/-739/${FULL_TOKEN}`,
   );
+});
+
+test('watcher identity uses Main account or the subaccount name', () => {
+  assert.deepEqual(watcherAccountIdentity('123', '123', [sub()]), {
+    name: 'Main account', kind: 'main',
+  });
+  assert.deepEqual(watcherAccountIdentity(sub().id, '123', [sub()]), {
+    name: 'Warehouse 01', kind: 'subaccount',
+  });
+  assert.equal(watcherAccountIdentity('unknown', '123', [sub()]), null);
+});
+
+test('shared account names round-trip in the fragment without changing the token path or server query', () => {
+  const id = '-7397273660421850316';
+  const identity = { name: 'Farm #2 / Lagos & Côte d’Ivoire', kind: 'subaccount' as const };
+  const url = new URL(watcherLinkUrl('https://dash.example.com', id, FULL_TOKEN, identity));
+  assert.equal(url.pathname, `/login/watcher/${id}/${FULL_TOKEN}`);
+  assert.equal(url.search, '');
+  assert.deepEqual(readWatcherAccountIdentity(url.hash, id), identity);
+  assert.equal(readWatcherAccountIdentity(url.hash, 'different-account'), null);
+});
+
+test('main-account URLs never include an email, even from stale display metadata', () => {
+  const url = new URL(watcherLinkUrl('https://dash.example.com', '123', FULL_TOKEN, {
+    name: 'ada@example.com', kind: 'main',
+  }));
+  assert.equal(new URLSearchParams(url.hash.slice(1)).get('accountName'), 'Main account');
+  assert.deepEqual(readWatcherAccountIdentity(url.hash, '123'), { name: 'Main account', kind: 'main' });
+  assert.equal(decodeURIComponent(url.href).includes('ada@example.com'), false);
+  assert.equal(url.pathname, `/login/watcher/123/${FULL_TOKEN}`);
+});
+
+test('old links and missing or invalid identity metadata keep the generic watcher label', () => {
+  assert.equal(readWatcherAccountIdentity('', '123'), null);
+  assert.equal(readWatcherAccountIdentity('#accountId=123&accountName=&accountType=main', '123'), null);
+  assert.equal(readWatcherAccountIdentity('#accountId=123&accountName=Farm&accountType=unknown', '123'), null);
+  assert.equal(readWatcherAccountIdentity('#accountId=123&accountName=Farm%0AOther&accountType=subaccount', '123'), null);
+  const url = watcherLinkUrl('https://dash.example.com', '123', null, { name: 'Farm', kind: 'subaccount' });
+  assert.equal(url, '');
 });
 
 test('truncateToken shows the head and tail of the token', () => {
@@ -221,17 +262,19 @@ test('formatLastUpdated buckets the observed time, or returns null when unknown'
   assert.equal(formatLastUpdated('nonsense', NOW), null); // unparseable
 });
 
-test('formatFeePercent converts a fractional rate to percent', () => {
-  assert.equal(formatFeePercent(0.02), '2.00'); // 0.02 = 2%
-  assert.equal(formatFeePercent(0.005), '0.50');
+test('formatFeePercent formats percentage values without scaling them', () => {
+  assert.equal(formatFeePercent(2), '2.00');
+  assert.equal(formatFeePercent(0.5), '0.50');
+  assert.equal(formatFeePercent(0.02), '0.02');
   assert.equal(formatFeePercent(0), '0.00');
-  assert.equal(formatFeePercent(0.012), '1.20'); // always two decimals
+  assert.equal(formatFeePercent(1.2), '1.20'); // always two decimals
   assert.equal(formatFeePercent(Number.NaN), '0.00'); // a malformed response can't show "NaN%"
 });
 
 test('totalPoolFee sums the pool and broker parts into the one rate the viewer pays', () => {
   assert.equal(totalPoolFee({ pool_fee: 2, broker_fee: 0.5 } as SubaccountFees), 2.5);
-  assert.equal(totalPoolFee({ pool_fee: 2, broker_fee: 0 } as SubaccountFees), 2);
+  assert.equal(formatFeePercent(totalPoolFee({ pool_fee: 2, broker_fee: 0.5 })), '2.50');
+  assert.equal(totalPoolFee({ pool_fee: 0.02, broker_fee: 0 } as SubaccountFees), 0.02);
   // a malformed rate counts as zero rather than poisoning the total with NaN
   assert.equal(totalPoolFee({ pool_fee: Number.NaN, broker_fee: 1.5 } as SubaccountFees), 1.5);
 });
