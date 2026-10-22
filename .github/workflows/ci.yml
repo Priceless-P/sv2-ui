@@ -62,3 +62,5 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_DMND_API_BASE: https://staging-user-dashboard-server.dmnd.work

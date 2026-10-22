@@ -28,11 +28,20 @@ Set `VITE_DMND_API_BASE` to the remote dashboard API origin:
 VITE_DMND_API_BASE=https://dashboard-api.example.com npm run dev
 ```
 
-When the variable is not defined, development and review builds default to:
+When the variable is not defined, the development server defaults to:
 
 ```text
 https://staging-user-dashboard-server.dmnd.work
 ```
+
+Each environment's Dockerfile sets its API URL explicitly, matching the existing user-dashboard setup.
+For a build outside Docker, set the API URL in the command or a Vite `.env` file:
+
+```bash
+VITE_DMND_API_BASE=https://production-user-dashboard-server.dmnd.work npm run build
+```
+
+Missing or blank values fail the build. CI explicitly uses staging.
 
 The API must allow the frontend origin and credentialed browser requests because authentication uses an HttpOnly session cookie.
 
@@ -42,18 +51,23 @@ The API must allow the frontend origin and credentialed browser requests because
 npm run lint
 npm run typecheck
 npm test
-npm run build
+VITE_DMND_API_BASE=https://dashboard-api.example.com npm run build
 ```
 
 ## Container build
 
-`Dockerfile.staging` builds the Vite application and serves the static output with nginx. The API URL is a build argument because Vite embeds it in the browser bundle:
+Each Dockerfile builds the Vite application with its fixed API URL and serves the static output with nginx:
+
+| Dockerfile | API URL |
+| --- | --- |
+| `Dockerfile.prod` | `https://production-user-dashboard-server.dmnd.work` |
+| `Dockerfile.staging` | `https://staging-user-dashboard-server.dmnd.work` |
+
+Build the desired environment without passing an API build argument:
 
 ```bash
-docker build \
-  -f Dockerfile.staging \
-  --build-arg VITE_DMND_API_BASE=https://dashboard-api.example.com \
-  -t sv2-ui:staging .
+docker build -f Dockerfile.prod -t sv2-ui:production .
+docker build -f Dockerfile.staging -t sv2-ui:staging .
 
 docker run --rm -p 8080:80 sv2-ui:staging
 ```
@@ -71,8 +85,7 @@ sv2-ui/
 │   ├── hooks/        # React Query data hooks
 │   ├── lib/          # Data transformation and formatting helpers
 │   └── pages/        # Dashboard and authentication pages
-├── public/           # Static assets
-└── deployment/       # Pulumi deployment projects
+└── public/           # Static assets
 ```
 
 ## Technology
