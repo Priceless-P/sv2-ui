@@ -19,7 +19,7 @@ export function WorkersEmptyState({ canConnect = true }: { canConnect?: boolean 
       </div>
 
       {canConnect && <div className="mx-auto mt-6 max-w-[686px] rounded-[32px] p-8">
-        <ConnectionDetails />
+        <ConnectionDetails showTitle />
       </div>}
 
       {canConnect && <div className="mt-4 flex justify-center">

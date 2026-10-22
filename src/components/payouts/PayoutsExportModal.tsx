@@ -130,7 +130,7 @@ export function PayoutsExportModal({
               type="button"
               disabled={!canExport}
               onClick={doExport}
-              className="h-11 flex-1 rounded-[32px] border border-black/20 bg-[hsl(var(--btn))] px-6 text-base leading-6 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="h-11 flex-1 rounded-[32px] border border-black/20 bg-info px-6 text-base leading-6 text-info-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               Export CSV
             </button>

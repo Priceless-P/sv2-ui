@@ -3,6 +3,7 @@ import { LiCopy, LiCheckCircle, LiQuestionCircle, LiSquareShareLine } from 'sola
 import { BoSort } from 'solar-icon-react/bo';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/toast';
+import { CellCheckbox } from '@/components/ui/CellCheckbox';
 import type { WatcherLink } from '@/api/types';
 import {
   accountLabel,
@@ -146,6 +147,11 @@ export function WatcherLinksTable({
   origin,
   onView,
   empty,
+  selected = new Set<string>(),
+  allSelected = false,
+  someSelected = false,
+  onToggleAll,
+  onToggleOne,
 }: {
   links: WatcherLink[];
   sessionAccountId: string | null;
@@ -153,6 +159,11 @@ export function WatcherLinksTable({
   origin: string;
   onView: (link: WatcherLink) => void;
   empty?: WatcherLinksEmpty;
+  selected?: Set<string>;
+  allSelected?: boolean;
+  someSelected?: boolean;
+  onToggleAll?: () => void;
+  onToggleOne?: (id: string) => void;
 }) {
   return (
     <>
@@ -160,6 +171,7 @@ export function WatcherLinksTable({
       <table className="w-full min-w-[880px] border-collapse text-sm">
         <thead>
           <tr className="border-b-[0.5px] border-border bg-muted text-sm leading-5 text-body-alt">
+            <th className="w-14 px-0 py-3"><CellCheckbox checked={allSelected} indeterminate={someSelected && !allSelected} onChange={() => onToggleAll?.()} label="Select all watcher links" /></th>
             <th className="px-4 py-3 text-left font-normal">Account</th>
             <th className="px-4 py-3 text-left font-normal">Scopes</th>
             <th className="px-4 py-3 text-left font-normal">
@@ -177,7 +189,7 @@ export function WatcherLinksTable({
         <tbody>
           {links.length === 0 && empty && (
             <tr>
-              <td colSpan={6} className="border-x-[0.5px] border-b-[0.5px] border-border p-6 text-center">
+              <td colSpan={7} className="border-x-[0.5px] border-b-[0.5px] border-border p-6 text-center">
                 <div className="flex flex-col items-center gap-2">
                   {/* The design uses the Filter glyph itself here, not a magnifier. */}
                   <BoSort className="h-12 w-12 text-placeholder" aria-hidden />
@@ -203,6 +215,7 @@ export function WatcherLinksTable({
             const url = watcherLinkUrl(origin, l.user_id, l.token, identity);
             return (
               <tr key={l.id} className="border-b-[0.5px] border-border last:border-0">
+                <td className="w-14 px-0 py-3"><CellCheckbox checked={selected.has(l.id)} onChange={() => onToggleOne?.(l.id)} label={`Select watcher link ${l.id}`} /></td>
                 <td className="whitespace-nowrap px-4 py-3 text-foreground">{account ?? '--'}</td>
                 <td className="px-4 py-3">
                   <span className="flex items-center gap-1">
@@ -251,6 +264,10 @@ export function WatcherLinksTable({
 
       {/* Below sm the frame replaces the table with a stacked row-card list. */}
       <div className="sm:hidden">
+        {links.length > 0 && <div className="flex items-center gap-2 border-x border-t border-border p-3">
+          <span><CellCheckbox checked={allSelected} indeterminate={someSelected && !allSelected} onChange={() => onToggleAll?.()} label="Select all watcher links" /></span>
+          <span className="text-sm text-body-alt">Select all</span>
+        </div>}
         {links.length === 0 && empty && (
           <div className="border-x-[0.5px] border-b-[0.5px] border-border p-6 text-center">
             <div className="flex flex-col items-center gap-2">
@@ -270,13 +287,15 @@ export function WatcherLinksTable({
           </div>
         )}
         {links.map((l) => (
+          <div key={l.id}>
+          <div className="flex items-center border-x border-border px-3 pt-2"><CellCheckbox checked={selected.has(l.id)} onChange={() => onToggleOne?.(l.id)} label={`Select watcher link ${l.id}`} /></div>
           <WatcherLinkCard
-            key={l.id}
             link={l}
             account={accountLabel(l.user_id, sessionAccountId, subaccounts)}
             identity={watcherAccountIdentity(l.user_id, sessionAccountId, subaccounts)}
             origin={origin}
           />
+          </div>
         ))}
       </div>
     </>

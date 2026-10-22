@@ -1,6 +1,4 @@
-import { Link } from 'wouter';
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
-import { LiAltArrowRight } from 'solar-icon-react/li';
 import { InfoHint } from '@/components/ui/InfoHint';
 import { formatHashrate } from '@/lib/utils';
 import { sliceColor, type DonutSlice } from '@/lib/aggregatedStats';
@@ -22,7 +20,7 @@ export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; 
   const heading = (
     <span className="flex items-center gap-2">
       <h3 className="!font-body text-lg font-semibold leading-7 text-heading-alt">Combined Live Hashrate</h3>
-      <InfoHint text="The total hashrate from all connected workers and subaccounts." />
+      <InfoHint text="Combined 10-minute average hashrate for the main account and all subaccounts, using the same persisted snapshots as Mining Performance. Refreshed every five minutes." />
     </span>
   );
 
@@ -64,15 +62,6 @@ export function CombinedHashrateCard({ slices, total }: { slices: DonutSlice[]; 
       <div className="flex min-w-0 flex-1 flex-col gap-3 self-stretch">
         <div className="flex items-center justify-between gap-3">
           {heading}
-          {hasHashrate && (
-            <Link
-              href="/subaccounts"
-              className="flex shrink-0 items-center gap-1 text-sm text-foreground transition-colors hover:text-body-alt"
-            >
-              View subaccounts
-              <LiAltArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          )}
         </div>
 
         {hasHashrate && (

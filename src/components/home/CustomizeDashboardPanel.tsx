@@ -14,19 +14,20 @@ import {
  * The Customize dashboard panel shown in customization mode. Each widget row has a
  * checkbox to show or hide it plus a status label; reordering is done by dragging the
  * widgets directly on the dashboard, so the panel has no reorder controls. The header
- * chevron collapses the panel to just its title and the restore action; leaving
- * customization mode is done from the dashboard, not from here.
+ * chevron collapses the panel. The exit control stays beside the settings it controls.
  */
 export function CustomizeDashboardPanel({
   mode,
   layout,
   onToggle,
   onReset,
+  onClose,
 }: {
   mode: DashboardMode;
   layout: DashboardLayout;
   onToggle: (id: WidgetId) => void;
   onReset: () => void;
+  onClose: () => void;
 }) {
   const rows = widgetsForPanel(layout);
   const [collapsed, setCollapsed] = useState(false);
@@ -120,6 +121,9 @@ export function CustomizeDashboardPanel({
         >
           Restore to default
           <LiRestart className="h-4 w-4" />
+        </button>
+        <button type="button" onClick={onClose} className="w-full rounded-full bg-[hsl(var(--btn))] px-4 py-2 text-sm font-medium text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90">
+          Leave customization mode
         </button>
       </div>
     </div>

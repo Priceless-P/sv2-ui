@@ -164,6 +164,15 @@ export function payoutRowId(p: Payout): string {
   return `${p.txid}-${p.outputIndex}-${p.toAddress}-${p.account ?? ''}`;
 }
 
+/** Most recently confirmed transaction, including all its outputs in the current account scope. */
+export function latestPayout(payouts: Pick<Payout, 'date' | 'txid' | 'amountSats'>[]): { date: number; amountSats: number } | null {
+  const latest = payouts.reduce<(typeof payouts)[number] | null>((found, payout) =>
+    !found || payout.date > found.date ? payout : found, null);
+  if (!latest) return null;
+  return { date: latest.date, amountSats: payouts.reduce((sum, payout) =>
+    payout.txid === latest.txid ? sum + payout.amountSats : sum, 0) };
+}
+
 /** Newest payout first. */
 export function sortPayoutsByDateDesc(payouts: Payout[]): Payout[] {
   return [...payouts].sort((a, b) => b.date - a.date);
@@ -284,9 +293,9 @@ export async function loadTodayPayouts(client: Pick<DmndClient, 'getPayouts' | '
     .reduce((total, row) => total + row.amount_sats, 0) / 1e8;
 }
 
-const PAYOUT_REFRESH_MS = 30 * 60 * 1000;
+const PAYOUT_REFRESH_MS = 10 * 60 * 1000;
 
-/** Keep payout data fresh and available across page navigation for thirty minutes. */
+/** Keep payout data fresh and available across page navigation for ten minutes. */
 export const PAYOUT_QUERY_OPTIONS = {
   staleTime: PAYOUT_REFRESH_MS,
   gcTime: 2 * PAYOUT_REFRESH_MS,

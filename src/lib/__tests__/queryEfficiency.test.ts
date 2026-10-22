@@ -1,5 +1,5 @@
 import { accountPayoutQueryOptions } from '../payoutsTable';
-import { workerPresenceQueryOptions } from '@/hooks/useAccountData';
+import { accountSummaryQueryOptions, workerPresenceQueryOptions } from '@/hooks/useAccountData';
 import { isAggregatedRestrictedRoute } from '@/components/dashboard/nav';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -7,7 +7,7 @@ import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { createUser } from '@/api/client';
 import { createWatcherClient, WatcherRequestError } from '@/api/watcherClient';
 import type { DmndClient } from '@/api/types';
-import { loadSubaccountRows, loadSubaccountWorkerGroups } from '@/hooks/useSubaccounts';
+import { loadSubaccountRows, loadSubaccountWorkerGroups, visibleSubaccountQueryOptions } from '@/hooks/useSubaccounts';
 import { brokerMinersQueryOptions, clearBrokerQueries } from '../brokerQueries';
 import { refreshHashrateHistory } from '../hashrateHistory';
 import { watcherQueryPolicy } from '../watcherQueries';
@@ -138,7 +138,7 @@ test('aggregate navigation excludes subaccounts and permits the combined PPLNS v
   assert.equal(isAggregatedRestrictedRoute('/pplns-projection'), false);
 });
 
-test('Home and payout history reuse records for thirty minutes without crossing account scopes', async (t) => {
+test('Home and payout history reuse records for ten minutes without crossing account scopes', async (t) => {
   let now = Date.parse('2026-10-22T12:00:00Z');
   t.mock.method(Date, 'now', () => now);
   const calls: string[] = [];
@@ -149,10 +149,10 @@ test('Home and payout history reuse records for thirty minutes without crossing 
   const cache = new QueryClient();
   try {
     const options = accountPayoutQueryOptions(client, 'owner', 'sub', false);
-    assert.equal(options.refetchInterval({ state: { dataUpdatedAt: now } }), 30 * 60_000);
+    assert.equal(options.refetchInterval({ state: { dataUpdatedAt: now } }), 10 * 60_000);
     await cache.fetchQuery(options);
-    now += 29 * 60_000;
-    assert.equal(options.refetchInterval({ state: { dataUpdatedAt: now - 29 * 60_000 } }), 60_000, 'navigation must retain the original refresh deadline');
+    now += 9 * 60_000;
+    assert.equal(options.refetchInterval({ state: { dataUpdatedAt: now - 9 * 60_000 } }), 60_000, 'navigation must retain the original refresh deadline');
     await cache.fetchQuery(accountPayoutQueryOptions(client, 'owner', 'sub', false));
     assert.deepEqual(calls, ['sub']);
     await cache.fetchQuery(accountPayoutQueryOptions(client, 'owner', 'other', false));
@@ -215,4 +215,83 @@ test('hidden watcher resources probe once and resume only for their visible sect
   assert.equal(watcherQueryPolicy(true, true, true).enabled(success), false);
   assert.equal(watcherQueryPolicy(true, false, true).enabled({ state: { error: new WatcherRequestError('denied', 403) } }), false);
   assert.equal(isAggregatedRestrictedRoute('/watcher-links'), true);
+});
+
+
+test('only the visible subaccount page refreshes, shares snapshots, and bounds summary concurrency', async (t) => {
+  let now = Date.parse('2026-10-22T12:00:10Z');
+  t.mock.method(Date, 'now', () => now);
+  const calls: string[] = [];
+  let inFlight = 0;
+  let maxInFlight = 0;
+  const client = createUser({ fetchImpl: async (url) => {
+    const path = new URL(String(url)).pathname;
+    calls.push(path);
+    if (path.endsWith('/sub_account')) return Response.json(Array.from({ length: 100 }, (_, i) => ({
+      id: String(i), sub_account: `Farm ${i}`, token: `token-${i}`, fpps_token: null, hashrate: '999', bitcoin_addresses: {},
+    })));
+    maxInFlight = Math.max(maxInFlight, ++inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    inFlight--;
+    return Response.json({ hashrate: { total_hashrate: now, pplns_hashrate: now, fpps_hashrate: 0 },
+      share_stats: { accepted: 99, rejected: 1 }, today_generated_btc: 0.001 });
+  } });
+  const cache = new QueryClient();
+  try {
+    const snapshot = await loadSubaccountRows(cache, client, 'owner', false, new AbortController().signal);
+    assert.equal(calls.length, 101, 'the initial snapshot loads every summary once');
+    calls.length = 0;
+    const first = visibleSubaccountQueryOptions(cache, client, 'owner', snapshot.slice(0, 10));
+    await cache.fetchQuery(first);
+    assert.equal(calls.length, 0, 'visible rows reuse summaries from the initial snapshot');
+    now = Date.parse('2026-10-22T12:05:01Z');
+    const updated = await cache.fetchQuery(first);
+    assert.equal(calls.length, 10, 'the next five-minute tick reads only ten visible summaries');
+    assert.ok(calls.every((path) => path.endsWith('/summary')), 'no roster, history or account-list reads');
+    assert.equal(snapshot[0].hashrate, Date.parse('2026-10-22T12:00:10Z'), 'the all-account overview remains a dated snapshot');
+    assert.equal(updated[0].hashrate, now);
+    calls.length = 0;
+    const second = visibleSubaccountQueryOptions(cache, client, 'owner', snapshot.slice(10, 20));
+    await cache.fetchQuery(second);
+    assert.equal(calls.length, 10, 'changing pages refreshes just the next ten rows');
+    assert.ok(calls.every((path) => Number(path.split('/').at(-2)) >= 10));
+    calls.length = 0;
+    await cache.fetchQuery(first);
+    assert.equal(calls.length, 0, 'returning to a fresh page reuses the cache');
+    assert.ok(maxInFlight <= 4, 'large accounts must not issue unbounded simultaneous requests');
+  } finally { cache.clear(); }
+});
+
+
+test('Home generation shares summary caches by owner and active account without reading earnings history', async (t) => {
+  let now = Date.parse('2026-10-22T12:00:10Z');
+  t.mock.method(Date, 'now', () => now);
+  const calls: { path: string; owner: string | null }[] = [];
+  const client = createUser({ fetchImpl: async (url, options) => {
+    const path = new URL(String(url)).pathname;
+    calls.push({ path, owner: new Headers(options?.headers).get('X-Account-ID') });
+    if (path.endsWith('/sub_account')) return Response.json([
+      { id: 'farm-a', sub_account: 'Farm A', token: 'token', fpps_token: null, hashrate: '0', bitcoin_addresses: {} },
+    ]);
+    return Response.json({ sub_account_id: path.split('/').at(-2),
+      hashrate: { total_hashrate: 10, pplns_hashrate: 0, fpps_hashrate: 10 },
+      share_stats: { accepted: 99, rejected: 1 }, today_generated_btc: 0.002 });
+  } });
+  const cache = new QueryClient();
+  try {
+    await loadSubaccountRows(cache, client, 'owner', false, new AbortController().signal);
+    const initialCount = calls.length;
+    const farm = accountSummaryQueryOptions(client, 'owner', 'farm-a');
+    assert.equal((await cache.fetchQuery(farm)).today_generated_btc, 0.002);
+    assert.equal(calls.length, initialCount, 'Home reuses a fresh summary loaded on Subaccounts');
+    await cache.fetchQuery(accountSummaryQueryOptions(client, 'owner', 'owner'));
+    assert.deepEqual(calls.at(-1), { path: '/api/user/sub_account/owner/summary', owner: 'owner' });
+    await cache.fetchQuery(accountSummaryQueryOptions(client, 'other-owner', 'farm-a'));
+    assert.equal(calls.at(-1)?.owner, 'other-owner', 'summaries must never cross owner identities');
+    now += 5 * 60_000;
+    await cache.fetchQuery(farm);
+    assert.equal(calls.at(-1)?.path, '/api/user/sub_account/farm-a/summary');
+    assert.equal(calls.length, initialCount + 3);
+    assert.ok(calls.every(({ path }) => !path.includes('generated_btc') && !path.includes('historical')));
+  } finally { cache.clear(); }
 });

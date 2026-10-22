@@ -8,7 +8,7 @@ import { sumHashrateSeries } from '@/lib/aggregatedHashrate';
 import { useSubaccountList, ACCOUNT_POLL_MS } from './useSubaccounts';
 import { useActiveAccountId } from './useActiveAccountId';
 import { msUntilNextTick } from '@/lib/utils';
-import { accountPayoutQueryOptions } from '@/lib/payoutsTable';
+import { accountPayoutQueryOptions, latestPayout, payoutFromApi } from '@/lib/payoutsTable';
 
 // The UI checks account data every five minutes.
 const CLOUD_POLL_MS = 5 * 60 * 1000;
@@ -29,6 +29,27 @@ export function useAccountHashrate(enabled = true) {
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
+  });
+}
+
+/** A summary supplies today's FPPS generation, share counts and rates in one read. */
+export function accountSummaryQueryOptions(client: DmndClient, ownerId: string | null, accountId: string | null) {
+  return {
+    queryKey: ['account', 'subaccount-summary', ownerId, accountId],
+    queryFn: ({ signal }: { signal: AbortSignal }) => client.getSubaccountSummary(accountId!, { signal, accountId: ownerId! }),
+    staleTime: CLOUD_POLL_MS,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
+    refetchOnWindowFocus: false,
+    retry: false,
+  } as const;
+}
+
+export function useAccountSummary(enabled = true) {
+  const { session } = useAuth();
+  const accountId = useActiveAccountId();
+  return useQuery({
+    ...accountSummaryQueryOptions(getUser(), session?.accountId ?? null, accountId),
+    enabled: enabled && !!session && !!accountId,
   });
 }
 
@@ -188,19 +209,16 @@ export function activeBitcoinAddress(profile: DmndSession | undefined): string |
 }
 
 /**
- * Confirmed payouts for today's UTC date. Single mode uses the exact account endpoint;
+ * Latest confirmed payout transaction. Single mode uses the exact account endpoint;
  * aggregated mode reads the complete account tree once, avoiding duplicate shared-address outputs.
  */
-export function useTodayEarnings(enabled = true, aggregated = false) {
+export function useLatestPayout(enabled = true, aggregated = false) {
   const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const accountId = useActiveAccountId();
-  const today = new Date().toISOString().slice(0, 10);
   return useQuery({
     ...accountPayoutQueryOptions(getUser(), ownerAccountId, accountId, aggregated),
-    select: (records) => records
-      .filter((record) => new Date(record.confirmed_at * 1000).toISOString().slice(0, 10) === today)
-      .reduce((sum, record) => sum + record.amount_sats, 0) / 1e8,
+    select: (records) => latestPayout(records.map(payoutFromApi)),
     enabled: enabled && !!session && !!accountId,
   });
 }
@@ -227,4 +245,49 @@ export function workerPresenceQueryOptions(cache: QueryClient, client: DmndClien
     retry: false,
     refetchOnWindowFocus: false,
   };
+}
+
+export const BLOG_URL = 'https://blog.dmnd.work/';
+
+// Public, read-only Ghost Content API key published by the blog's own theme.
+// This is not a Ghost Admin API key or a dashboard credential.
+const CONTENT_API = 'https://dmnd.ghost.io/ghost/api/content/posts/';
+const CONTENT_KEY = '123895ea550e80b78a314ed590';
+
+export interface LatestBlogPost {
+  title: string;
+  url: string;
+  image: string | null;
+}
+
+/** One attempt per login, shared by login prefetch and Help. */
+export function latestBlogQueryOptions(accountId: string, loginExpiresAt: number) {
+  return {
+    queryKey: ['blog', 'latest-post', accountId, loginExpiresAt],
+    queryFn: ({ signal }: { signal: AbortSignal }) => fetchLatestBlogPost(signal),
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnMount: false,
+    retryOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  } as const;
+}
+
+export async function fetchLatestBlogPost(signal?: AbortSignal, fetchImpl = fetch): Promise<LatestBlogPost | null> {
+  const url = new URL(CONTENT_API);
+  url.search = new URLSearchParams({
+    key: CONTENT_KEY, limit: '1', order: 'published_at desc', fields: 'title,url,feature_image',
+  }).toString();
+  const response = await fetchImpl(url, { signal, credentials: 'omit' });
+  if (!response.ok) throw new Error('Unable to load the latest blog post.');
+  const data = await response.json();
+  const post = data.posts?.[0];
+  if (!post) return null;
+  if (typeof post.title !== 'string' || typeof post.url !== 'string' || new URL(post.url).origin !== new URL(BLOG_URL).origin) {
+    throw new Error('Invalid blog post.');
+  }
+  const image = typeof post.feature_image === 'string' && post.feature_image.startsWith('https://') ? post.feature_image : null;
+  return { title: post.title, url: post.url, image };
 }

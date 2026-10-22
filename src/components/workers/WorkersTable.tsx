@@ -13,7 +13,7 @@ import {
   type TaggedWorker,
   type WorkerSortKey,
 } from '@/lib/workersTable';
-import { ACTIVE_WORKERS_HINT, WORKER_METRICS_HINT, WORKER_REJECTION_HINT } from '@/lib/metricWindows';
+import { WORKER_STATUS_HINT, WORKER_METRICS_HINT, WORKER_REJECTION_HINT } from '@/lib/metricWindows';
 import { ModeBadge, StatusBadge } from './badges';
 
 interface SortState {
@@ -160,7 +160,7 @@ export function WorkersTable({
                 align="center"
               />
               <th className="px-4 py-3 text-left font-normal">
-                <span className="inline-flex items-center gap-2">Status <InfoHint text={ACTIVE_WORKERS_HINT} /></span>
+                <span className="inline-flex items-center gap-2">Status <InfoHint text={WORKER_STATUS_HINT} /></span>
               </th>
               <th className="px-4 py-3 text-left font-normal">Action</th>
             </tr>

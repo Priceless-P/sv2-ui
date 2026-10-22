@@ -53,8 +53,7 @@ export function BrokerShell({ children }: { children: ReactNode }) {
             >
               <LiHamburgerMenu className="h-4 w-4" />
             </button>
-            <span className="hidden text-sm leading-5 text-body-alt lg:block">Home</span>
-            <ThemeToggle />
+            <div className="ml-auto"><ThemeToggle /></div>
           </header>
 
           <main className="flex-1 overflow-y-auto">

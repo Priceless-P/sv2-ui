@@ -24,13 +24,14 @@ import { PplnsProjectionPanel } from '@/components/pplns-projection/PplnsProject
 import { DashboardFrame } from '@/components/dashboard/DashboardShell';
 import { SidebarView, SidebarNavItem, SidebarNavigation, AccountIdentityRow } from '@/components/dashboard/Sidebar';
 import { TopBarView } from '@/components/dashboard/TopBar';
-import { NAV_GROUPS, titleForPath } from '@/components/dashboard/nav';
+import { NAV_GROUPS } from '@/components/dashboard/nav';
 import { DashboardHomeView } from '@/components/home/DashboardHomeView';
 import { LiveHashrateCardView } from '@/components/home/LiveHashrateCard';
 import { MiningPerformanceChartView } from '@/components/home/MiningPerformanceChart';
-import { WorkerStatCardsView, WatcherDataCard, TodayEarningsCard, PoolFeeCard } from '@/components/home/WorkerStatCards';
+import { WorkerStatCardsView, WatcherDataCard, LatestPayoutCard, PoolFeeCard } from '@/components/home/WorkerStatCards';
 import { WorkersContent } from '@/pages/workers/WorkersPage';
 import { GeneratedBtcContent } from '@/pages/generated-btc/GeneratedBtcPage';
+import { latestPayout } from '@/lib/payoutsTable';
 import { PayoutsContent } from '@/pages/payouts/PayoutsPage';
 
 const SECTION_PATHS = {
@@ -147,10 +148,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
   // Probes must settle before showing content: loading must not imply permission.
   if (revoked || (settled && sections.length === 0)) return <WatcherInvalid />;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const earnings = payouts.isSuccess
-    ? payouts.data.filter((p) => new Date(p.date * 1000).toISOString().slice(0, 10) === today).reduce((sum, p) => sum + p.amountSats, 0) / 1e8
-    : undefined;
+  const payout = payouts.isSuccess ? latestPayout(payouts.data) : undefined;
   const name = accountIdentity?.kind === 'main' ? 'Main account' : accountIdentity?.name ?? 'Watcher access';
   const subtitle = accountIdentity ? (accountIdentity.kind === 'subaccount' ? 'Subaccount' : undefined) : 'Read only';
   const activePath = SECTION_PATHS[active];
@@ -185,7 +183,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
           />
         </SidebarView>
       )}
-      topBar={(onMenuClick) => <TopBarView title={titleForPath(activePath)} subtitle={accountIdentity?.kind === 'subaccount' ? name : undefined} onMenuClick={onMenuClick} actions={
+      topBar={(onMenuClick) => <TopBarView refreshIntervalMinutes={active === 'payouts' ? 10 : 5} refreshSubject={active === 'payouts' ? 'Payouts' : 'Live data'} subtitle={accountIdentity?.kind === 'subaccount' ? name : undefined} onMenuClick={onMenuClick} actions={
         <span className="hidden items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 text-xs text-body-alt sm:inline-flex"><BdEye className="h-4 w-4 text-warning" />Read-only watcher</span>
       } />}
     >
@@ -207,7 +205,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
                   </div>
                 )}
                 {inlineEarnings && <div className="grid min-w-0">
-                  <TodayEarningsCard earnings={earnings} />
+                  <LatestPayoutCard payout={payout} />
                 </div>}
                 {inlineFee && <div className="grid min-w-0">{feeCard}</div>}
               </div>
@@ -215,7 +213,7 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
             {granted(workers) && <WorkerStatCardsView
               workers={workers.isSuccess ? workers.data : undefined}
               hashrate={hashrate.isSuccess ? hashrate.data : undefined}
-              earnings={earnings}
+              payout={payout}
               showWorkers={granted(workers)}
               showHashrate={canViewHashrate}
               showRejection={false}
@@ -235,9 +233,10 @@ function WatcherViewInner({ accountId, token }: { accountId: string; token: stri
           </DashboardHomeView>
         )}
         {active === 'workers' && <WorkersContent workers={workers.data ?? []} isLoading={workers.isLoading} isError={workers.isError} onRetry={workers.refetch} />}
-        {active === 'generated' && <GeneratedBtcContent entries={generated.data ?? []} isLoading={generated.isLoading} isError={generated.isError} onRetry={generated.refetch} />}
+        {active === 'generated' && <GeneratedBtcContent entries={generated.data ?? []} isLoading={generated.isLoading} isError={generated.isError} onRetry={generated.refetch}
+          payoutProgress={canViewPayouts ? { payouts: payouts.data, isLoading: payouts.isLoading, isError: payouts.isError } : undefined} />}
         {active === 'payouts' && <PayoutsContent payouts={payouts.data ?? []} isLoading={payouts.isLoading} isError={payouts.isError} onRetry={payouts.refetch} />}
-        {active === 'pplns' && <PplnsProjectionPanel projection={pplns.data} isLoading={pplns.isLoading} isError={pplns.isError} showStats />}
+        {active === 'pplns' && <PplnsProjectionPanel projection={pplns.data} isLoading={pplns.isLoading} isError={pplns.isError} showStats selectable={false} />}
       </>}
     </DashboardFrame>
   );

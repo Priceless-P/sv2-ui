@@ -13,6 +13,7 @@ import { queryClient } from '@/lib/queryClient';
 import { revokeDashboardSessions } from './logout';
 import type { Subaccount } from '@/api/types';
 import { useToast } from '@/components/ui/toast';
+import { latestBlogQueryOptions } from '@/hooks/useAccountData';
 import { createAuthStore, type AuthStore, type SignOutReason } from './authStore';
 import { isExpired, viewingAccountFromAuth, type Session, type ViewingAccountSession } from './session';
 import { actionForRejectedRequest, shouldEndSessionAfterValidation } from './sessionValidation';
@@ -88,6 +89,13 @@ export function AuthProvider({ children, store: injectedStore }: AuthProviderPro
     }
     prevAccountIdRef.current = accountId;
   }, [accountId]);
+
+  const loginExpiresAt = state.session?.expiresAt;
+  useEffect(() => {
+    if (accountId && loginExpiresAt) {
+      void queryClient.prefetchQuery(latestBlogQueryOptions(accountId, loginExpiresAt));
+    }
+  }, [accountId, loginExpiresAt]);
 
   // On startup, validate a session restored from storage against the backend.
   // The auth cookie is HttpOnly so we can't inspect it here; check_auth confirms

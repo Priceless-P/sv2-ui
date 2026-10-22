@@ -1,8 +1,12 @@
 import { downloadCsv } from '@/lib/utils';
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/auth';
+import { getUser } from '@/api';
 import { Plus } from 'lucide-react';
+import { SelectionActions } from '@/components/ui/TableToolbar';
 import { LiExport } from 'solar-icon-react/li';
-import { useSubaccounts, useSubaccountList, usePermissions } from '@/hooks/useSubaccounts';
+import { useSubaccounts, useSubaccountList, usePermissions, useVisibleSubaccounts, visibleSubaccountQueryOptions } from '@/hooks/useSubaccounts';
 import { useAccountSwitcher } from '@/hooks/useAccountSwitcher';
 import { useToastControls } from '@/components/ui/toast';
 import {
@@ -29,7 +33,10 @@ const PAGE_SIZE = 10;
 
 /** The Subaccounts page: stat cards + table with search, sort, pagination, CSV, and create. */
 export function SubaccountsPage() {
-  const { data, isLoading, isError, refetch } = useSubaccounts(true, false, 15 * 60 * 1000);
+  const cache = useQueryClient();
+  const { session } = useAuth();
+  const snapshot = useSubaccounts(true, false, false);
+  const { data, isLoading, isError, refetch } = snapshot;
   const { data: permissions } = usePermissions();
   const { data: rawSubaccounts, refetch: refetchList } = useSubaccountList();
   const { switchToSubaccount, switching } = useAccountSwitcher();
@@ -53,6 +60,8 @@ export function SubaccountsPage() {
     [subaccounts, query, filter],
   );
   const pageData = paginate(visible, page, PAGE_SIZE);
+  const liveRows = useVisibleSubaccounts(pageData.items, snapshot.isSuccess && !snapshot.isFetching, snapshot.dataUpdatedAt);
+  const currentRows = liveRows.data ?? pageData.items;
 
   const allSelected = visible.length > 0 && visible.every((s) => selected.has(s.id));
   const someSelected = visible.some((s) => selected.has(s.id));
@@ -74,7 +83,12 @@ export function SubaccountsPage() {
     const pending = toast({ type: 'info', message: 'Preparing export...', description: 'Generating your CSV file.' });
     await new Promise((resolve) => setTimeout(resolve, 500));
     try {
-      downloadCsv(subaccountsToCsv(exportRows), exportFilename('subaccounts_report', Date.now()));
+      // Refresh only exported rows on demand; other pages keep their cached snapshots.
+      const rows = await cache.fetchQuery({
+        ...visibleSubaccountQueryOptions(cache, getUser(), session?.accountId ?? null, exportRows, snapshot.dataUpdatedAt),
+        staleTime: 0,
+      });
+      downloadCsv(subaccountsToCsv(rows), exportFilename('subaccounts_report', Date.now()));
       dismiss(pending);
       toast({ type: 'success', message: 'Export complete', description: 'Subaccount data has been exported as CSV.' });
     } catch {
@@ -106,6 +120,14 @@ export function SubaccountsPage() {
       row = (refreshed.data ?? []).find((s) => s.sub_account.trim() === createdName);
     }
     if (row) await switchToSubaccount({ id: row.id, token: row.token });
+  };
+
+  const refreshAll = async () => {
+    await Promise.all([
+      cache.invalidateQueries({ queryKey: ['account', 'subaccount-summary', session?.accountId], refetchType: 'none' }),
+      cache.invalidateQueries({ queryKey: ['account', 'subaccounts', 'list', session?.accountId], refetchType: 'none' }),
+    ]);
+    return refetch();
   };
 
   const canCreate = permissions?.create_sub_account ?? false;
@@ -185,7 +207,7 @@ export function SubaccountsPage() {
             <button
               type="button"
               onClick={() => void runExport()}
-              className="inline-flex h-9 items-center gap-2 rounded-[32px] border border-black/20 bg-[hsl(var(--btn))] px-5 text-sm leading-5 text-[hsl(var(--btn-foreground))] transition-opacity hover:opacity-90"
+              className="inline-flex h-9 items-center gap-2 rounded-[32px] border border-black/20 bg-info px-5 text-sm leading-5 text-info-foreground transition-opacity hover:opacity-90"
             >
               <LiExport className="h-3.5 w-3.5" /> Export CSV
             </button>
@@ -208,7 +230,7 @@ export function SubaccountsPage() {
           <p className="mt-1 text-sm text-body-alt">Something went wrong fetching your subaccounts.</p>
           <button
             type="button"
-            onClick={() => void refetch()}
+            onClick={() => void refreshAll()}
             className="mt-4 inline-flex items-center rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
           >
             Try again
@@ -227,8 +249,14 @@ export function SubaccountsPage() {
               onApplyFilter={applyFilter}
               onResetFilter={resetFilter}
             />
+            <SelectionActions count={visible.filter((subaccount) => selected.has(subaccount.id)).length}
+              onExport={() => void runExport()} onClear={() => setSelected(new Set())} />
+            {(liveRows.isError || liveRows.isFetching) && <div role="status" className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs text-body-alt">
+              <span>{liveRows.isError ? "Couldn't refresh these rows. Showing the last available figures." : 'Updating visible rows…'}</span>
+              {liveRows.isError && <button type="button" onClick={() => void liveRows.refetch()} className="underline">Retry visible rows</button>}
+            </div>}
             <SubaccountsTable
-              subaccounts={pageData.items}
+              subaccounts={currentRows}
               empty={tableEmpty}
               selected={selected}
               allSelected={allSelected}

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { LiSquareShareLine, LiCopy, LiCheckCircle } from 'solar-icon-react/li';
 import { cn } from '@/lib/utils';
-import { CellCheckbox } from '@/components/ui/CellCheckbox';
 import {
   formatBtcFromSats,
   formatPayoutDate,
@@ -138,40 +137,18 @@ export function PayoutsTable({
   payouts,
   empty,
   showAccount = false,
-  selected,
-  allSelected,
-  someSelected,
-  onToggleAll,
-  onToggleOne,
-  selectable = true,
 }: {
   payouts: Payout[];
   empty?: PayoutsEmpty;
   /** Aggregated mode adds the paid-to account, since rows then span accounts. */
   showAccount?: boolean;
-  selected?: Set<string>;
-  allSelected?: boolean;
-  someSelected?: boolean;
-  onToggleAll?: () => void;
-  onToggleOne?: (id: string) => void;
-  /** Watcher views are read-only and do not expose the owner's CSV-selection controls. */
-  selectable?: boolean;
 }) {
-  const selectedRows = selected ?? new Set<string>();
   return (
     <>
       <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[820px] border-collapse text-sm">
           <thead>
             <tr className="border-b-[0.5px] border-border bg-muted text-sm leading-5 text-body-alt">
-              {selectable && <th className="w-14 px-0 py-3">
-                <CellCheckbox
-                  checked={allSelected ?? false}
-                  indeterminate={(someSelected ?? false) && !(allSelected ?? false)}
-                  onChange={() => onToggleAll?.()}
-                  label="Select all payouts"
-                />
-              </th>}
               <th className="px-4 py-3 text-left font-normal">Date</th>
               {showAccount && <th className="px-4 py-3 text-left font-normal">Account</th>}
               <th className="px-4 py-3 text-left font-normal">Transaction ID</th>
@@ -184,20 +161,13 @@ export function PayoutsTable({
           <tbody>
             {payouts.length === 0 && empty && (
               <tr>
-                <td colSpan={(showAccount ? 7 : 6) + (selectable ? 1 : 0)}>
+                <td colSpan={showAccount ? 7 : 6}>
                   <EmptyRow empty={empty} />
                 </td>
               </tr>
             )}
             {payouts.map((p) => (
               <tr key={payoutRowId(p)} className="border-b-[0.5px] border-border last:border-0">
-                {selectable && <td className="w-14 px-0 py-3">
-                  <CellCheckbox
-                    checked={selectedRows.has(payoutRowId(p))}
-                    onChange={() => onToggleOne?.(payoutRowId(p))}
-                    label={`Select payout ${truncateMiddle(p.txid, 6, 4)}`}
-                  />
-                </td>}
                 <td className="px-4 py-3 text-foreground">{formatPayoutDate(p.date)}</td>
                 {/* Plain text in the body colour, as drawn -- the design gives the account
                     no badge or chip, and no different weight from the other values. */}

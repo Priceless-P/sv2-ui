@@ -10,6 +10,7 @@ import {
   eligibleLinks,
   highestPerAccount,
   multiwatcherUrl,
+  initialMultiwatcherSelection,
   type MultiwatcherMode,
 } from '@/lib/multiwatcher';
 import { MultiwatcherCreated } from './MultiwatcherCreated';
@@ -36,18 +37,21 @@ export function AggregateWatcherLinksPanel({
   subaccounts,
   origin,
   onClose,
+  preselect = false,
 }: {
   links: WatcherLink[];
   sessionAccountId: string | null;
   subaccounts: Subaccount[];
   origin: string;
   onClose: () => void;
+  preselect?: boolean;
 }) {
-  const [mode, setMode] = useState<MultiwatcherMode>('both');
+  const [initial] = useState(() => preselect ? initialMultiwatcherSelection(links) : { mode: 'both' as MultiwatcherMode, ids: [] });
+  const [mode, setMode] = useState<MultiwatcherMode>(initial.mode);
   const [modeOpen, setModeOpen] = useState(false);
   const [linksOpen, setLinksOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set(initial.ids));
   const [createdUrl, setCreatedUrl] = useState<string | null>(null);
   const modeRef = useRef<HTMLDivElement>(null);
   const linksRef = useRef<HTMLDivElement>(null);
@@ -109,6 +113,7 @@ export function AggregateWatcherLinksPanel({
                 <p className="mt-1 text-sm text-body-alt">
                   Create a temporary multiwatcher link from existing Watcher links.
                 </p>
+                {preselect && <p className="mt-2 text-sm text-body-alt">Using your checked links. Only links with the chosen permission and an available token can be combined.</p>}
               </div>
               <button
                 type="button"

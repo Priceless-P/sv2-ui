@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { LiMagnifer, LiSort, LiAltArrowDown, LiFilter } from 'solar-icon-react/li';
 import { cn } from '@/lib/utils';
 
-/** Shared search/filter layout. Feature modules own tabs, filter state and filter panels. */
+/** Shared search/filter layout. The surrounding page supplies the visible heading. */
 export function TableToolbar({
   title,
   query,
@@ -31,13 +31,12 @@ export function TableToolbar({
   const panel = filterOpen ? renderFilter(() => setFilterOpen(false)) : null;
 
   return (
-    <div className={cn(
+    <div aria-label={title} className={cn(
       'relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
       variant === 'tabs' ? 'p-4' : 'p-3 sm:p-4',
       !plain && 'rounded-t-3xl border-[0.5px] border-b-0 border-border bg-card',
     )}>
-      <h3 className={plain ? 'text-base font-semibold text-heading' : '!font-body text-lg font-bold leading-7 text-foreground'}>{title}</h3>
-      <div className={cn('flex gap-3', variant === 'tabs' ? 'flex-col sm:flex-row sm:items-center' : 'items-center')}>
+      <div className={cn('flex w-full gap-3 sm:justify-end', variant === 'tabs' ? 'flex-col sm:flex-row sm:items-center' : 'items-center')}>
         {tabs}
         <div className="relative min-w-0 flex-1 sm:flex-none">
           <LiMagnifer className={cn('pointer-events-none absolute top-1/2 -translate-y-1/2', plain ? 'left-3 h-4 w-4 text-placeholder' : 'left-4 h-3.5 w-3.5 text-body-alt')} />
@@ -80,4 +79,20 @@ export function TableToolbar({
       {framed && panel}
     </div>
   );
+}
+
+/** Actions apply to the checked rows in the filtered table, across every page. */
+export function SelectionActions({ count, onExport, onClear, children }: {
+  count: number;
+  onExport: () => void;
+  onClear: () => void;
+  children?: ReactNode;
+}) {
+  if (!count) return null;
+  return <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/50 px-4 py-3">
+    <span className="text-sm text-body-alt" role="status">{count} selected</span>
+    <button type="button" onClick={onExport} className="rounded-full bg-info px-4 py-1.5 text-sm text-info-foreground transition-opacity hover:opacity-90">Export selected CSV</button>
+    {children}
+    <button type="button" onClick={onClear} className="ml-auto text-sm text-body-alt underline underline-offset-2 hover:text-foreground">Clear selection</button>
+  </div>;
 }

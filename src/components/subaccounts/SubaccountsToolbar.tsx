@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { isSubaccountFilterActive, type SubaccountFilter } from '@/lib/subaccountsTable';
 import { SubaccountsFilter } from './SubaccountsFilter';
 
-/** Table header: section title, a name search box, and the filter popover trigger. */
+/** Table controls: name search and filter. */
 export function SubaccountsToolbar({
   query,
   onQuery,
@@ -51,8 +51,6 @@ export function SubaccountsToolbar({
   return (
     <div className="relative flex flex-col gap-3 rounded-t-3xl border-[0.5px] border-b-0 border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
       <div className="flex items-center justify-between gap-4">
-        <h3 className="!font-body text-lg font-bold leading-7 text-foreground">Subaccounts</h3>
-
         {/* Mobile: the search field and the filter collapse to two 32px icon pills. */}
         <div className="flex items-center gap-2 sm:hidden">
           <button

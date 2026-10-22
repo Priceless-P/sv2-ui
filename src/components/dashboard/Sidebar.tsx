@@ -208,7 +208,7 @@ export function Sidebar({
         {hasSubaccounts ? (
           <AccountSwitcher collapsed={collapsed} />
         ) : (
-          <AccountIdentityRow name="Main account" collapsed={collapsed} />
+          <AccountIdentityRow name="Main account" initials="M" collapsed={collapsed} />
         )}
 
         {/* The design puts the aggregated toggle in the drawer on mobile; the top bar
@@ -299,16 +299,17 @@ export function SidebarView({ collapsed = false, drawer = false, onToggleCollaps
 }
 
 /** Account identity without account switching or authenticated data access. */
-export function AccountIdentityRow({ name, subtitle, collapsed = false, subaccount = false }: {
+export function AccountIdentityRow({ name, subtitle, initials, collapsed = false, subaccount = false }: {
   name: string;
   subtitle?: string;
+  initials?: string;
   collapsed?: boolean;
   subaccount?: boolean;
 }) {
   return (
     <div title={subtitle ? `${name} — ${subtitle}` : name} className={cn('mx-3 mb-3 flex items-center rounded-lg text-left', collapsed ? 'justify-center px-0 py-2' : 'gap-2.5 px-2.5 py-2')}>
       <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white', subaccount ? 'bg-[#d946ef]' : 'bg-[#2b7fff]')}>
-        {subaccount ? name.slice(0, 1).toUpperCase() : accountInitials(name)}
+        {initials ?? (subaccount ? name.slice(0, 1).toUpperCase() : accountInitials(name))}
       </span>
       {!collapsed && <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium text-foreground">{name}</span>

@@ -44,7 +44,7 @@ export function SubaccountsStatCards({ stats }: { stats: SubaccountsPageStats })
         <Reading value={stats.total} />
       </Card>
 
-      <Card title="Average hashrate" hint={SUBACCOUNTS_LIVE_HASHRATE_HINT} caption="Across all subaccounts">
+      <Card title="Combined hashrate" hint={SUBACCOUNTS_LIVE_HASHRATE_HINT} caption="Across all subaccounts">
         <Reading value={formatAxisValue(stats.combinedHashrate, scale.divisor)} unit={scale.unit} />
       </Card>
 
@@ -52,7 +52,7 @@ export function SubaccountsStatCards({ stats }: { stats: SubaccountsPageStats })
         <Reading value={stats.averageRejectionRate === null ? '--' : (stats.averageRejectionRate * 100).toFixed(2)} unit={stats.averageRejectionRate === null ? undefined : '%'} />
       </Card>
 
-      <Card title="Today's FPPS earnings" caption="Generated today (UTC) across subaccounts">
+      <Card title="Today's generated BTC" caption="FPPS only · today (UTC) across subaccounts">
         <Reading value={formatBtc(stats.todayEarnings)} unit="BTC" />
       </Card>
     </div>

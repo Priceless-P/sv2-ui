@@ -20,8 +20,8 @@ const SORT_COL_1: { value: SubaccountSortOption; label: string }[] = [
   { value: 'hashrate_asc', label: 'Lowest hashrate' },
 ];
 const SORT_COL_2: { value: SubaccountSortOption; label: string }[] = [
-  { value: 'earnings_desc', label: 'Highest earnings' },
-  { value: 'earnings_asc', label: 'Lowest earnings' },
+  { value: 'earnings_desc', label: 'Highest generated BTC' },
+  { value: 'earnings_asc', label: 'Lowest generated BTC' },
 ];
 
 // Category icons: Rejection rate=Minus Circle, Sort by=Sort.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { accountInitials } from '../accountInitials';
+import { accountInitials, mainAccountName } from '../accountInitials';
 
 test('accountInitials joins the first letters of two name parts', () => {
   assert.equal(accountInitials('ada.lovelace@x.io'), 'AL');
@@ -17,4 +17,12 @@ test('accountInitials uses the first two letters of a single-part local', () => 
 test('accountInitials falls back to ? when there is nothing to use', () => {
   assert.equal(accountInitials(undefined), '?');
   assert.equal(accountInitials(''), '?');
+});
+
+test('company names supply avatar initials and do not fall back to an email username', () => {
+  assert.equal(accountInitials(mainAccountName('  Acme Mining  ')), 'AM');
+  assert.equal(mainAccountName('  Acme Mining  '), 'Acme Mining');
+  assert.equal(mainAccountName(null), 'Main account');
+  assert.equal(mainAccountName('  '), 'Main account');
+  assert.equal(accountInitials(mainAccountName(undefined)), 'MA');
 });

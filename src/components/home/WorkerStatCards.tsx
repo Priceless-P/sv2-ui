@@ -3,8 +3,9 @@ import { Children, type ReactNode } from 'react';
 import { StatCard } from '@/components/ui/StatCard';
 import { formatFeePercent, totalPoolFee } from '@/lib/watcherLinks';
 import { WorkerBars } from '@/components/ui/WorkerBars';
-import { useAccountAllWorkers, useAccountHashrate, useAccountShareStats, useTodayEarnings } from '@/hooks/useAccountData';
+import { useAccountAllWorkers, useAccountSummary, useLatestPayout } from '@/hooks/useAccountData';
 import { deriveWorkerStats } from '@/lib/workerStats';
+import { formatPayoutDate, type latestPayout } from '@/lib/payoutsTable';
 import { BTC_DISPLAY_DP, cn } from '@/lib/utils';
 import { formatAxisValue, pickHashrateScale } from '@/lib/chartAxis';
 import type { AggregatedStats } from '@/lib/aggregatedStats';
@@ -15,28 +16,26 @@ function formatBtc(btc: number): string {
   return `${btc.toFixed(BTC_DISPLAY_DP).replace(/\.?0+$/, '')} BTC`;
 }
 
-/**
- * Active / Offline / Rejection / Today's earnings cards. Worker counts come from
- * the full roster; today's earnings is derived from on-chain payouts (see
- * useTodayEarnings), not a hardcoded value. While the earnings lookup is loading or
- * fails it shows "--" (unknown) rather than a misleading 0; a genuine zero shows
- * "0 BTC".
- */
+/** Generated FPPS BTC and the latest confirmed payout precede mining-health metrics. */
 export function WorkerStatCards({ aggregated }: { aggregated?: AggregatedStats }) {
   const { data: workers } = useAccountAllWorkers();
-  const { data: shareStats } = useAccountShareStats(aggregated === undefined);
-  const { data: hashrate } = useAccountHashrate(aggregated === undefined);
-  const earningsQuery = useTodayEarnings(true, aggregated !== undefined);
-  const earnings = earningsQuery.isSuccess ? earningsQuery.data : undefined;
-  return <WorkerStatCardsView workers={workers} shareStats={shareStats} hashrate={hashrate} earnings={earnings} aggregated={aggregated} />;
+  const summary = useAccountSummary(aggregated === undefined);
+  const knownSummary = summary.isSuccess ? summary.data : undefined;
+  const generatedBtc = aggregated?.todayEarnings ?? (knownSummary ? knownSummary.today_generated_btc ?? 0 : undefined);
+  const payoutQuery = useLatestPayout(true, aggregated !== undefined);
+  const payout = payoutQuery.isSuccess ? payoutQuery.data : undefined;
+  return <WorkerStatCardsView workers={workers} shareStats={knownSummary?.share_stats} hashrate={knownSummary?.hashrate}
+    payout={payout} generatedBtc={generatedBtc} showGenerated aggregated={aggregated} />;
 }
 
 /** Data-only dashboard metrics. Visibility is explicit so public views cannot imply access to another scope. */
-export function WorkerStatCardsView({ workers, shareStats, hashrate, earnings, aggregated, showWorkers = true, showHashrate = true, showRejection = true, showEarnings = true, children }: {
+export function WorkerStatCardsView({ workers, shareStats, hashrate, payout, generatedBtc, aggregated, showGenerated = false, showWorkers = true, showHashrate = true, showRejection = true, showEarnings = true, children }: {
   workers?: Worker[];
   shareStats?: SubaccountShareStats;
   hashrate?: HashrateSnapshot;
-  earnings?: number;
+  payout?: ReturnType<typeof latestPayout>;
+  generatedBtc?: number;
+  showGenerated?: boolean;
   aggregated?: AggregatedStats;
   showWorkers?: boolean;
   showHashrate?: boolean;
@@ -59,7 +58,6 @@ export function WorkerStatCardsView({ workers, shareStats, hashrate, earnings, a
       rejectionRate: aggregated.rejectionRate,
     }
     : { ...single, rejectionRate: singleRejection };
-  const todayEarnings = earnings;
   const totalHashrate = aggregated ? aggregated.combinedHashrate : hashrate?.total_hashrate;
   // No active worker means no rate to divide, which is unknown rather than zero.
   const perWorker = workersKnown && stats.activeCount > 0 && totalHashrate !== undefined ? totalHashrate / stats.activeCount : null;
@@ -67,10 +65,13 @@ export function WorkerStatCardsView({ workers, shareStats, hashrate, earnings, a
   const hasWorkers = stats.totalCount > 0;
   const hasMined = stats.rejectionRate !== null;
   const rejection = stats.rejectionRate === null ? '--' : (stats.rejectionRate * 100).toFixed(2);
-  const cardCount = Number(showWorkers) + Number(showWorkers && showHashrate) + Number(showRejection) + Number(showEarnings) + Children.toArray(children).length;
+  const cardCount = Number(showWorkers) + Number(showWorkers && showHashrate) + Number(showRejection) + Number(showEarnings) + Number(showGenerated) + Children.toArray(children).length;
 
   return (
-    <div className={cn('grid grid-cols-1 gap-2', cardCount > 1 && 'sm:grid-cols-2', cardCount === 3 && 'lg:grid-cols-3', cardCount === 4 && 'lg:grid-cols-4')}>
+    <div className={cn('grid grid-cols-1 gap-2', cardCount > 1 && 'sm:grid-cols-2', cardCount === 3 && 'lg:grid-cols-3', cardCount === 4 && 'lg:grid-cols-4',
+      cardCount === 5 && 'lg:grid-cols-6 lg:[&>div]:col-span-2 lg:[&>div:nth-child(-n+2)]:col-span-3')}>
+      {showGenerated && <TodayGeneratedBtcCard generatedBtc={generatedBtc} aggregated={aggregated !== undefined} />}
+      {showEarnings && <LatestPayoutCard payout={payout} aggregated={aggregated !== undefined} />}
       {showWorkers && <StatCard
         tour="stats-workers"
         title="Active workers"
@@ -107,34 +108,43 @@ export function WorkerStatCardsView({ workers, shareStats, hashrate, earnings, a
         caption={hasMined ? 'Last 24 hours across all shares.' : 'Rejected share rate will appear after mining starts.'}
         hint={ACCOUNT_REJECTION_HINT}
       />}
-      {showEarnings && <TodayEarningsCard earnings={todayEarnings} aggregated={aggregated !== undefined} />}
       {children}
     </div>
   );
 }
 
-/** Shared earnings card, also used independently in the watcher overview row. */
-export function TodayEarningsCard({ earnings: todayEarnings, aggregated = false }: {
-  earnings?: number;
+/** Reuses cached payout history, including payments confirmed before today. */
+export function LatestPayoutCard({ payout, aggregated = false }: {
+  payout?: ReturnType<typeof latestPayout>;
   aggregated?: boolean;
 }) {
-  const earningsKnown = todayEarnings !== undefined;
-  const earningsValue = earningsKnown ? formatBtc(todayEarnings) : '--';
-  return (
-    <StatCard
-      tour="stats-earnings"
-      title="Today's earnings"
-      value={earningsKnown ? earningsValue.replace(' BTC', '') : '--'}
-      unit={earningsKnown ? 'BTC' : undefined}
-      captionTone={earningsKnown && todayEarnings > 0 ? 'strong' : 'muted'}
-      caption={aggregated ? 'Paid out today across all accounts (UTC).' : 'Confirmed payouts today (UTC).'}
-      hint={
-        aggregated
-          ? 'Confirmed payouts today (UTC) across the main account and all subaccounts.'
-          : 'Confirmed payouts sent to this account today (UTC).'
-      }
-    />
-  );
+  const known = payout !== undefined;
+  return <StatCard
+    tour="stats-earnings"
+    title="Latest payout"
+    value={payout ? formatBtc(payout.amountSats / 1e8).replace(' BTC', '') : known ? '0' : '--'}
+    unit={known ? 'BTC' : undefined}
+    captionTone={payout ? 'strong' : 'muted'}
+    caption={payout ? `Paid ${formatPayoutDate(payout.date)} (UTC)`
+      : known ? 'No confirmed payouts in the last 30 days.' : 'Payout information unavailable.'}
+    hint={`Most recently confirmed payout transaction in the last 30 calendar days (UTC)${aggregated ? ' across the main account and all subaccounts' : ' for this account'}.`}
+  />;
+}
+
+/** Generated FPPS BTC is accrued mining revenue, independent of confirmed payouts. */
+export function TodayGeneratedBtcCard({ generatedBtc, aggregated = false }: {
+  generatedBtc?: number;
+  aggregated?: boolean;
+}) {
+  const known = generatedBtc !== undefined;
+  return <StatCard
+    tour="stats-generated"
+    title="Today's Generated BTC"
+    value={known ? formatBtc(generatedBtc).replace(' BTC', '') : '--'}
+    unit={known ? 'BTC' : undefined}
+    caption={aggregated ? 'Generated across all accounts today.' : 'Generated by this account today.'}
+    hint="Generated FPPS BTC generated since the start of the day (UTC)."
+  />;
 }
 
 /** Only supplied (token-permitted) readings appear in this combined card. */

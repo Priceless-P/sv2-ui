@@ -1,11 +1,12 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { LiAltArrowDown, LiMagnifer, LiSort } from 'solar-icon-react/li';
+import { useMemo, useState, type ReactNode, type Dispatch, type SetStateAction } from 'react';
+import { LiAltArrowDown, LiMagnifer, LiSort, LiExport } from 'solar-icon-react/li';
 import {
   filterPplnsDailyWork,
   formatPplnsAverageHashrate,
   formatPplnsDifficulty,
   formatPplnsWorkDay,
   searchPplnsDailyWork,
+  pplnsDailyWorkToCsv,
 } from '@/lib/pplnsProjection';
 import { formatBtcFromSats } from '@/lib/payoutsTable';
 import { cn } from '@/lib/utils';
@@ -18,6 +19,9 @@ import {
   type GbtcFilterDraft,
 } from '@/components/generated-btc/GeneratedBtcFilter';
 import { PplnsProjectionStatCards } from './PplnsProjectionStatCards';
+import { CellCheckbox } from '@/components/ui/CellCheckbox';
+import { SelectionActions } from '@/components/ui/TableToolbar';
+import { downloadCsv } from '@/lib/utils';
 
 function StateMessage({ title, body }: { title: string; body: string }) {
   return (
@@ -121,8 +125,6 @@ function ProjectionToolbar({
   return (
     <div className="relative flex flex-col gap-3 border-b-[0.5px] border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
       <div className="flex items-center justify-between gap-4">
-        <h3 className="!font-body text-lg font-bold leading-7 text-foreground">PPLNS projection</h3>
-
         <div className="flex items-center gap-2 sm:hidden">
           <button
             type="button"
@@ -190,13 +192,34 @@ function ProjectionToolbar({
   );
 }
 
-function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyWork[]; empty?: TableEmpty }) {
+function DailyWorkTable({ dailyWork, empty, selectable, selected, setSelected }: { dailyWork: PplnsProjectionDailyWork[]; empty?: TableEmpty; selectable: boolean; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>> }) {
+  const allSelected = dailyWork.length > 0 && dailyWork.every((day) => selected.has(day.work_day));
+  const someSelected = dailyWork.some((day) => selected.has(day.work_day));
+  const toggleAll = () => setSelected((previous) => {
+    const next = new Set(previous);
+    for (const day of dailyWork) {
+      if (allSelected) next.delete(day.work_day);
+      else next.add(day.work_day);
+    }
+    return next;
+  });
+  const toggleOne = (id: string) => setSelected((previous) => {
+    const next = new Set(previous);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  });
   return (
     <>
+      {selectable && <SelectionActions count={dailyWork.filter((day) => selected.has(day.work_day)).length}
+        onExport={() => downloadCsv(pplnsDailyWorkToCsv(dailyWork.filter((day) => selected.has(day.work_day))), 'pplns_projection.csv')}
+        onClear={() => setSelected(new Set())} />}
       <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[720px] border-collapse text-sm leading-5">
           <thead>
             <tr className="border-b-[0.5px] border-border bg-muted text-body-alt">
+              {selectable && <th className="w-14 px-0 py-3">
+                <CellCheckbox checked={allSelected} indeterminate={someSelected && !allSelected} onChange={toggleAll} label="Select all PPLNS work days" />
+              </th>}
               {HEADERS.map((header) => (
                 <th key={header} className="px-4 py-3 text-left font-normal">
                   {header}
@@ -207,13 +230,16 @@ function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyW
           <tbody>
             {empty && (
               <tr>
-                <td colSpan={4}>
+                <td colSpan={4 + Number(selectable)}>
                   <EmptyRow empty={empty} />
                 </td>
               </tr>
             )}
             {dailyWork.map((day) => (
               <tr key={day.work_day} className="border-b-[0.5px] border-border">
+                {selectable && <td className="w-14 px-0 py-3">
+                  <CellCheckbox checked={selected.has(day.work_day)} onChange={() => toggleOne(day.work_day)} label={`Select PPLNS work for ${day.work_day}`} />
+                </td>}
                 <td className="whitespace-nowrap px-4 py-3 font-medium text-foreground">
                   {formatPplnsWorkDay(day.work_day)}
                 </td>
@@ -233,9 +259,17 @@ function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyW
       </div>
 
       <div className="sm:hidden">
+        {selectable && dailyWork.length > 0 && <div className="flex items-center border-b border-border p-3">
+          <CellCheckbox checked={allSelected} indeterminate={someSelected && !allSelected} onChange={toggleAll} label="Select all PPLNS work days" />
+        </div>}
         {empty && <EmptyRow empty={empty} />}
         {dailyWork.map((day) => (
-          <DailyWorkCard key={day.work_day} day={day} />
+          <div key={day.work_day}>
+            {selectable && <div className="flex items-center px-3 pt-3">
+              <CellCheckbox checked={selected.has(day.work_day)} onChange={() => toggleOne(day.work_day)} label={`Select PPLNS work for ${day.work_day}`} />
+            </div>}
+            <DailyWorkCard day={day} />
+          </div>
         ))}
       </div>
     </>
@@ -245,13 +279,16 @@ function DailyWorkTable({ dailyWork, empty }: { dailyWork: PplnsProjectionDailyW
 function ProjectionBody({
   dailyWork,
   showStats,
+  selectable,
   aggregated,
 }: {
   dailyWork: PplnsProjectionDailyWork[];
   showStats: boolean;
+  selectable: boolean;
   aggregated: boolean;
 }) {
   const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<GbtcFilterDraft>(EMPTY_GBTC_FILTER_DRAFT);
   const visible = useMemo(() => {
     const byDate = filterPplnsDailyWork(dailyWork, gbtcDraftToFilter(filter, Date.now()));
@@ -282,6 +319,16 @@ function ProjectionBody({
 
   return (
     <div className="space-y-4">
+      <ProjectionHeader aggregated={aggregated}>
+        {selectable && dailyWork.length > 0 && <button type="button" disabled={visible.length === 0}
+          onClick={() => {
+            const checked = visible.filter((day) => selected.has(day.work_day));
+            downloadCsv(pplnsDailyWorkToCsv(checked.length ? checked : visible), 'pplns_projection.csv');
+          }}
+          className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full bg-info px-5 text-sm text-info-foreground transition-opacity hover:opacity-90 disabled:opacity-40">
+          <LiExport className="h-3.5 w-3.5" /> Export CSV
+        </button>}
+      </ProjectionHeader>
       {showStats && <PplnsProjectionStatCards dailyWork={dailyWork} aggregated={aggregated} />}
       <div className="rounded-xl border border-border bg-card">
         <ProjectionToolbar
@@ -291,34 +338,56 @@ function ProjectionBody({
           onApplyFilter={setFilter}
           onResetFilter={resetFilter}
         />
-        <DailyWorkTable dailyWork={visible} empty={empty} />
+        <DailyWorkTable dailyWork={visible} empty={empty} selectable={selectable} selected={selected} setSelected={setSelected} />
       </div>
     </div>
   );
 }
 
-export function PplnsProjectionPanel({
-  projection,
-  dailyWork,
-  aggregated = false,
-  isLoading,
-  isError,
-  showStats = false,
-}: {
+interface ProjectionPanelProps {
   /** `null` means the cache holds no projection for the latest boundary yet. */
   projection: PplnsProjection | null | undefined;
   isLoading: boolean;
   isError: boolean;
   showStats?: boolean;
+  selectable?: boolean;
   dailyWork?: PplnsProjectionDailyWork[] | null;
   aggregated?: boolean;
-}) {
+}
+
+function ProjectionHeader({ aggregated, children }: { aggregated: boolean; children?: ReactNode }) {
+  return (
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h2 className="font-heading text-2xl font-semibold leading-9 tracking-[-1px] text-heading">PPLNS projection</h2>
+        <p className="mt-1 text-sm text-body-alt">{aggregated ? 'Combined PPLNS work and rewards across all accounts.' : 'Track your retained mining work and projected PPLNS rewards.'}</p>
+      </div>
+      {children}
+    </header>
+  );
+}
+
+export function PplnsProjectionPanel(props: ProjectionPanelProps) {
+  const rows = props.dailyWork ?? props.projection?.daily_work;
+  if (!props.isLoading && !props.isError && props.projection !== null && props.dailyWork !== null && rows) {
+    return <ProjectionBody key={props.aggregated ? 'aggregated' : props.projection?.subaccount_id}
+      dailyWork={rows} showStats={props.showStats ?? false} selectable={props.selectable ?? true} aggregated={props.aggregated ?? false} />;
+  }
+  return (
+    <div className="space-y-4">
+      <ProjectionHeader aggregated={props.aggregated ?? false} />
+      <ProjectionContent {...props} />
+    </div>
+  );
+}
+
+function ProjectionContent({ projection, dailyWork, isLoading, isError, showStats = false }: ProjectionPanelProps) {
   if (isLoading) {
     if (!showStats) return <div className="h-80 animate-pulse rounded-xl border border-border bg-muted" />;
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {Array.from({ length: 3 }, (_, index) => (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }, (_, index) => (
             <div key={index} className="h-28 animate-pulse border-[0.5px] border-border bg-muted" />
           ))}
         </div>
@@ -342,6 +411,5 @@ export function PplnsProjectionPanel({
       />
     );
   }
-  const rows = dailyWork ?? projection?.daily_work;
-  return rows ? <ProjectionBody dailyWork={rows} showStats={showStats} aggregated={aggregated} /> : null;
+  return null;
 }

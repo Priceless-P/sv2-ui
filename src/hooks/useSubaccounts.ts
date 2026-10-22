@@ -15,7 +15,7 @@ const CLOUD_POLL_MS = 5 * 60 * 1000;
  * earnings in one response). Worker rosters are opt-in for aggregate Home; the
  * Subaccounts page does not request or display worker counts.
  */
-export function useSubaccounts(enabled = true, includeWorkers = false, refreshIntervalMs = CLOUD_POLL_MS) {
+export function useSubaccounts(enabled = true, includeWorkers = false, refreshIntervalMs: number | false = CLOUD_POLL_MS) {
   const { session } = useAuth();
   const ownerAccountId = session?.accountId ?? null;
   const queryClient = useQueryClient();
@@ -25,7 +25,7 @@ export function useSubaccounts(enabled = true, includeWorkers = false, refreshIn
       return loadSubaccountRows(queryClient, getUser(), ownerAccountId!, includeWorkers, signal);
     },
     enabled: !!session && enabled,
-    refetchInterval: () => msUntilNextTick(refreshIntervalMs),
+    refetchInterval: refreshIntervalMs === false ? false : () => msUntilNextTick(refreshIntervalMs),
     staleTime: CLOUD_POLL_MS,
     refetchOnWindowFocus: false,
     retry: false,
@@ -143,5 +143,41 @@ export function loadSubaccountWorkerGroups(
   return mapConcurrent(subs, async (sub) => {
     signal.throwIfAborted();
     return { sub, workers: await subaccountWorkersQuery(cache, client, ownerId, sub.id) };
+  });
+}
+
+/** Refresh just the selected page, sharing individual summary reads with other views. */
+export function visibleSubaccountQueryOptions(
+  cache: QueryClient, client: DmndClient, ownerId: string | null, rows: EnrichedSubaccount[], snapshotRevision = 0,
+) {
+  return {
+    queryKey: ['account', 'visible-subaccounts', ownerId, rows.map((row) => row.id), snapshotRevision],
+    queryFn: ({ signal }: { signal: AbortSignal }) => mapConcurrent(rows, async (row) => {
+      signal.throwIfAborted();
+      const summary = await cache.fetchQuery({
+        queryKey: ['account', 'subaccount-summary', ownerId, row.id],
+        queryFn: ({ signal }) => client.getSubaccountSummary(row.id, { signal, accountId: ownerId! }),
+        staleTime: accountPollStaleTime,
+        retry: false,
+      });
+      return { ...row, hashrate: summary.hashrate.total_hashrate, pplns: summary.hashrate.pplns_hashrate,
+        fpps: summary.hashrate.fpps_hashrate, rejection: summary.share_stats.accepted + summary.share_stats.rejected > 0
+          ? summary.share_stats.rejected / (summary.share_stats.accepted + summary.share_stats.rejected) : null,
+        accepted: summary.share_stats.accepted, rejected: summary.share_stats.rejected,
+        todayEarnings: summary.today_generated_btc ?? 0 };
+    }),
+    staleTime: accountPollStaleTime,
+    refetchInterval: () => msUntilNextTick(CLOUD_POLL_MS),
+    refetchOnWindowFocus: false,
+    retry: false,
+  } as const;
+}
+
+export function useVisibleSubaccounts(rows: EnrichedSubaccount[], enabled: boolean, snapshotRevision: number) {
+  const { session } = useAuth();
+  const cache = useQueryClient();
+  return useQuery({
+    ...visibleSubaccountQueryOptions(cache, getUser(), session?.accountId ?? null, rows, snapshotRevision),
+    enabled: enabled && !!session && rows.length > 0,
   });
 }

@@ -149,9 +149,9 @@ function PasswordCell({ subaccount }: { subaccount: EnrichedSubaccount }) {
 
 /**
  * One subaccount as a mobile card: Name / Hashrate on the first line,
- * Rejection rate / Today’s FPPS earnings on the second. The mobile frame
+ * Rejection rate / Today’s generated BTC on the second. The mobile frame
  * draws neither the select column nor the row action, so this card carries no
- * checkbox and no Open link; a phone can still open a subaccount from the account
+ * checkbox and no switch action; a phone can still switch accounts from the account
  * switcher in the top bar.
  */
 function SubaccountCard({ subaccount }: { subaccount: EnrichedSubaccount }) {
@@ -159,7 +159,7 @@ function SubaccountCard({ subaccount }: { subaccount: EnrichedSubaccount }) {
     ['Name', <span className="font-medium text-foreground">{subaccount.name}</span>],
     ['Hashrate', <span className="text-foreground">{formatHashrate(subaccount.hashrate)}</span>],
     ['Rejection rate', <span className="text-foreground">{rejectionText(subaccount.rejection)}</span>],
-    ['Today’s FPPS earnings', <BtcCell value={subaccount.todayEarnings} />],
+    ['Today’s generated BTC', <BtcCell value={subaccount.todayEarnings} />],
   ];
   return (
     <div className="flex flex-col gap-2 border-b-[0.5px] border-border px-3 py-3 last:border-0">
@@ -244,7 +244,7 @@ export function SubaccountsTable({
               <th className="px-3 py-3 text-left font-normal">
                 <span className="inline-flex items-center gap-2">Rejection <InfoHint text={ACCOUNT_REJECTION_HINT} /></span>
               </th>
-              <th className="px-3 py-3 text-left font-normal">Today’s FPPS earnings</th>
+              <th className="px-3 py-3 text-left font-normal">Today’s generated BTC</th>
               <th className="px-4 py-3 text-left font-normal">Action</th>
             </tr>
           </thead>
@@ -278,7 +278,7 @@ export function SubaccountsTable({
                       disabled={opening}
                       className="text-sm leading-5 text-foreground underline underline-offset-2 transition-opacity hover:opacity-70 disabled:opacity-40"
                     >
-                      Open
+                      Switch to account
                     </button>
                   )}
                 </td>
