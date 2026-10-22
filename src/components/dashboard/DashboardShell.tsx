@@ -8,6 +8,8 @@ import { useAccountScope } from '@/hooks/useAccountScope';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AggregatedBanner } from './AggregatedBanner';
+import { ConnectionAccountProvider } from '@/hooks/ConnectionAccountProvider';
+import { useAuth } from '@/auth';
 
 // Persist the desktop sidebar's collapsed state so it survives reloads. Wrapped
 // because storage access can throw (private mode / disabled cookies).
@@ -34,9 +36,12 @@ function writeCollapsed(value: boolean): void {
  * the dashboard matches the auth screens without touching the local views.
  */
 export function DashboardShell({ children }: { children: ReactNode }) {
+  const { session, viewingAccountId } = useAuth();
   return (
     <AggregatedModeProvider>
-      <DashboardShellInner>{children}</DashboardShellInner>
+      <ConnectionAccountProvider key={`${session?.accountId}:${viewingAccountId}`}>
+        <DashboardShellInner>{children}</DashboardShellInner>
+      </ConnectionAccountProvider>
     </AggregatedModeProvider>
   );
 }
