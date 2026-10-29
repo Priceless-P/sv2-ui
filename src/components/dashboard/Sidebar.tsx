@@ -12,6 +12,7 @@ import { useAccountScope } from '@/hooks/useAccountScope';
 import {
   NAV_GROUPS,
   SETTINGS_ITEM,
+  PPLNS_PROJECTION_ROUTE,
   isPathActive,
   isAggregatedRestrictedRoute,
   isSubaccountRestrictedRoute,
@@ -178,11 +179,13 @@ export function SidebarNavItem({
  * collapse control. `onNavigate` lets the mobile drawer close itself after a tap.
  */
 export function Sidebar({
+  hasPplnsReport,
   collapsed = false,
   drawer = false,
   onToggleCollapse,
   onNavigate,
 }: {
+  hasPplnsReport: boolean;
   collapsed?: boolean;
   /** The mobile drawer is wider than the docked rail and pads tighter. */
   drawer?: boolean;
@@ -231,6 +234,7 @@ export function Sidebar({
         groups={NAV_GROUPS.map((group) => ({
           ...group, items: group.items.filter((item) =>
             (canViewSubaccounts || !isSubaccountRestrictedRoute(item.href)) &&
+            (hasPplnsReport || item.href !== PPLNS_PROJECTION_ROUTE) &&
             (!aggregated || !isAggregatedRestrictedRoute(item.href))
           )
         }))}

@@ -269,6 +269,12 @@ test('PPLNS projection has a persistent page heading and working selection contr
   assert.match(html, /Track your retained mining work and projected PPLNS rewards/);
   assert.match(html, /Select all PPLNS work days/);
   assert.match(html, /Select PPLNS work for 2026-08-31/);
+  const refreshing = renderToStaticMarkup(createElement(PplnsProjectionPanel, {
+    projection, isLoading: false, isError: false,
+    updateStatus: createElement('span', { role: 'status' }, 'Last updated 29 Oct 2026, 2.35 pm · Updating…'),
+  }));
+  assert.match(refreshing, /Last updated 29 Oct 2026, 2.35 pm · Updating…/);
+  assert.match(refreshing, /Select PPLNS work for 2026-08-31/);
   const loading = renderToStaticMarkup(createElement(PplnsProjectionPanel, { projection: undefined, isLoading: true, isError: false }));
   assert.match(loading, /<h2[^>]*>PPLNS projection<\/h2>/);
   const readonly = renderToStaticMarkup(createElement(PplnsProjectionPanel, { projection, isLoading: false, isError: false, selectable: false }));

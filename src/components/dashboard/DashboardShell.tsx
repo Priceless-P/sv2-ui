@@ -3,7 +3,8 @@ import { useLocation } from 'wouter';
 import { cn } from '@/lib/utils';
 import { AggregatedModeProvider, useAggregatedModeContext } from '@/hooks/AggregatedModeProvider';
 import { useHasSubaccounts, usePermissions } from '@/hooks/useSubaccounts';
-import { isAggregatedRestrictedRoute, isSubaccountRestrictedRoute } from './nav';
+import { isAggregatedRestrictedRoute, isSubaccountRestrictedRoute, PPLNS_PROJECTION_ROUTE } from './nav';
+import { usePplnsReportAvailability } from '@/hooks/usePplnsProjection';
 import { useAccountScope } from '@/hooks/useAccountScope';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -52,6 +53,8 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
   const { hasSubaccounts } = useHasSubaccounts();
   const { canViewSubaccounts } = useAccountScope();
   const permissions = usePermissions();
+  const pplns = usePplnsReportAvailability();
+  const checkingPplnsRoute = location === PPLNS_PROJECTION_ROUTE && !pplns.hasReport;
   const restricted = (aggregated && isAggregatedRestrictedRoute(location)) ||
     (!canViewSubaccounts && isSubaccountRestrictedRoute(location));
 
@@ -59,14 +62,23 @@ function DashboardShellInner({ children }: { children: ReactNode }) {
     if (restricted && permissions.isSuccess) navigate('/home', { replace: true });
   }, [restricted, permissions.isSuccess, navigate]);
 
+  useEffect(() => {
+    if (checkingPplnsRoute && !pplns.isLoading && !pplns.isError) {
+      navigate('/home', { replace: true });
+    }
+  }, [checkingPplnsRoute, pplns.isLoading, pplns.isError, navigate]);
+
   return (
     <DashboardFrame
       navigationKey={location}
       banner={aggregated && hasSubaccounts ? <AggregatedBanner /> : undefined}
-      sidebar={(props) => <Sidebar {...props} />}
+      sidebar={(props) => <Sidebar {...props} hasPplnsReport={pplns.hasReport} />}
       topBar={(onMenuClick) => <TopBar onMenuClick={onMenuClick} />}
     >
-      {restricted ? <p role="status" className="p-6 text-sm text-body-alt">{permissions.isError ? 'Unable to verify account permissions. Please reload to try again.' : 'Checking account permissions…'}</p> : children}
+      {restricted ? <p role="status" className="p-6 text-sm text-body-alt">{permissions.isError ? 'Unable to verify account permissions. Please reload to try again.' : 'Checking account permissions…'}</p>
+        : checkingPplnsRoute ? <p role="status" className="p-6 text-sm text-body-alt">
+          {pplns.isError ? <>Failed to retrieve PPLNS reports. <button type="button" className="underline" onClick={() => void pplns.refetch()}>Retry</button></> : 'Fetching PPLNS report'}
+        </p> : children}
     </DashboardFrame>
   );
 }
