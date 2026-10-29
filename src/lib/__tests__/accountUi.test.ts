@@ -351,6 +351,16 @@ test('Home puts confirmed payouts and generated FPPS BTC before mining health wi
   assert.doesNotMatch(watcher, /Today&#x27;s Generated BTC/, 'public views must explicitly grant generation visibility');
 });
 
+test('rejection captions describe the account scope even before mining starts', () => {
+  const aggregated = { totalWorkers: 0, activeWorkers: 0, offlineWorkers: 0, combinedHashrate: 0,
+    todayEarnings: 0, rejectionRate: null };
+  const single = renderToStaticMarkup(createElement(WorkerStatCardsView));
+  const combined = renderToStaticMarkup(createElement(WorkerStatCardsView, { aggregated }));
+  assert.match(single, /Rejected shares over the last 24 hours for this account\./);
+  assert.match(combined, /Rejected shares over the last 24 hours across all accounts\./);
+  assert.doesNotMatch(single + combined, /Rejected share rate will appear after mining starts/);
+});
+
 test('the generated BTC card distinguishes unavailable figures from genuine zero generation', () => {
   const unknown = renderToStaticMarkup(createElement(TodayGeneratedBtcCard));
   assert.match(unknown, />--<\/span>/);

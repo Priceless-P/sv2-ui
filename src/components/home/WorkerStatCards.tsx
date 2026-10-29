@@ -105,7 +105,9 @@ export function WorkerStatCardsView({ workers, shareStats, hashrate, payout, gen
         value={rejection}
         unit={hasMined ? '%' : undefined}
         captionTone={hasMined ? 'strong' : 'muted'}
-        caption={hasMined ? 'Last 24 hours across all shares.' : 'Rejected share rate will appear after mining starts.'}
+        caption={aggregated !== undefined
+          ? 'Rejected shares over the last 24 hours across all accounts.'
+          : 'Rejected shares over the last 24 hours for this account.'}
         hint={ACCOUNT_REJECTION_HINT}
       />}
       {children}
