@@ -100,7 +100,7 @@ export function WorkerStatCardsView({ workers, shareStats, hashrate, payout, gen
         hint={WORKER_METRICS_HINT}
       />}
       {showRejection && <StatCard
-        tour="stats-earnings"
+        tour="stats-rejection"
         title="Rejection rate"
         value={rejection}
         unit={hasMined ? '%' : undefined}
@@ -138,7 +138,7 @@ export function TodayGeneratedBtcCard({ generatedBtc, aggregated = false }: {
 }) {
   const known = generatedBtc !== undefined;
   return <StatCard
-    tour="stats-generated"
+    tour="stats-earnings"
     title="Today's Generated BTC"
     value={known ? formatBtc(generatedBtc).replace(' BTC', '') : '--'}
     unit={known ? 'BTC' : undefined}
